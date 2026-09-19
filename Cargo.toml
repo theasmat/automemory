@@ -38,6 +38,8 @@ rust-embed = { version = "8.5" }
 reqwest = { version = "0.12", features = ["json"] }
 dirs = { version = "5.0" }
 async-trait = { version = "0.1" }
+notify = "6.1"
+glob = "0.3"
 
 [profile.release]
 opt-level = 3

@@ -1335,6 +1335,76 @@ impl Database {
         }
     }
 
+    pub fn get_latest_revision(&self, document_id: &str) -> Result<Option<DocumentRevision>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, document_id, revision_num, content, content_hash, created_at FROM document_revisions WHERE document_id = ?1 ORDER BY revision_num DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![document_id])?;
+        if let Some(row) = rows.next()? {
+            let created_at_str: String = row.get(5)?;
+            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now());
+
+            Ok(Some(DocumentRevision {
+                id: row.get(0)?,
+                document_id: row.get(1)?,
+                revision_num: row.get(2)?,
+                content: row.get(3)?,
+                content_hash: row.get(4)?,
+                created_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn record_document_revision(&self, document_id: &str, content: &str, hash: &str) -> Result<DocumentRevision> {
+        let conn = self.conn();
+        let next_rev: i32 = conn.query_row(
+            "SELECT COALESCE(MAX(revision_num), 0) + 1 FROM document_revisions WHERE document_id = ?1",
+            params![document_id],
+            |r| r.get(0),
+        )?;
+
+        let rev_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        conn.execute(
+            r#"
+            INSERT INTO document_revisions (id, document_id, revision_num, content, content_hash, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+            params![rev_id, document_id, next_rev, content, hash, now.to_rfc3339()],
+        )?;
+
+        conn.execute(
+            r#"
+            UPDATE tracked_documents SET content_hash = ?1, last_scanned_at = ?2, is_deleted = 0 WHERE id = ?3
+            "#,
+            params![hash, now.to_rfc3339(), document_id],
+        )?;
+
+        Ok(DocumentRevision {
+            id: rev_id,
+            document_id: document_id.to_string(),
+            revision_num: next_rev,
+            content: content.to_string(),
+            content_hash: hash.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn untrack_document(&self, project_id: &str, rel_path: &str) -> Result<bool> {
+        let conn = self.conn();
+        let rows = conn.execute(
+            "UPDATE tracked_documents SET is_deleted = 1 WHERE project_id = ?1 AND relative_path = ?2",
+            params![project_id, rel_path],
+        )?;
+        Ok(rows > 0)
+    }
+
     // ==========================================
     // Review Proposals & Audit Log
     // ==========================================

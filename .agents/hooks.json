@@ -1,43 +1,43 @@
 {
   "automemory-pro": {
-    "enabled": true,
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/as/Dev/Projects/opensources/automemory/target/release/automemory hook --agent agy --event post-tool --project auto",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
     "PreInvocation": [
       {
-        "type": "command",
-        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event boot --project auto",
-        "timeout": 5
+        "command": "/Users/as/Dev/Projects/opensources/automemory/target/release/automemory hook --agent agy --event boot --project auto",
+        "timeout": 5,
+        "type": "command"
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "*",
         "hooks": [
           {
-            "type": "command",
-            "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event pre-tool --project auto",
-            "timeout": 5
+            "command": "/Users/as/Dev/Projects/opensources/automemory/target/release/automemory hook --agent agy --event pre-tool --project auto",
+            "timeout": 5,
+            "type": "command"
           }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event post-tool --project auto",
-            "timeout": 5
-          }
-        ]
+        ],
+        "matcher": "*"
       }
     ],
     "Stop": [
       {
-        "type": "command",
-        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event stop --project auto",
-        "timeout": 5
+        "command": "/Users/as/Dev/Projects/opensources/automemory/target/release/automemory hook --agent agy --event stop --project auto",
+        "timeout": 5,
+        "type": "command"
       }
-    ]
+    ],
+    "enabled": true
   }
 }

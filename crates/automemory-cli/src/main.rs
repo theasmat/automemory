@@ -20,6 +20,17 @@ enum Commands {
         agent: String,
     },
 
+    /// Automatically connect and configure AutoMemory Pro into host coding agents
+    Connect {
+        /// Agent host to connect (agy, claude, cursor)
+        #[arg(default_value = "agy")]
+        agent: String,
+
+        /// Apply configuration globally rather than to current workspace
+        #[arg(short, long)]
+        global: bool,
+    },
+
     /// Out-of-process lifecycle hook handler for coding agents
     Hook {
         /// Agent name (e.g. agy)
@@ -173,6 +184,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { agent } => {
             commands::init::execute(Some(agent))?;
+        }
+        Commands::Connect { agent, global } => {
+            commands::connect::execute(&agent, global)?;
         }
         Commands::Hook {
             agent,

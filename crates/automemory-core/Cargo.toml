@@ -21,3 +21,6 @@ dirs.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
 async-trait.workspace = true
+notify.workspace = true
+glob.workspace = true
+

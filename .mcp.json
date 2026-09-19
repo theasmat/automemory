@@ -1,10 +1,19 @@
 {
   "mcpServers": {
     "automemory": {
-      "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory",
       "args": [
         "mcp"
       ],
+      "command": "/Users/as/Dev/Projects/opensources/automemory/target/release/automemory",
+      "env": {
+        "AUTOMEMORY_PROJECT_NAME": "auto"
+      }
+    },
+    "automemory-pro": {
+      "args": [
+        "mcp"
+      ],
+      "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory",
       "env": {
         "AUTOMEMORY_PROJECT_NAME": "automemory"
       }

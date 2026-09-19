@@ -1,5 +1,6 @@
 pub mod config;
 pub mod db;
+pub mod docs;
 pub mod extraction;
 pub mod models;
 pub mod redaction;
@@ -8,11 +9,12 @@ pub mod sync;
 
 pub use config::Config;
 pub use db::Database;
-pub use extraction::{EventHeuristics, ExtractionWorker};
+pub use docs::{DocumentScanner, DocumentWatcher};
+pub use extraction::{ConsolidationReport, ConsolidationWorker, EventHeuristics, ExtractionWorker, LlmExtractor, LlmProviderConfig};
 pub use models::*;
-pub use redaction::{redact_json, redact_text};
+pub use redaction::{contains_secrets, redact_json, redact_text};
 pub use retrieval::{RetrievalEngine, SearchResult};
-pub use sync::{GitSync, VaultManager};
+pub use sync::{AutoSyncDaemon, GitSync, VaultManager};
 
 #[cfg(test)]
 mod tests {
@@ -90,5 +92,16 @@ mod tests {
             .expect("assemble_context failed");
         assert!(ctx.contains("Test Project"));
         assert!(ctx.contains("Use 60m JWT expiry"));
+
+        // 6. Consolidation pass test
+        let mut dup_mem = updated_mem.clone();
+        dup_mem.id = Uuid::now_v7().to_string();
+        dup_mem.confidence = 0.5;
+        db.save_memory(&dup_mem).expect("save duplicate failed");
+
+        let consolidator = ConsolidationWorker::new(std::sync::Arc::new(db));
+        let report = consolidator.consolidate(Some("proj-1")).expect("consolidate failed");
+        assert_eq!(report.duplicates_merged, 1);
+        assert_eq!(report.proposals_created, 1);
     }
 }

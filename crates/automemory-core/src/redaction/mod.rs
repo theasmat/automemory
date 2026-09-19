@@ -50,6 +50,15 @@ fn get_rules() -> &'static Vec<(Regex, &'static str)> {
     })
 }
 
+pub fn contains_secrets(input: &str) -> bool {
+    for (regex, _) in get_rules() {
+        if regex.is_match(input) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn redact_text(input: &str) -> String {
     let mut result = input.to_string();
     for (regex, replacement) in get_rules() {

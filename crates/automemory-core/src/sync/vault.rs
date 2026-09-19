@@ -83,6 +83,19 @@ impl<'a> VaultManager<'a> {
                 let mut fl_file = File::create(failures_dir.join(format!("{}.json", fl.id)))?;
                 serde_json::to_writer_pretty(&mut fl_file, &fl)?;
             }
+
+            // Tracked Documents
+            let docs = self.db.list_documents(&proj.id)?;
+            let docs_dir = p_dir.join("docs");
+            for d in docs {
+                if let Ok(Some(rev)) = self.db.get_latest_revision(&d.id) {
+                    let doc_file = docs_dir.join(&d.relative_path);
+                    if let Some(parent) = doc_file.parent() {
+                        let _ = fs::create_dir_all(parent);
+                    }
+                    let _ = fs::write(doc_file, &rev.content);
+                }
+            }
         }
 
         // Append to sync-log.jsonl
