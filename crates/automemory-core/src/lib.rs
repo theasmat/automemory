@@ -2,6 +2,7 @@ pub mod config;
 pub mod db;
 pub mod docs;
 pub mod extraction;
+pub mod graph;
 pub mod models;
 pub mod redaction;
 pub mod retrieval;
@@ -11,9 +12,10 @@ pub use config::Config;
 pub use db::Database;
 pub use docs::{DocumentScanner, DocumentWatcher};
 pub use extraction::{ConsolidationReport, ConsolidationWorker, EventHeuristics, ExtractionWorker, LlmExtractor, LlmProviderConfig};
+pub use graph::{GraphBuilder, GraphEdge, GraphEntity, GraphQuery, ImpactReport};
 pub use models::*;
 pub use redaction::{contains_secrets, redact_json, redact_text};
-pub use retrieval::{RetrievalEngine, SearchResult};
+pub use retrieval::{HybridScorer, RetrievalEngine, ScoredCandidate, SearchResult, VectorEngine};
 pub use sync::{AutoSyncDaemon, GitSync, VaultManager};
 
 #[cfg(test)]
@@ -59,6 +61,7 @@ mod tests {
             freshness: 1.0,
             status: MemoryStatus::Active,
             source_kind: MemorySourceKind::Agent,
+            version: Some(1),
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_recalled_at: None,

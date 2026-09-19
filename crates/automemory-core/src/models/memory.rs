@@ -150,6 +150,7 @@ pub struct Memory {
     pub id: String,
     pub scope: MemoryScope,
     pub project_id: Option<String>,
+    #[serde(rename = "type", alias = "memory_type")]
     pub memory_type: MemoryType,
     pub content: String,
     pub summary: String,
@@ -158,6 +159,8 @@ pub struct Memory {
     pub freshness: f64,
     pub status: MemoryStatus,
     pub source_kind: MemorySourceKind,
+    #[serde(default)]
+    pub version: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_recalled_at: Option<DateTime<Utc>>,

@@ -1,14 +1,22 @@
+use super::scorer::HybridScorer;
+use super::vector::VectorEngine;
 use crate::db::Database;
 use crate::models::*;
 use anyhow::Result;
 
 pub struct RetrievalEngine<'a> {
     db: &'a Database,
+    vec_engine: VectorEngine,
+    scorer: HybridScorer,
 }
 
 impl<'a> RetrievalEngine<'a> {
     pub fn new(db: &'a Database) -> Self {
-        Self { db }
+        Self {
+            db,
+            vec_engine: VectorEngine::default(),
+            scorer: HybridScorer::default(),
+        }
     }
 
     /// Assembles the bounded context package for session boot or task execution.
@@ -66,10 +74,22 @@ impl<'a> RetrievalEngine<'a> {
             }
         }
 
-        // 3. High-confidence Project Decisions and Architectural Facts
+        // 3. High-confidence Project Decisions and Architectural Facts (RRF Hybrid Search)
         let memories = if let Some(query) = task_query {
-            let fts_results = self.db.search_memories_fts(query, project_id, 10)?;
-            fts_results.into_iter().map(|(m, _)| m).collect()
+            let fts_results = self.db.search_memories_fts(query, project_id, 15).unwrap_or_default();
+            let query_emb = self.vec_engine.embed_text(query).unwrap_or_default();
+            let vec_results = if !query_emb.is_empty() {
+                self.db.search_memories_vector(&query_emb, project_id, 15).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            let scored = self.scorer.fuse_and_rank(fts_results, vec_results, 10);
+            if scored.is_empty() {
+                self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 10)?
+            } else {
+                scored.into_iter().map(|c| c.memory).collect()
+            }
         } else {
             self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 15)?
         };
@@ -156,7 +176,7 @@ impl<'a> RetrievalEngine<'a> {
         Ok(output)
     }
 
-    /// Hybrid search across memories, traces, and failures
+    /// Hybrid search across memories (FTS5 + Vector Embeddings RRF), traces, and failures
     pub fn search(
         &self,
         query: &str,
@@ -165,16 +185,24 @@ impl<'a> RetrievalEngine<'a> {
     ) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
 
-        // 1. Search memories via FTS5
-        let mem_results = self.db.search_memories_fts(query, project_id, limit)?;
-        for (m, rank) in mem_results {
+        // 1. Hybrid Search over memories via FTS5 + Vector Embeddings with RRF
+        let fts_results = self.db.search_memories_fts(query, project_id, limit * 2).unwrap_or_default();
+        let query_emb = self.vec_engine.embed_text(query).unwrap_or_default();
+        let vec_results = if !query_emb.is_empty() {
+            self.db.search_memories_vector(&query_emb, project_id, limit * 2).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        let scored_memories = self.scorer.fuse_and_rank(fts_results, vec_results, limit);
+        for candidate in scored_memories {
             results.push(SearchResult {
-                id: m.id,
-                kind: format!("memory:{}", m.memory_type),
-                title: m.summary,
-                content: m.content,
-                score: 1.0 / (1.0 + rank.abs()),
-                project_id: m.project_id,
+                id: candidate.memory.id,
+                kind: format!("memory:{}", candidate.memory.memory_type),
+                title: candidate.memory.summary,
+                content: candidate.memory.content,
+                score: candidate.final_score,
+                project_id: candidate.memory.project_id,
             });
         }
 

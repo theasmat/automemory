@@ -10,10 +10,14 @@ use automemory_mcp::{mcp_router, McpServer};
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+    },
     routing::{get, post},
     Json, Router,
 };
+use chrono::Utc;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
@@ -116,6 +120,9 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         .route("/api/context", get(api_context))
         .route("/api/docs", get(api_docs))
         .route("/api/proposals", get(api_proposals))
+        .route("/api/proposals/decide", post(api_proposals_decide))
+        .route("/api/graph", get(api_graph))
+        .route("/api/stream", get(api_stream))
         .route("/api/sync/trigger", post(api_sync_trigger))
         .with_state(state);
 
@@ -276,8 +283,75 @@ async fn api_proposals(
     Json(proposals)
 }
 
+#[derive(Deserialize)]
+struct DecideProposalPayload {
+    id: String,
+    approved: bool,
+}
+
+async fn api_proposals_decide(
+    State(state): State<AppState>,
+    Json(payload): Json<DecideProposalPayload>,
+) -> impl IntoResponse {
+    match state.db.decide_proposal(&payload.id, payload.approved) {
+        Ok(true) => (
+            StatusCode::OK,
+            Json(json!({ "success": true, "id": payload.id, "approved": payload.approved })),
+        ),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Proposal not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+async fn api_graph(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    let entities = state
+        .db
+        .list_all_graph_entities(params.project_id.as_deref(), 300)
+        .unwrap_or_default();
+    let edges = state.db.list_all_graph_edges(500).unwrap_or_default();
+
+    Json(json!({
+        "entities": entities,
+        "edges": edges,
+    }))
+}
+
+async fn api_stream(State(state): State<AppState>) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let stream = async_stream::stream! {
+        let mut interval = tokio::time::interval(Duration::from_millis(2500));
+        loop {
+            interval.tick().await;
+            let (active_mem, _) = state.db.count_memories(None).unwrap_or((0, 0));
+            let events = state.db.list_recent_events(10).unwrap_or_default();
+            let proposals = state.db.list_pending_proposals(None).unwrap_or_default();
+
+            let payload = json!({
+                "type": "pulse",
+                "active_memories": active_mem,
+                "recent_events": events,
+                "pending_proposals": proposals.len(),
+                "timestamp": Utc::now().to_rfc3339(),
+            });
+
+            yield Ok(Event::default().data(payload.to_string()));
+        }
+    };
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
 async fn api_sync_trigger(State(state): State<AppState>) -> impl IntoResponse {
     state.sync_daemon.trigger();
     Json(json!({"status": "triggered", "message": "Automated sync scheduled"}))
 }
+
 

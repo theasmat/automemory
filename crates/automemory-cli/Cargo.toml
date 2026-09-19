@@ -25,3 +25,5 @@ anyhow.workspace = true
 dirs.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+async-stream.workspace = true
+tokio-stream.workspace = true

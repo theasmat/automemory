@@ -1,5 +1,6 @@
 use crate::protocol::{ToolCallResult, ToolDefinition};
 use automemory_core::db::Database;
+use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
@@ -382,6 +383,57 @@ impl ToolRegistry {
                     "required": ["text"]
                 }),
             },
+            // Knowledge Graph Tools
+            ToolDefinition {
+                name: "graph.index".to_string(),
+                description: "Scan a project directory and index code structural entities and relations into the knowledge graph".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Project ID or slug" },
+                        "path": { "type": "string", "description": "Local workspace root directory path" }
+                    },
+                    "required": ["project_id", "path"]
+                }),
+            },
+            ToolDefinition {
+                name: "graph.query".to_string(),
+                description: "Query codebase structural knowledge graph entities (files, functions, structs, docs)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string" },
+                        "entity_type": { "type": "string", "enum": ["file", "function", "struct", "class", "module", "trait", "doc"] },
+                        "name_pattern": { "type": "string", "description": "Substring match on symbol name" },
+                        "path_prefix": { "type": "string", "description": "Path prefix filter" },
+                        "limit": { "type": "integer", "description": "Max results (default 20)" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "graph.neighbors".to_string(),
+                description: "Get incoming and outgoing relationship edges and neighbor entities for a specific entity ID".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "entity_id": { "type": "string", "description": "Target entity ID" }
+                    },
+                    "required": ["entity_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "graph.impact".to_string(),
+                description: "Perform blast-radius impact analysis for changing a file or symbol, tracing dependent callers and files".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "Symbol name or relative file path to analyze" },
+                        "project_id": { "type": "string", "description": "Optional project ID" },
+                        "depth": { "type": "integer", "description": "Max traversal depth (default 3)" }
+                    },
+                    "required": ["target"]
+                }),
+            },
         ]
     }
 
@@ -644,6 +696,7 @@ impl ToolRegistry {
                     freshness: 1.0,
                     status: MemoryStatus::Active,
                     source_kind: MemorySourceKind::Agent,
+                    version: Some(1),
                     created_at: Utc::now(),
                     updated_at: Utc::now(),
                     last_recalled_at: None,
@@ -930,6 +983,76 @@ impl ToolRegistry {
                 };
                 let redacted = redact_text(text);
                 ToolCallResult::json(&json!({ "redacted": redacted }))
+            }
+
+            // ==========================================
+            // Knowledge Graph Tools
+            // ==========================================
+            "graph.index" => {
+                let project_id = match arguments.get("project_id").and_then(|v| v.as_str()) {
+                    Some(p) => p,
+                    None => return ToolCallResult::error("Missing parameter: project_id"),
+                };
+                let path = match arguments.get("path").and_then(|v| v.as_str()) {
+                    Some(p) => p,
+                    None => return ToolCallResult::error("Missing parameter: path"),
+                };
+
+                let builder = GraphBuilder::new(&self.db);
+                match builder.scan_and_index_project(project_id, path) {
+                    Ok((entities_count, edges_count)) => ToolCallResult::json(&json!({
+                        "indexed": true,
+                        "project_id": project_id,
+                        "entities_indexed": entities_count,
+                        "edges_indexed": edges_count,
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Graph indexing failed: {}", e)),
+                }
+            }
+
+            "graph.query" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let entity_type = arguments.get("entity_type").and_then(|v| v.as_str());
+                let name_pattern = arguments.get("name_pattern").and_then(|v| v.as_str());
+                let path_prefix = arguments.get("path_prefix").and_then(|v| v.as_str());
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+
+                match self.db.query_graph_entities(project_id, entity_type, name_pattern, path_prefix, limit) {
+                    Ok(entities) => ToolCallResult::json(&entities),
+                    Err(e) => ToolCallResult::error(format!("Graph query failed: {}", e)),
+                }
+            }
+
+            "graph.neighbors" => {
+                let entity_id = match arguments.get("entity_id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return ToolCallResult::error("Missing parameter: entity_id"),
+                };
+
+                let outgoing = self.db.get_outgoing_graph_edges(entity_id).unwrap_or_default();
+                let incoming = self.db.get_incoming_graph_edges(entity_id).unwrap_or_default();
+
+                ToolCallResult::json(&json!({
+                    "entity_id": entity_id,
+                    "outgoing_edges": outgoing,
+                    "incoming_edges": incoming,
+                }))
+            }
+
+            "graph.impact" => {
+                let target = match arguments.get("target").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => return ToolCallResult::error("Missing parameter: target"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let depth = arguments.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+
+                let builder = GraphBuilder::new(&self.db);
+                match builder.trace_impact(project_id, target, depth) {
+                    Ok(Some(report)) => ToolCallResult::json(&report),
+                    Ok(None) => ToolCallResult::error(format!("Target symbol or file '{}' not found in graph", target)),
+                    Err(e) => ToolCallResult::error(format!("Impact analysis failed: {}", e)),
+                }
             }
 
             unknown => ToolCallResult::error(format!("Unknown tool: {}", unknown)),

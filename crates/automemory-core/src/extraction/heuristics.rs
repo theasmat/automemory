@@ -88,6 +88,7 @@ impl EventHeuristics {
                         freshness: 1.0,
                         status: MemoryStatus::Active,
                         source_kind: MemorySourceKind::ToolEvent,
+                        version: Some(1),
                         created_at: Utc::now(),
                         updated_at: Utc::now(),
                         last_recalled_at: None,

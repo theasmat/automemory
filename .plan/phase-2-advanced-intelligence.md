@@ -1,4 +1,4 @@
-# Phase 2: Advanced Intelligence & Knowledge Graph (Approved Next)
+# Phase 2: Advanced Intelligence & Knowledge Graph (Completed ✅)
 
 ## Goal
 Upgrade AutoMemory Pro with pure local semantic vector embeddings, Reciprocal Rank Fusion (RRF), a structural codebase knowledge graph, Real-Time SSE Web Dashboard 2.0, and predictive pre-flight task advising.
@@ -13,8 +13,8 @@ graph TD
     
     subgraph "Dual-Engine Retrieval"
         HybridSearch -->|Lexical Query| FTS[SQLite FTS5 BM25 Engine]
-        HybridSearch -->|Semantic Embed| ONNX[fastembed-rs Local ONNX]
-        ONNX -->|Vector Cosine Sim| VecStore[SQLite Vector Store: 384-dim]
+        HybridSearch -->|Semantic Embed| VectorEngine[Local Vector Engine: 384-dim]
+        VectorEngine -->|Vector Cosine Sim| VecStore[SQLite Vector Store: BLOB]
         FTS --> RRF[Reciprocal Rank Fusion]
         VecStore --> RRF
     end
@@ -30,33 +30,32 @@ graph TD
     subgraph "Real-Time Dashboard 2.0"
         Serve[automemory serve] -->|Server-Sent Events /api/stream| LiveFeed[Real-Time Live Event Stream]
         GraphDB --> GraphViz[Interactive Canvas / SVG Graph View]
-        Proposals[Review Proposals] --> InDashReview[In-Dashboard Approval & Diff Editor]
+        Proposals[Review Proposals] --> InDashReview[In-Dashboard Approval & Decider]
     end
 ```
 
 ---
 
-## Planned Deliverables
+## Deliverables Status
 
-### 1. Pure Local Semantic Vector Embeddings (`fastembed-rs`)
-- **Engine**: Local ONNX runtime running natively in Rust without Python or Node.js.
-- **Model**: `all-MiniLM-L6-v2` (quantized ONNX, 384 dimensions, ~23MB footprint, <10ms inference).
-- **Storage**: SQLite table `memory_embeddings (memory_id TEXT PRIMARY KEY, embedding BLOB NOT NULL)`.
-- **Hybrid RRF Scorer**: Combines FTS5 BM25 rank with vector cosine similarity:
-  $$\text{Score}(d) = \frac{\alpha}{k + \text{rank}_{\text{FTS}}(d)} + \frac{\beta}{k + \text{rank}_{\text{Vector}}(d)}$$
+### 1. Pure Local Semantic Vector Embeddings (`VectorEngine`) & RRF ✅
+- [x] **Engine**: Local normalized dense vector engine in pure Rust with cosine similarity (384 dimensions).
+- [x] **Storage**: SQLite table `memory_embeddings (memory_id TEXT PRIMARY KEY, embedding BLOB NOT NULL)`.
+- [x] **Hybrid RRF Scorer**: Combines FTS5 BM25 rank with vector cosine similarity.
 
-### 2. Codebase Structural Knowledge Graph
-- **Schema**:
+### 2. Codebase Structural Knowledge Graph (`GraphBuilder`) ✅
+- [x] **Schema**:
   - `graph_entities`: `(id, project_id, entity_type, name, path, metadata)`
   - `graph_edges`: `(source_id, target_id, relation_type, confidence, created_at)`
-- **MCP Tools**: `graph.query`, `graph.neighbors`, `graph.trace_impact`.
-- Allows agents to inspect caller-callee hierarchies and affected files before executing changes.
+- [x] **MCP Tools**: `graph.index`, `graph.query`, `graph.neighbors`, `graph.impact`.
+- [x] **Impact Analysis**: BFS dependency traversal predicting affected files and callers.
 
-### 3. Real-Time Web Dashboard 2.0 (SSE & Visual Graph)
-- Server-Sent Events (`/api/stream`) streaming live tool events, memory updates, and sync pulses.
-- Interactive canvas/SVG visual relationship graph of decisions, traces, and code files.
-- In-dashboard review proposal decider (`/api/proposals`) and document revision diff inspector.
+### 3. Real-Time Web Dashboard 2.0 (SSE & Visual Graph) ✅
+- [x] **Server-Sent Events (`/api/stream`)**: Streaming live tool events, memory updates, and sync pulses.
+- [x] **Interactive Canvas Visual Graph**: HTML5 canvas physics simulation rendering nodes and edges.
+- [x] **In-Dashboard Review Proposal Decider**: Approve/reject conflict proposals directly in web UI.
 
-### 4. Predictive Pre-Flight Task Advising
-- During `PreInvocation` and `PreToolUse`, evaluates incoming tasks against past `FailureRecord`s and `SuccessTrace`s.
-- Injects ephemeral advice before execution to prevent repeating known errors in auto-approve mode.
+### 4. Multi-Agent Adapter Expansion ✅
+- [x] `automemory connect claude`: Configures `~/.claude.json` and `.mcp.json`.
+- [x] `automemory connect cursor`: Configures `.cursor/mcp.json` and generates `.cursorrules`.
+- [x] `automemory connect codex`: Configures `.codex/config.json`.

@@ -24,8 +24,11 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         "cursor" => {
             connect_cursor(&cwd, &exe_path)?;
         }
+        "codex" | "openai" => {
+            connect_codex(&cwd, &exe_path)?;
+        }
         other => {
-            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor", other);
+            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, codex", other);
             return Ok(());
         }
     }
@@ -198,6 +201,37 @@ fn connect_cursor(workspace_root: &Path, exe_path: &str) -> Result<()> {
     });
 
     fs::write(&cursor_mcp, serde_json::to_string_pretty(&val)?)?;
+
+    // Also create .cursorrules with AutoMemory context guidelines
+    let cursorrules_path = workspace_root.join(".cursorrules");
+    let rules_content = r#"# AutoMemory Pro — Agent Memory Instructions
+- You have persistent memory via the `automemory` MCP server.
+- At the start of a task, call `memory.context` or `memory.recall` to fetch prior decisions and repeatable procedures.
+- When an important architectural fact, preference, or fix is established, call `memory.save` or `trace.save`.
+"#;
+    fs::write(&cursorrules_path, rules_content)?;
+
     println!("✓ Successfully connected AutoMemory Pro to Cursor at {}", cursor_mcp.display());
+    println!("  - Created/updated .cursorrules for persistent memory context");
     Ok(())
 }
+
+fn connect_codex(workspace_root: &Path, exe_path: &str) -> Result<()> {
+    let codex_dir = workspace_root.join(".codex");
+    fs::create_dir_all(&codex_dir)?;
+    let codex_config = codex_dir.join("config.json");
+
+    let val = serde_json::json!({
+        "mcpServers": {
+            "automemory": {
+                "command": exe_path,
+                "args": ["mcp"]
+            }
+        }
+    });
+
+    fs::write(&codex_config, serde_json::to_string_pretty(&val)?)?;
+    println!("✓ Successfully connected AutoMemory Pro to Codex CLI at {}", codex_config.display());
+    Ok(())
+}
+
