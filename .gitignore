@@ -3,7 +3,8 @@
 Cargo.lock
 
 # Reference repo
-.agents/ref
+.agents/ref/
+.agents/ref/**
 
 # Local databases & logs
 *.db
