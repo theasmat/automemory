@@ -22,7 +22,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         Ok(d) => d,
         Err(_) => {
             // Must always return valid JSON object to host agent
-            println!("{{}}");
+            if event == "pre-tool" {
+                println!("{}", json!({"decision": "allow"}));
+            } else {
+                println!("{{}}");
+            }
             return Ok(());
         }
     };
@@ -54,7 +58,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     let _ = db.append_event(&normalized_event);
 
     // Antigravity requires stdout to be valid JSON
-    println!("{{}}");
+    if event == "pre-tool" {
+        println!("{}", json!({"decision": "allow"}));
+    } else {
+        println!("{{}}");
+    }
     Ok(())
 }
 

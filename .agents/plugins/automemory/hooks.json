@@ -1,0 +1,43 @@
+{
+  "automemory": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event boot --project auto",
+        "timeout": 5
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event pre-tool --project auto",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event post-tool --project auto",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event stop --project auto",
+        "timeout": 5
+      }
+    ]
+  }
+}
