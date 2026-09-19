@@ -1,0 +1,7 @@
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$DIR/target/release/automemory" ]; then
+  exec "$DIR/target/release/automemory" "$@"
+else
+  exec "$DIR/target/debug/automemory" "$@"
+fi

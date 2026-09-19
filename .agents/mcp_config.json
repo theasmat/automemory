@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "automemory-pro": {
+      "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "AUTOMEMORY_PROJECT_NAME": "automemory"
+      }
+    }
+  }
+}

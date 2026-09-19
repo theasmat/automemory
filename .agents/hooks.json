@@ -1,0 +1,28 @@
+{
+  "automemory-pro": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event boot --project auto"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event pre-tool --project auto"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event post-tool --project auto"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/Users/as/Dev/Projects/opensources/automemory/bin/automemory hook --agent agy --event stop --project auto"
+      }
+    ]
+  }
+}
