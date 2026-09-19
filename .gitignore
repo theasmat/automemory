@@ -1,0 +1,16 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Reference repo
+.agents/ref
+
+# Local databases & logs
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

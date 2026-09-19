@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/automemory-core",
+    "crates/automemory-mcp",
+    "crates/automemory-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["AutoMemory Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/asmat/automemory"
+readme = "README.md"
+
+[workspace.dependencies]
+automemory-core = { path = "crates/automemory-core" }
+automemory-mcp = { path = "crates/automemory-mcp" }
+
+tokio = { version = "1.40", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+serde_yaml = { version = "0.9" }
+rusqlite = { version = "0.32", features = ["bundled-full", "chrono"] }
+uuid = { version = "1.10", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = { version = "1.0" }
+anyhow = { version = "1.0" }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+regex = { version = "1.10" }
+sha2 = { version = "0.10" }
+clap = { version = "4.5", features = ["derive", "env"] }
+axum = { version = "0.7" }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+rust-embed = { version = "8.5" }
+reqwest = { version = "0.12", features = ["json"] }
+dirs = { version = "5.0" }
+async-trait = { version = "0.1" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

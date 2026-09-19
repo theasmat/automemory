@@ -1,0 +1,8 @@
+pub mod doctor;
+pub mod hook;
+pub mod init;
+pub mod mcp;
+pub mod memory;
+pub mod project;
+pub mod serve;
+pub mod sync;
