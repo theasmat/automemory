@@ -6,6 +6,12 @@ Cargo.lock
 .agents/ref/
 .agents/ref/**
 
+# Node dependencies and builds
+node_modules/
+**/node_modules/
+clients/web/dist/
+.pnpm-store/
+
 # Local databases & logs
 *.db
 *.db-wal

@@ -3,12 +3,16 @@ use automemory_core::config::Config;
 use automemory_core::db::Database;
 use automemory_core::docs::DocumentWatcher;
 use automemory_core::extraction::{ConsolidationWorker, ExtractionWorker};
+use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::retrieval::RetrievalEngine;
 use automemory_core::sync::AutoSyncDaemon;
 use automemory_mcp::{mcp_router, McpServer};
 use axum::{
-    extract::{Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Query, State,
+    },
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -20,7 +24,7 @@ use axum::{
 use chrono::Utc;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,6 +39,7 @@ struct DashboardAssets;
 struct AppState {
     db: Arc<Database>,
     sync_daemon: Arc<AutoSyncDaemon>,
+    broadcast_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,6 +56,8 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         Database::open(&path)
             .with_context(|| format!("Failed to open database at {:?}", path))?,
     );
+
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel::<String>(256);
 
     // 1. Start background extraction worker
     let worker = Arc::new(ExtractionWorker::new(db.clone()));
@@ -99,17 +106,48 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         }
     });
 
+    // 5. Start real-time background pulse broadcaster
+    let pulse_db = db.clone();
+    let pulse_tx = broadcast_tx.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(2000));
+        loop {
+            interval.tick().await;
+            if pulse_tx.receiver_count() > 0 {
+                let (active_mem, archived_mem) = pulse_db.count_memories(None).unwrap_or((0, 0));
+                let events = pulse_db.list_recent_events(10).unwrap_or_default();
+                let proposals = pulse_db.list_pending_proposals(None).unwrap_or_default();
+                let traces = pulse_db.list_traces(None, 1000).unwrap_or_default();
+                let failures = pulse_db.list_failures(None, Some("unresolved"), 1000).unwrap_or_default();
+
+                let pulse = json!({
+                    "type": "pulse",
+                    "active_memories": active_mem,
+                    "archived_memories": archived_mem,
+                    "active_traces": traces.len(),
+                    "unresolved_failures": failures.len(),
+                    "pending_proposals": proposals.len(),
+                    "recent_events": events,
+                    "timestamp": Utc::now().to_rfc3339(),
+                });
+                let _ = pulse_tx.send(pulse.to_string());
+            }
+        }
+    });
+
     let state = AppState {
         db: db.clone(),
         sync_daemon: sync_daemon.clone(),
+        broadcast_tx: broadcast_tx.clone(),
     };
 
-    // 5. Setup MCP server router
+    // 6. Setup MCP server router
     let mcp_server = Arc::new(McpServer::new(db.clone()));
     let mcp_app = mcp_router(mcp_server);
 
-    // 6. Setup REST API & Dashboard router
+    // 7. Setup REST API, WebSocket & Dashboard router
     let api_app = Router::new()
+        .route("/ws", get(ws_handler))
         .route("/api/stats", get(api_stats))
         .route("/api/events", get(api_events))
         .route("/api/memories", get(api_memories))
@@ -138,6 +176,7 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
     println!("│              AutoMemory Pro Daemon Active              │");
     println!("├────────────────────────────────────────────────────────┤");
     println!("│  Dashboard Web UI: http://127.0.0.1:{:<5}              │", port);
+    println!("│  WebSocket Engine: ws://127.0.0.1:{:<5}/ws             │", port);
     println!("│  MCP HTTP Gateway: http://127.0.0.1:{:<5}/mcp          │", port);
     println!("│  SQLite Database:  {:<35} │", path.to_string_lossy());
     println!("└────────────────────────────────────────────────────────┘");
@@ -153,10 +192,18 @@ fn get_mime_type(path: &str) -> &'static str {
         "text/html"
     } else if path.ends_with(".css") {
         "text/css"
-    } else if path.ends_with(".js") {
+    } else if path.ends_with(".js") || path.ends_with(".mjs") {
         "application/javascript"
     } else if path.ends_with(".json") {
         "application/json"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else if path.ends_with(".woff2") {
+        "font/woff2"
     } else {
         "application/octet-stream"
     }
@@ -185,6 +232,226 @@ async fn static_asset_handler(uri: axum::http::Uri) -> impl IntoResponse {
         },
     }
 }
+
+// ── WebSocket Handler ─────────────────────────────────────────────────────────
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
+}
+
+async fn handle_ws_socket(mut socket: WebSocket, state: AppState) {
+    let mut broadcast_rx = state.broadcast_tx.subscribe();
+
+    loop {
+        tokio::select! {
+            // Outgoing broadcast message to this client
+            recv_res = broadcast_rx.recv() => {
+                match recv_res {
+                    Ok(msg) => {
+                        if socket.send(Message::Text(msg)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Client fell behind, ignore lagged frame
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+            // Incoming message from this client
+            client_msg = socket.recv() => {
+                match client_msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Some(resp) = handle_ws_json_rpc(&text, &state).await {
+                            if socket.send(Message::Text(resp)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => {
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WsRequest {
+    id: Option<Value>,
+    method: String,
+    #[serde(default)]
+    params: Value,
+}
+
+async fn handle_ws_json_rpc(raw: &str, state: &AppState) -> Option<String> {
+    let req: WsRequest = match serde_json::from_str(raw) {
+        Ok(r) => r,
+        Err(_) => return None,
+    };
+
+    let req_id = req.id.unwrap_or(Value::Null);
+
+    let result = match req.method.as_str() {
+        "ping" => json!({ "status": "pong", "timestamp": Utc::now().to_rfc3339() }),
+        "stats" => {
+            let (active_mem, archived_mem) = state.db.count_memories(None).unwrap_or((0, 0));
+            let traces = state.db.list_traces(None, 1000).unwrap_or_default();
+            let failures = state.db.list_failures(None, Some("unresolved"), 1000).unwrap_or_default();
+            let projects = state.db.list_projects().unwrap_or_default();
+            let proposals = state.db.list_pending_proposals(None).unwrap_or_default();
+            json!({
+                "active_memories": active_mem,
+                "archived_memories": archived_mem,
+                "active_traces": traces.len(),
+                "unresolved_failures": failures.len(),
+                "total_projects": projects.len(),
+                "pending_proposals": proposals.len(),
+            })
+        }
+        "events" => {
+            let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+            let events = state.db.list_recent_events(limit).unwrap_or_default();
+            json!(events)
+        }
+        "memories" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let query = req.params.get("q").and_then(|v| v.as_str());
+            let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+
+            if let Some(q) = query {
+                let results = state.db.search_memories_fts(q, project_id, limit).unwrap_or_default();
+                let memories: Vec<_> = results.into_iter().map(|(m, _)| m).collect();
+                json!(memories)
+            } else {
+                let memories = state.db.list_memories(project_id, Some(MemoryStatus::Active), None, limit).unwrap_or_default();
+                json!(memories)
+            }
+        }
+        "traces" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+            let traces = state.db.list_traces(project_id, limit).unwrap_or_default();
+            json!(traces)
+        }
+        "failures" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let status = req.params.get("status").and_then(|v| v.as_str());
+            let limit = req.params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+            let failures = state.db.list_failures(project_id, status, limit).unwrap_or_default();
+            json!(failures)
+        }
+        "projects" => {
+            let projects = state.db.list_projects().unwrap_or_default();
+            json!(projects)
+        }
+        "preferences" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let prefs = state.db.list_preferences(project_id).unwrap_or_default();
+            json!(prefs)
+        }
+        "docs" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            if let Some(pid) = project_id {
+                let docs = state.db.list_documents(pid).unwrap_or_default();
+                json!(docs)
+            } else {
+                let mut all_docs = Vec::new();
+                if let Ok(projects) = state.db.list_projects() {
+                    for p in projects {
+                        if let Ok(docs) = state.db.list_documents(&p.id) {
+                            all_docs.extend(docs);
+                        }
+                    }
+                }
+                json!(all_docs)
+            }
+        }
+        "proposals" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let proposals = state.db.list_pending_proposals(project_id).unwrap_or_default();
+            json!(proposals)
+        }
+        "decide_proposal" => {
+            let id = req.params.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let approved = req.params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+            match state.db.decide_proposal(id, approved) {
+                Ok(true) => {
+                    let _ = state.broadcast_tx.send(json!({
+                        "type": "proposal_decided",
+                        "id": id,
+                        "approved": approved,
+                        "timestamp": Utc::now().to_rfc3339(),
+                    }).to_string());
+                    json!({ "success": true, "id": id, "approved": approved })
+                }
+                Ok(false) => json!({ "error": "Proposal not found" }),
+                Err(e) => json!({ "error": e.to_string() }),
+            }
+        }
+        "graph" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let limit_entities = req.params.get("limit_entities").and_then(|v| v.as_u64()).unwrap_or(400) as usize;
+            let limit_edges = req.params.get("limit_edges").and_then(|v| v.as_u64()).unwrap_or(800) as usize;
+
+            let entities = state.db.list_all_graph_entities(project_id, limit_entities).unwrap_or_default();
+            let edges = state.db.list_all_graph_edges(limit_edges).unwrap_or_default();
+            json!({
+                "entities": entities,
+                "edges": edges,
+            })
+        }
+        "trace_impact" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let target = req.params.get("target").and_then(|v| v.as_str()).unwrap_or("");
+            let depth = req.params.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+
+            let builder = GraphBuilder::new(&state.db);
+            match builder.trace_impact(project_id, target, depth) {
+                Ok(Some(report)) => json!({ "success": true, "report": report }),
+                Ok(None) => json!({ "success": false, "message": "Target entity not found in graph" }),
+                Err(e) => json!({ "success": false, "error": e.to_string() }),
+            }
+        }
+        "assemble_context" => {
+            let project_id = req.params.get("project_id").and_then(|v| v.as_str());
+            let query = req.params.get("q").and_then(|v| v.as_str());
+            let budget = req.params.get("token_budget").and_then(|v| v.as_u64()).unwrap_or(3000) as usize;
+
+            let engine = RetrievalEngine::new(&state.db);
+            let ctx = engine.assemble_context(project_id, query, budget).unwrap_or_default();
+            json!({ "context": ctx })
+        }
+        "trigger_sync" => {
+            state.sync_daemon.trigger();
+            json!({ "status": "triggered", "message": "Automated git vault sync triggered" })
+        }
+        unknown => json!({ "error": format!("Unknown method: {}", unknown) }),
+    };
+
+    Some(
+        json!({
+            "id": req_id,
+            "result": result,
+        })
+        .to_string(),
+    )
+}
+
+// ── REST API Endpoints ────────────────────────────────────────────────────────
 
 async fn api_stats(State(state): State<AppState>) -> impl IntoResponse {
     let (active_mem, archived_mem) = state.db.count_memories(None).unwrap_or((0, 0));
@@ -294,10 +561,18 @@ async fn api_proposals_decide(
     Json(payload): Json<DecideProposalPayload>,
 ) -> impl IntoResponse {
     match state.db.decide_proposal(&payload.id, payload.approved) {
-        Ok(true) => (
-            StatusCode::OK,
-            Json(json!({ "success": true, "id": payload.id, "approved": payload.approved })),
-        ),
+        Ok(true) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "proposal_decided",
+                "id": payload.id,
+                "approved": payload.approved,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (
+                StatusCode::OK,
+                Json(json!({ "success": true, "id": payload.id, "approved": payload.approved })),
+            )
+        }
         Ok(false) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "Proposal not found" })),
@@ -353,5 +628,3 @@ async fn api_sync_trigger(State(state): State<AppState>) -> impl IntoResponse {
     state.sync_daemon.trigger();
     Json(json!({"status": "triggered", "message": "Automated sync scheduled"}))
 }
-
-

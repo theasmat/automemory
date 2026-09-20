@@ -10,7 +10,8 @@ This directory serves as the canonical source of truth for engineering plans, ar
 |---|---|---|---|
 | **Phase 1** | [Core MVP Engine](phase-1-mvp-core.md) | ✅ **Completed** | Rust workspace, SQLite WAL, FTS5 search, out-of-process hooks (<2ms), 30+ MCP tools, Lamborghini dark web dashboard. |
 | **Phase 1.5** | [Daemon Automation & Host Wiring](phase-1.5-polish-and-wiring.md) | ✅ **Completed** | Live document watcher (`notify`), debounced Git auto-sync daemon, pluggable LLM extractor (Ollama/APIs), multi-host `automemory connect`. |
-| **Phase 2** | [Advanced Intelligence & Knowledge Graph](phase-2-advanced-intelligence.md) | 🟡 **Next (Approved)** | Pure local ONNX embeddings (`fastembed-rs`), Reciprocal Rank Fusion (RRF), codebase structural graph, SSE Dashboard 2.0, predictive task advising. |
+| **Phase 2** | [Advanced Intelligence & Knowledge Graph](phase-2-advanced-intelligence.md) | ✅ **Completed** | Pure local ONNX embeddings (`fastembed-rs`), Reciprocal Rank Fusion (RRF), codebase structural graph, SSE stream & graph MCP tools. |
+| **Phase 2.5** | [Next-Gen React Dashboard & WebSocket Engine](phase-2.5-nextgen-web-and-websocket.md) | 🟡 **In Progress** | Modular React 19 + Vite SPA, Axum WebSocket JSON-RPC & live broadcasting (`/ws`), Web Worker offloading (graph layout & event indexing), embedded single binary. |
 | **Phase 3** | [Managed Cloudflare SaaS & Teams](phase-3-managed-cloud.md) | ⚪ **Planned (Post-MVP)** | Cloudflare Workers + D1 + R2 sync, zero-knowledge client encryption, team workspaces, RBAC, and hosted web app. |
 
 ---
@@ -29,4 +30,5 @@ This directory serves as the canonical source of truth for engineering plans, ar
 - [`phase-1-mvp-core.md`](phase-1-mvp-core.md): Architecture, data models, and implementation details for Milestone 1.
 - [`phase-1.5-polish-and-wiring.md`](phase-1.5-polish-and-wiring.md): Daemon automation, document watching, and adapter connections.
 - [`phase-2-advanced-intelligence.md`](phase-2-advanced-intelligence.md): Local vector embeddings, RRF hybrid retrieval, and knowledge graph specification.
+- [`phase-2.5-nextgen-web-and-websocket.md`](phase-2.5-nextgen-web-and-websocket.md): Modular React 19 web dashboard, WebSocket streaming & RPC, and Web Worker offloading.
 - [`phase-3-managed-cloud.md`](phase-3-managed-cloud.md): Cloudflare serverless sync, team collaboration, and web app.
