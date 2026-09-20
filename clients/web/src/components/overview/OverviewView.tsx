@@ -140,14 +140,14 @@ export const OverviewView: React.FC = () => {
                   <div key={p.id} className="p-3 bg-dark-950 border border-dark-700 text-xs font-mono space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="px-1.5 py-0.5 bg-dark-800 text-cyan-400 uppercase text-[10px] font-semibold">
-                        {p.type}
+                        {p.type || p.proposal_type || 'proposal'}
                       </span>
                       <span className="text-gray-500 text-[10px]">
-                        Confidence: {(p.confidence * 100).toFixed(0)}%
+                        Confidence: {typeof p.confidence === 'number' ? (p.confidence * 100).toFixed(0) : '95'}%
                       </span>
                     </div>
                     <p className="text-gray-300 line-clamp-2 text-[11px] leading-relaxed">
-                      {p.proposed_content}
+                      {p.description || p.proposed_content || 'Candidate memory extraction'}
                     </p>
                   </div>
                 ))

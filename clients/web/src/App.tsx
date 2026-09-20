@@ -3,6 +3,7 @@ import { useAutoMemoryStore } from './store/useAutoMemoryStore';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { StatusBar } from './components/layout/StatusBar';
+import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { OverviewView } from './components/overview/OverviewView';
 import { KnowledgeGraph } from './components/graph/KnowledgeGraph';
 import { MemoriesView } from './components/memories/MemoriesView';
@@ -29,16 +30,18 @@ export const App: React.FC = () => {
         {/* Top Header */}
         <Header />
 
-        {/* Dynamic Tab Body */}
+        {/* Dynamic Tab Body with ErrorBoundary Protection */}
         <main className="flex-1 overflow-hidden relative bg-dark-950">
-          {activeTab === 'overview' && <OverviewView />}
-          {activeTab === 'graph' && <KnowledgeGraph />}
-          {activeTab === 'memories' && <MemoriesView />}
-          {activeTab === 'proposals' && <ProposalsView />}
-          {activeTab === 'traces' && <TracesView />}
-          {activeTab === 'failures' && <FailuresView />}
-          {activeTab === 'context' && <ContextTester />}
-          {activeTab === 'events' && <LiveEventLedger />}
+          <ErrorBoundary fallbackTitle={`${activeTab.toUpperCase()} View Error`}>
+            {activeTab === 'overview' && <OverviewView />}
+            {activeTab === 'graph' && <KnowledgeGraph />}
+            {activeTab === 'memories' && <MemoriesView />}
+            {activeTab === 'proposals' && <ProposalsView />}
+            {activeTab === 'traces' && <TracesView />}
+            {activeTab === 'failures' && <FailuresView />}
+            {activeTab === 'context' && <ContextTester />}
+            {activeTab === 'events' && <LiveEventLedger />}
+          </ErrorBoundary>
         </main>
 
         {/* Bottom Status Bar */}

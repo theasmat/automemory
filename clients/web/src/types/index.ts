@@ -1,74 +1,89 @@
-export type MemoryType = 'decision' | 'pattern' | 'fix' | 'gotcha' | 'preference' | 'architecture';
-export type MemoryStatus = 'active' | 'archived' | 'superseded';
+export type MemoryType = 'fact' | 'decision' | 'lesson' | 'pattern' | 'warning' | 'observation' | 'preference' | 'skill' | string;
+export type MemoryStatus = 'active' | 'superseded' | 'archived' | 'invalid' | 'review' | string;
 
 export interface Memory {
   id: string;
   project_id: string | null;
   type: MemoryType;
   content: string;
+  summary?: string;
   confidence: number;
+  importance?: number;
+  freshness?: number;
   status: MemoryStatus;
-  version: number;
-  superseded_by: string | null;
+  version?: number | null;
+  superseded_by?: string | null;
+  tags?: string[];
+  entities?: string[];
   created_at: string;
   updated_at: string;
-  metadata?: Record<string, unknown>;
-  rrf_score?: number;
 }
 
 export interface TraceStep {
-  step_number: number;
-  description: string;
-  tool_call?: string;
-  output_summary?: string;
-  timestamp: string;
+  position?: number;
+  action: string;
+  tool?: string;
+  command?: string | null;
+  verification?: string | null;
 }
 
 export interface SuccessTrace {
   id: string;
   project_id: string | null;
-  task_description: string;
-  steps_json: string;
-  tools_used: string[];
-  duration_ms: number;
+  title: string;
+  category?: string;
+  status: string;
+  preconditions?: string[];
+  steps?: TraceStep[];
   reproducibility_score: number;
+  caveats?: string[];
+  source_task_id?: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface FailureLog {
   id: string;
   project_id: string | null;
-  task_description: string;
+  task_title?: string;
+  task_description?: string;
+  category?: string | null;
+  failed_tool?: string | null;
   error_message: string;
-  root_cause: string | null;
-  fix_applied: string | null;
-  status: 'unresolved' | 'resolved' | 'ignored';
+  root_cause_hypothesis?: string | null;
+  root_cause?: string | null;
+  fix_applied?: string | null;
+  verification_result?: string | null;
+  status: string;
   created_at: string;
-  resolved_at: string | null;
+  updated_at?: string;
 }
 
 export interface MemoryProposal {
   id: string;
   project_id: string | null;
-  source_type: string;
-  source_id: string | null;
-  type: MemoryType;
-  proposed_content: string;
-  confidence: number;
-  status: 'pending' | 'approved' | 'rejected';
+  type?: string;
+  proposal_type?: string;
+  source_type?: string;
+  target_id?: string;
+  description?: string;
+  proposed_content?: string;
+  suggested_action?: string;
+  confidence?: number;
+  status: string;
   created_at: string;
-  decided_at: string | null;
+  decided_at?: string | null;
 }
 
 export interface GraphEntity {
   id: string;
   project_id: string | null;
-  entity_type: 'file' | 'function' | 'struct' | 'class' | 'doc' | 'memory_cluster';
+  entity_type: 'file' | 'function' | 'struct' | 'class' | 'doc' | 'memory_cluster' | string;
   name: string;
   path: string;
   line_start: number | null;
   line_end: number | null;
-  metadata: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -76,7 +91,7 @@ export interface GraphEntity {
 export interface GraphEdge {
   source_id: string;
   target_id: string;
-  relation_type: 'defines' | 'imports' | 'calls' | 'references' | 'modifies';
+  relation_type: 'defines' | 'imports' | 'calls' | 'references' | 'modifies' | string;
   confidence: number;
   created_at: string;
 }
@@ -132,7 +147,7 @@ export interface PulseMessage {
   active_traces: number;
   unresolved_failures: number;
   pending_proposals: number;
-  recent_events: ToolEvent[];
+  recent_events?: ToolEvent[];
   timestamp: string;
 }
 

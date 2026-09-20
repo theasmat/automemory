@@ -3,10 +3,6 @@ import {
   GitPullRequestDraft,
   CheckCircle2,
   XCircle,
-  Clock,
-  Sparkles,
-  Layers,
-  ShieldCheck,
 } from 'lucide-react';
 import { useAutoMemoryStore } from '../../store/useAutoMemoryStore';
 
@@ -28,17 +24,17 @@ export const ProposalsView: React.FC = () => {
           <div className="flex items-center gap-2">
             <GitPullRequestDraft className="w-5 h-5 text-cyan-400" />
             <h2 className="text-xl font-bold font-mono text-white tracking-tight">
-              Memory Proposals Queue ({proposals.length})
+              Memory Proposals Queue ({proposals ? proposals.length : 0})
             </h2>
           </div>
           <p className="text-xs font-mono text-gray-400 mt-1">
-            Candidate memories extracted from agent tool calls and sessions awaiting 1-click human verification.
+            Candidate memories and review actions extracted from agent sessions awaiting 1-click human verification.
           </p>
         </div>
       </div>
 
       {/* Proposal Cards */}
-      {proposals.length === 0 ? (
+      {!proposals || proposals.length === 0 ? (
         <div className="text-center py-20 bg-dark-950 border border-dark-700 font-mono text-xs text-gray-500 space-y-2">
           <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto opacity-80" />
           <div className="text-gray-300 font-semibold">Queue is completely clear!</div>
@@ -48,6 +44,9 @@ export const ProposalsView: React.FC = () => {
         <div className="space-y-4">
           {proposals.map((proposal) => {
             const isProcessing = processingId === proposal.id;
+            const content = proposal.description || proposal.proposed_content || 'Proposal action';
+            const proposalType = proposal.proposal_type || proposal.source_type || 'review';
+
             return (
               <div
                 key={proposal.id}
@@ -56,21 +55,25 @@ export const ProposalsView: React.FC = () => {
                 <div className="space-y-2 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2 py-0.5 bg-dark-800 text-cyan-400 uppercase font-semibold text-[10px] border border-dark-700">
-                      {proposal.type}
+                      {proposalType}
                     </span>
-                    <span className="text-gray-500 text-[10px]">
-                      Source: <strong className="text-gray-400">{proposal.source_type}</strong>
-                    </span>
-                    <span className="text-emerald-400 text-[10px] font-bold">
-                      {(proposal.confidence * 100).toFixed(0)}% Confidence
-                    </span>
+                    {proposal.suggested_action && (
+                      <span className="text-gold-400 text-[10px]">
+                        Action: <strong className="text-gold-300">{proposal.suggested_action}</strong>
+                      </span>
+                    )}
+                    {typeof proposal.confidence === 'number' && (
+                      <span className="text-emerald-400 text-[10px] font-bold">
+                        {(proposal.confidence * 100).toFixed(0)}% Confidence
+                      </span>
+                    )}
                     <span className="text-gray-600 text-[10px]">
-                      {new Date(proposal.created_at).toLocaleString()}
+                      {proposal.created_at ? new Date(proposal.created_at).toLocaleString() : ''}
                     </span>
                   </div>
 
                   <p className="text-sm text-gray-100 leading-relaxed bg-dark-950 p-3 border border-dark-800 whitespace-pre-wrap">
-                    {proposal.proposed_content}
+                    {content}
                   </p>
                 </div>
 
