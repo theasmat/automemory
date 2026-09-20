@@ -179,6 +179,22 @@ enum SyncCommands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // In dev / debug mode (cargo run / debug builds), enable full debug & info logs.
+    // In production / release builds, enable only critical error logging by default.
+    let filter = if cfg!(debug_assertions) {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("automemory=debug,tower_http=info"))
+    } else {
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("automemory=error"))
+    };
+
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .compact()
+        .try_init();
+
     let cli = Cli::parse();
 
     match cli.command {

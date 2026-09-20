@@ -123,12 +123,33 @@ export interface Preference {
   updated_at: string;
 }
 
+export interface ToolInfo {
+  name: string;
+  category?: string;
+  input?: unknown;
+  output?: unknown;
+  status?: string;
+  duration_ms?: number;
+}
+
+export interface AgentInfo {
+  adapter_id: string;
+  agent_instance_id?: string;
+}
+
 export interface ToolEvent {
-  id: string;
-  session_id: string | null;
-  tool_name: string;
-  payload: Record<string, unknown>;
-  created_at: string;
+  event_id?: string;
+  id?: string;
+  event_type?: string;
+  timestamp?: string;
+  created_at?: string;
+  agent?: AgentInfo;
+  session_id?: string | null;
+  task_id?: string | null;
+  tool?: ToolInfo;
+  tool_name?: string;
+  payload?: Record<string, unknown>;
+  raw_payload?: unknown;
 }
 
 export interface SystemStats {
