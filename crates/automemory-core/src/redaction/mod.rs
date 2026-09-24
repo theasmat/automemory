@@ -23,7 +23,7 @@ fn get_rules() -> &'static Vec<(Regex, &'static str)> {
             ),
             // GitHub PATs
             (
-                Regex::new(r"\b(ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{60,})\b").unwrap(),
+                Regex::new(r"\b(gh[pousr]_[a-zA-Z0-9_]{30,60}|github_pat_[a-zA-Z0-9_]{60,})\b").unwrap(),
                 "[REDACTED_GITHUB_TOKEN]",
             ),
             // AWS Access Keys

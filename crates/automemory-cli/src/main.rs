@@ -84,6 +84,31 @@ enum Commands {
         #[command(subcommand)]
         command: SyncCommands,
     },
+
+    /// Manage autopilot safety modes (vibe, strict, review) and guardrails
+    Mode {
+        #[command(subcommand)]
+        command: ModeCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModeCommands {
+    /// Get the current autopilot mode for a project
+    Get {
+        /// Project slug (defaults to current directory or 'default')
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Set the autopilot mode for a project (vibe, strict, review)
+    Set {
+        /// Mode to apply (vibe, strict, review)
+        mode: String,
+
+        /// Project slug (defaults to current directory or 'default')
+        #[arg(short, long)]
+        project: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -254,6 +279,10 @@ async fn main() -> Result<()> {
             SyncCommands::Export { path } => commands::sync::export_vault(path)?,
             SyncCommands::Import { path } => commands::sync::import_vault(path)?,
             SyncCommands::Status => commands::sync::status()?,
+        },
+        Commands::Mode { command } => match command {
+            ModeCommands::Get { project } => commands::mode::get(project)?,
+            ModeCommands::Set { mode, project } => commands::mode::set(&mode, project)?,
         },
     }
 

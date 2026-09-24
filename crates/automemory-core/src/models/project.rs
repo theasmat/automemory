@@ -22,12 +22,50 @@ pub struct ProjectPath {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutopilotMode {
+    Vibe,
+    Strict,
+    Review,
+}
+
+impl Default for AutopilotMode {
+    fn default() -> Self {
+        Self::Vibe
+    }
+}
+
+impl std::fmt::Display for AutopilotMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Vibe => write!(f, "vibe"),
+            Self::Strict => write!(f, "strict"),
+            Self::Review => write!(f, "review"),
+        }
+    }
+}
+
+impl std::str::FromStr for AutopilotMode {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().trim() {
+            "vibe" => Ok(Self::Vibe),
+            "strict" => Ok(Self::Strict),
+            "review" => Ok(Self::Review),
+            other => anyhow::bail!("Unknown autopilot mode '{}'. Supported: vibe, strict, review", other),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapturePolicy {
     pub enabled: bool,
     pub auto_approve_aware: bool,
     pub raw_event_policy: String, // "hash_only", "redacted", "full_local", "full_synced"
     pub allow_agent_preference_writes: bool,
+    #[serde(default)]
+    pub mode: AutopilotMode,
 }
 
 impl Default for CapturePolicy {
@@ -37,6 +75,7 @@ impl Default for CapturePolicy {
             auto_approve_aware: true,
             raw_event_policy: "redacted".to_string(),
             allow_agent_preference_writes: false,
+            mode: AutopilotMode::Vibe,
         }
     }
 }

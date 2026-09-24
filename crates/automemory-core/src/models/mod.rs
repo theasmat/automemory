@@ -6,6 +6,8 @@ pub mod memory;
 pub mod preference;
 pub mod project;
 pub mod proposal;
+pub mod session;
+pub mod skill;
 pub mod trace;
 
 pub use audit::*;
@@ -16,4 +18,6 @@ pub use memory::*;
 pub use preference::*;
 pub use project::*;
 pub use proposal::*;
+pub use session::*;
+pub use skill::*;
 pub use trace::*;

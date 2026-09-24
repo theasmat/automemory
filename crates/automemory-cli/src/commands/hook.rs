@@ -1,6 +1,7 @@
 use anyhow::Result;
 use automemory_core::config::Config;
 use automemory_core::db::Database;
+use automemory_core::guardrails::{GuardrailAction, GuardrailEvaluator, GuardrailSeverity};
 use automemory_core::models::*;
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
@@ -10,18 +11,19 @@ use std::io::{self, Read};
 use std::process::Command;
 use uuid::Uuid;
 
+/// Main entrypoint for the CLI `hook` command.
+/// Evaluates guardrails on `pre-tool` events and records append-only event traces.
 pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // Read stdin payload if any
     let mut input = String::new();
     let _ = io::stdin().read_to_string(&mut input);
     let raw_payload: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
 
-    // Quick open database
+    // Quick open database; gracefully fail-open if DB is unreachable
     let config = Config::default_config();
     let db = match Database::open(&config.db_path) {
         Ok(d) => d,
         Err(_) => {
-            // Must always return valid JSON object to host agent
             if event == "pre-tool" {
                 println!("{}", json!({"decision": "allow"}));
             } else {
@@ -31,13 +33,111 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         }
     };
 
-    // Project resolution
+    // Project resolution & autopilot mode lookup
     let project_ref = resolve_project(&db, project_arg, &raw_payload);
+    let current_project = project_ref
+        .id
+        .as_deref()
+        .and_then(|id| db.get_project_by_id(id).ok().flatten());
+    let autopilot_mode = current_project
+        .as_ref()
+        .map(|p| p.capture_policy.mode)
+        .unwrap_or(AutopilotMode::Vibe);
 
-    // Normalize Antigravity tool call
+    // Normalize Antigravity / AGY tool call
     let (tool_info, session_id, task_id) = normalize_payload(event, &raw_payload);
 
-    let normalized_event = NormalizedEvent {
+    // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
+    if event == "pre-tool" {
+        if !evaluate_pre_tool_guardrail(&db, &raw_payload, tool_info.as_ref(), project_ref.id.as_deref(), autopilot_mode)? {
+            return Ok(());
+        }
+    }
+
+    // ── Record Event ──────────────────────────────────────────────────────────
+    let normalized_event = build_normalized_event(
+        agent,
+        event,
+        session_id.clone(),
+        task_id,
+        project_ref,
+        tool_info,
+        &raw_payload,
+    );
+    let _ = db.append_event(&normalized_event);
+
+    // ── Post-Tool Implicit Task Segmentation ──────────────────────────────────
+    if event == "post-tool" || event == "stop" {
+        run_post_tool_distillation(&db, &session_id);
+    }
+
+    if event != "pre-tool" {
+        println!("{{}}");
+    }
+    Ok(())
+}
+
+/// Evaluates pre-tool guardrails against registered security & workflow policies.
+/// Returns `false` if the process should stop or has exited.
+fn evaluate_pre_tool_guardrail(
+    db: &Database,
+    raw_payload: &Value,
+    tool_info: Option<&ToolInfo>,
+    project_id: Option<&str>,
+    autopilot_mode: AutopilotMode,
+) -> Result<bool> {
+    let tool_name = tool_info
+        .map(|t| t.name.as_str())
+        .or_else(|| raw_payload.get("toolName").and_then(|v| v.as_str()))
+        .or_else(|| raw_payload.get("name").and_then(|v| v.as_str()))
+        .unwrap_or("unknown_tool");
+
+    let tool_args = tool_info
+        .and_then(|t| t.input.as_ref())
+        .unwrap_or(raw_payload);
+
+    let evaluator = GuardrailEvaluator::new(Some(db));
+    let decision = evaluator.evaluate(tool_name, tool_args, project_id, autopilot_mode);
+
+    match decision.action {
+        GuardrailAction::Block => {
+            eprintln!("🛑 [AutoMemory Guardrail] CRITICAL STOP: {}", decision.title);
+            eprintln!("   Reason: {}", decision.risk_summary);
+            if let Some(hint) = &decision.mitigation_hint {
+                eprintln!("   💡 Mitigation: {}", hint);
+            }
+            println!("{}", serde_json::to_string(&decision)?);
+            if decision.severity == GuardrailSeverity::Critical {
+                std::process::exit(1);
+            }
+            Ok(false)
+        }
+        GuardrailAction::Warn => {
+            eprintln!("⚠️ [AutoMemory Guardrail Warning]: {}", decision.title);
+            if let Some(hint) = &decision.mitigation_hint {
+                eprintln!("   💡 Tip: {}", hint);
+            }
+            println!("{}", serde_json::to_string(&decision)?);
+            Ok(true)
+        }
+        GuardrailAction::Allow => {
+            println!("{}", json!({"decision": "allow", "action": "allow"}));
+            Ok(true)
+        }
+    }
+}
+
+/// Constructs a `NormalizedEvent` from parsed parameters and sanitized raw payload.
+fn build_normalized_event(
+    agent: &str,
+    event: &str,
+    session_id: String,
+    task_id: Option<String>,
+    project_ref: ProjectRef,
+    tool_info: Option<ToolInfo>,
+    raw_payload: &Value,
+) -> NormalizedEvent {
+    NormalizedEvent {
         event_id: Uuid::now_v7().to_string(),
         event_type: format!("{}.{}", agent, event),
         timestamp: Utc::now(),
@@ -52,20 +152,18 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         artifacts: Vec::new(),
         sensitivity: "redacted".to_string(),
         schema_version: 1,
-        raw_payload: Some(redact_json(&raw_payload)),
-    };
-
-    let _ = db.append_event(&normalized_event);
-
-    // Antigravity requires stdout to be valid JSON
-    if event == "pre-tool" {
-        println!("{}", json!({"decision": "allow"}));
-    } else {
-        println!("{{}}");
+        raw_payload: Some(redact_json(raw_payload)),
     }
-    Ok(())
 }
 
+/// Runs implicit task segmentation and session distillation in the background.
+fn run_post_tool_distillation(db: &Database, session_id: &str) {
+    let segmenter = automemory_core::extraction::ImplicitTaskSegmenter::new(db);
+    let _ = segmenter.process_and_distill_session(session_id);
+}
+
+/// Resolves the project reference based on CLI flags, environment variables,
+/// payload workspace paths, git top-level, or working directory fallback.
 fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> ProjectRef {
     if project_arg != "auto" {
         if let Ok(Some(p)) = db.get_project_by_slug(project_arg) {
@@ -148,6 +246,8 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
     }
 }
 
+/// Normalizes arbitrary agent payloads (Antigravity, Claude Code, Cursor, Copilot)
+/// into a structured `(Option<ToolInfo>, session_id, Option<task_id>)`.
 fn normalize_payload(
     event: &str,
     raw: &Value,
@@ -220,6 +320,7 @@ fn normalize_payload(
     (tool_info, session_id, task_id)
 }
 
+/// Normalizes argument keys to canonical representations across different agent adapters.
 fn normalize_args(args: Option<&Value>) -> Value {
     let mut map = serde_json::Map::new();
     if let Some(Value::Object(obj)) = args {

@@ -1,3 +1,4 @@
+use super::decay::MemoryDecayScorer;
 use super::scorer::HybridScorer;
 use super::vector::VectorEngine;
 use crate::db::Database;
@@ -8,6 +9,7 @@ pub struct RetrievalEngine<'a> {
     db: &'a Database,
     vec_engine: VectorEngine,
     scorer: HybridScorer,
+    decay_scorer: MemoryDecayScorer,
 }
 
 impl<'a> RetrievalEngine<'a> {
@@ -16,6 +18,67 @@ impl<'a> RetrievalEngine<'a> {
             db,
             vec_engine: VectorEngine::default(),
             scorer: HybridScorer::default(),
+            decay_scorer: MemoryDecayScorer::default(),
+        }
+    }
+
+    /// Generates a token-capped (max 500 tokens) Hot Memory Constitution for the project.
+    pub fn generate_constitution(&self, project_id: Option<&str>) -> Result<String> {
+        let mut lines = Vec::new();
+        lines.push("# Project Constitution & Safety Rules\n".to_string());
+
+        // 1. Locked & Core Preferences
+        let prefs = self.db.list_preferences(project_id)?;
+        if !prefs.is_empty() {
+            lines.push("## Core Conventions".to_string());
+            for p in prefs.iter().take(5) {
+                lines.push(format!("- **{}**: {}", p.key, p.value));
+            }
+            lines.push("".to_string());
+        }
+
+        // 2. High-Confidence Architectural Decisions
+        let memories = self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 10)?;
+        let decisions: Vec<_> = memories
+            .iter()
+            .filter(|m| m.memory_type == MemoryType::Decision || m.memory_type == MemoryType::Fact)
+            .take(5)
+            .collect();
+        if !decisions.is_empty() {
+            lines.push("## Architecture Invariants".to_string());
+            for d in decisions {
+                lines.push(format!("- {}", d.summary));
+            }
+            lines.push("".to_string());
+        }
+
+        // 3. Known Gotchas & Pitfalls to Avoid
+        let failures = self.db.list_failures(project_id, Some("resolved"), 5)?;
+        if !failures.is_empty() {
+            lines.push("## Known Pitfalls & Past Resolutions".to_string());
+            for f in failures.iter().take(3) {
+                lines.push(format!("- **Avoid**: {} -> **Fix**: {}", f.task_title, f.fix_applied.as_deref().unwrap_or("See trace")));
+            }
+            lines.push("".to_string());
+        }
+
+        // 4. Verification Check
+        lines.push("## Inviolable Verification".to_string());
+        lines.push("- Always verify code changes with existing test suites before declaring tasks complete.".to_string());
+        lines.push("- Never execute destructive system/git commands without explicit user confirmation.".to_string());
+
+        Ok(lines.join("\n"))
+    }
+
+    /// HyDE (Hypothetical Document Embeddings) Query Rewriting
+    pub fn expand_hyde_query(&self, query: &str) -> String {
+        let q_clean = query.trim();
+        let q_lower = q_clean.to_lowercase();
+
+        if q_lower.starts_with("how") || q_lower.starts_with("where") || q_lower.starts_with("why") || q_lower.starts_with("what") {
+            format!("{} architecture setup configuration pattern implementation", q_clean)
+        } else {
+            q_clean.to_string()
         }
     }
 
@@ -74,10 +137,11 @@ impl<'a> RetrievalEngine<'a> {
             }
         }
 
-        // 3. High-confidence Project Decisions and Architectural Facts (RRF Hybrid Search)
-        let memories = if let Some(query) = task_query {
-            let fts_results = self.db.search_memories_fts(query, project_id, 15).unwrap_or_default();
-            let query_emb = self.vec_engine.embed_text(query).unwrap_or_default();
+        // 3. High-confidence Project Decisions and Architectural Facts (HyDE + RRF Hybrid Search)
+        let memories = if let Some(raw_query) = task_query {
+            let expanded_query = self.expand_hyde_query(raw_query);
+            let fts_results = self.db.search_memories_fts(&expanded_query, project_id, 15).unwrap_or_default();
+            let query_emb = self.vec_engine.embed_text(&expanded_query).unwrap_or_default();
             let vec_results = if !query_emb.is_empty() {
                 self.db.search_memories_vector(&query_emb, project_id, 15).unwrap_or_default()
             } else {
@@ -98,6 +162,19 @@ impl<'a> RetrievalEngine<'a> {
         let mut warnings_str = String::new();
 
         for m in memories {
+            let eval = self.decay_scorer.evaluate(
+                m.importance,
+                m.confidence,
+                m.updated_at,
+                m.version.unwrap_or(1) as u32,
+                false,
+                None,
+            );
+
+            if eval.is_stale {
+                continue;
+            }
+
             let line = format!("- [{}] {}\n", m.memory_type, m.summary);
             match m.memory_type {
                 MemoryType::Warning => warnings_str.push_str(&line),
@@ -149,21 +226,8 @@ impl<'a> RetrievalEngine<'a> {
             add_section("Relevant Success Traces (Repeatable Procedures)", &traces_str, &mut sections, &mut current_chars);
         }
 
-        // 7. Tracked Document Excerpts & File References
-        if let Some(pid) = project_id {
-            let docs = self.db.list_documents(pid)?;
-            let mut docs_str = String::new();
-            for d in docs {
-                let sum = d.summary.unwrap_or_else(|| "Tracked project document".to_string());
-                docs_str.push_str(&format!("- `{}`: {}\n", d.relative_path, sum));
-            }
-            if !docs_str.is_empty() {
-                add_section("Tracked Project Documents", &docs_str, &mut sections, &mut current_chars);
-            }
-        }
-
-        // 8. Memory Instructions
-        let instructions = "- Memories and traces are persistent across chats.\n- High-confidence facts have been verified by prior tool executions.\n- Use `memory.save` or `trace.save` for durable learnings, or `failure.resolve` when an error is fixed.\n";
+        // 7. Memory Instructions
+        let instructions = "- Memories and traces are persistent across chats.\n- High-confidence facts have been verified by prior tool executions.\n- Use `memory_save` or `trace_save` for durable learnings, or `failure_resolve` when an error is fixed.\n";
         add_section("AutoMemory Context Guidelines", instructions, &mut sections, &mut current_chars);
 
         let mut output = String::new();
@@ -184,10 +248,11 @@ impl<'a> RetrievalEngine<'a> {
         limit: usize,
     ) -> Result<Vec<SearchResult>> {
         let mut results = Vec::new();
+        let expanded_query = self.expand_hyde_query(query);
 
         // 1. Hybrid Search over memories via FTS5 + Vector Embeddings with RRF
-        let fts_results = self.db.search_memories_fts(query, project_id, limit * 2).unwrap_or_default();
-        let query_emb = self.vec_engine.embed_text(query).unwrap_or_default();
+        let fts_results = self.db.search_memories_fts(&expanded_query, project_id, limit * 2).unwrap_or_default();
+        let query_emb = self.vec_engine.embed_text(&expanded_query).unwrap_or_default();
         let vec_results = if !query_emb.is_empty() {
             self.db.search_memories_vector(&query_emb, project_id, limit * 2).unwrap_or_default()
         } else {

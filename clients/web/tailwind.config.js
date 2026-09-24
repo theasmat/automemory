@@ -1,8 +1,13 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./components/**/*.{vue,js,ts}",
+    "./layouts/**/*.vue",
+    "./pages/**/*.vue",
+    "./composables/**/*.{js,ts}",
+    "./plugins/**/*.{js,ts}",
+    "./app.vue",
+    "./error.vue"
   ],
   darkMode: 'class',
   theme: {
@@ -33,8 +38,8 @@ export default {
         }
       },
       fontFamily: {
-        mono: ['"JetBrains Mono"', 'monospace'],
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',

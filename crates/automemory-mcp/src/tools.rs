@@ -434,6 +434,26 @@ impl ToolRegistry {
                     "required": ["target"]
                 }),
             },
+            ToolDefinition {
+                name: "memory.skills".to_string(),
+                description: "List auto-distilled procedural skill playbooks synthesized from verified success traces".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "memory.constitution".to_string(),
+                description: "Retrieve token-capped Hot Memory Constitution containing core rules, architecture invariants, and gotchas".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID" }
+                    }
+                }),
+            },
         ]
     }
 
@@ -481,6 +501,24 @@ impl ToolRegistry {
                 match engine.assemble_context(project_id, task_query, max_tokens) {
                     Ok(ctx) => ToolCallResult::text(ctx),
                     Err(e) => ToolCallResult::error(format!("Context assembly failed: {}", e)),
+                }
+            }
+
+            "memory.skills" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let distiller = automemory_core::extraction::SkillDistiller::new(&self.db);
+                match distiller.distill_skills(project_id) {
+                    Ok(skills) => ToolCallResult::json(&skills),
+                    Err(e) => ToolCallResult::error(format!("Skill distillation failed: {}", e)),
+                }
+            }
+
+            "memory.constitution" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let engine = RetrievalEngine::new(&self.db);
+                match engine.generate_constitution(project_id) {
+                    Ok(const_doc) => ToolCallResult::text(const_doc),
+                    Err(e) => ToolCallResult::error(format!("Constitution generation failed: {}", e)),
                 }
             }
 

@@ -36,6 +36,13 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
     Ok(())
 }
 
+fn codebase_memory_config() -> serde_json::Value {
+    serde_json::json!({
+        "command": "npx",
+        "args": ["-y", "@codebase-memory/mcp@latest"]
+    })
+}
+
 fn connect_agy_workspace(workspace_root: &Path, exe_path: &str) -> Result<()> {
     let agents_dir = workspace_root.join(".agents");
     fs::create_dir_all(&agents_dir)?;
@@ -52,6 +59,7 @@ fn connect_agy_workspace(workspace_root: &Path, exe_path: &str) -> Result<()> {
         mcp_val["mcpServers"] = serde_json::json!({});
     }
 
+    // AutoMemory Pro MCP
     mcp_val["mcpServers"]["automemory"] = serde_json::json!({
         "command": exe_path,
         "args": ["mcp"],
@@ -59,6 +67,10 @@ fn connect_agy_workspace(workspace_root: &Path, exe_path: &str) -> Result<()> {
             "AUTOMEMORY_PROJECT_NAME": "auto"
         }
     });
+
+    // Codebase Memory Companion MCP
+    mcp_val["mcpServers"]["codebase-memory"] = codebase_memory_config();
+
     fs::write(&mcp_config_path, serde_json::to_string_pretty(&mcp_val)?)?;
 
     // 2. Root .mcp.json
@@ -119,10 +131,11 @@ fn connect_agy_workspace(workspace_root: &Path, exe_path: &str) -> Result<()> {
     fs::write(plugin_dir.join("mcp_config.json"), serde_json::to_string_pretty(&mcp_val)?)?;
     fs::write(plugin_dir.join("hooks.json"), serde_json::to_string_pretty(&hooks_val)?)?;
 
-    println!("✓ Successfully connected AutoMemory Pro to Antigravity workspace at {}", workspace_root.display());
-    println!("  - Registered MCP server in: .agents/mcp_config.json & .mcp.json");
-    println!("  - Registered lifecycle hooks in: .agents/hooks.json");
-    println!("  - Created workspace plugin in: .agents/plugins/automemory/");
+    println!("✓ Successfully connected Dual-Engine Suite to Antigravity workspace at {}", workspace_root.display());
+    println!("  🧠 Registered AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Registered Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    println!("  🪝 Registered lifecycle hooks in: .agents/hooks.json");
+    println!("  📦 Created workspace plugin in: .agents/plugins/automemory/");
     Ok(())
 }
 
@@ -147,9 +160,13 @@ fn connect_agy_global(home: &Path, exe_path: &str) -> Result<()> {
             "AUTOMEMORY_PROJECT_NAME": "auto"
         }
     });
+    mcp_val["mcpServers"]["codebase-memory"] = codebase_memory_config();
+
     fs::write(&mcp_path, serde_json::to_string_pretty(&mcp_val)?)?;
 
-    println!("✓ Successfully registered AutoMemory Pro in global Antigravity config at {}", mcp_path.display());
+    println!("✓ Successfully registered Dual-Engine Suite in global Antigravity config at {}", mcp_path.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
     Ok(())
 }
 
@@ -169,6 +186,7 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str) -> Result<
         "command": exe_path,
         "args": ["mcp"]
     });
+    val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
     fs::write(&claude_config, serde_json::to_string_pretty(&val)?)?;
 
@@ -176,7 +194,9 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str) -> Result<
     let ws_mcp = workspace_root.join(".mcp.json");
     fs::write(&ws_mcp, serde_json::to_string_pretty(&val)?)?;
 
-    println!("✓ Successfully connected AutoMemory Pro to Claude Code config at {}", claude_config.display());
+    println!("✓ Successfully connected Dual-Engine Suite to Claude Code at {}", claude_config.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
     Ok(())
 }
 
@@ -199,20 +219,24 @@ fn connect_cursor(workspace_root: &Path, exe_path: &str) -> Result<()> {
         "command": exe_path,
         "args": ["mcp"]
     });
+    val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
     fs::write(&cursor_mcp, serde_json::to_string_pretty(&val)?)?;
 
     // Also create .cursorrules with AutoMemory context guidelines
     let cursorrules_path = workspace_root.join(".cursorrules");
-    let rules_content = r#"# AutoMemory Pro — Agent Memory Instructions
-- You have persistent memory via the `automemory` MCP server.
-- At the start of a task, call `memory.context` or `memory.recall` to fetch prior decisions and repeatable procedures.
-- When an important architectural fact, preference, or fix is established, call `memory.save` or `trace.save`.
+    let rules_content = r#"# AutoMemory Pro & Codebase Memory Companion Rules
+- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`).
+- You have deep Tree-Sitter AST structural code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`, `search_graph`).
+- At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
+- Before modifying complex architectures, use `codebase-memory` to trace callers and call graphs.
 "#;
     fs::write(&cursorrules_path, rules_content)?;
 
-    println!("✓ Successfully connected AutoMemory Pro to Cursor at {}", cursor_mcp.display());
-    println!("  - Created/updated .cursorrules for persistent memory context");
+    println!("✓ Successfully connected Dual-Engine Suite to Cursor at {}", cursor_mcp.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    println!("  📝 Created/updated .cursorrules for persistent memory & AST context");
     Ok(())
 }
 
@@ -226,12 +250,14 @@ fn connect_codex(workspace_root: &Path, exe_path: &str) -> Result<()> {
             "automemory": {
                 "command": exe_path,
                 "args": ["mcp"]
-            }
+            },
+            "codebase-memory": codebase_memory_config()
         }
     });
 
     fs::write(&codex_config, serde_json::to_string_pretty(&val)?)?;
-    println!("✓ Successfully connected AutoMemory Pro to Codex CLI at {}", codex_config.display());
+    println!("✓ Successfully connected Dual-Engine Suite to Codex CLI at {}", codex_config.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
     Ok(())
 }
-

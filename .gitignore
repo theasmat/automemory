@@ -11,6 +11,11 @@ node_modules/
 **/node_modules/
 clients/web/dist/
 .pnpm-store/
+.nuxt/
+**/.nuxt/
+.output/
+**/.output/
+*.tsbuildinfo
 
 # Local databases & logs
 *.db
@@ -21,3 +26,4 @@ clients/web/dist/
 # OS files
 .DS_Store
 Thumbs.db
+
