@@ -384,6 +384,10 @@ enum SyncCommands {
         /// Auth token override
         #[arg(short, long)]
         token: Option<String>,
+
+        /// Custom encryption key passphrase override
+        #[arg(short, long)]
+        key: Option<String>,
     },
 
     /// Pull remote updates from cloud endpoint
@@ -399,6 +403,10 @@ enum SyncCommands {
         /// Auth token override
         #[arg(short, long)]
         token: Option<String>,
+
+        /// Custom encryption key passphrase override
+        #[arg(short, long)]
+        key: Option<String>,
     },
 
     /// Disaster recovery: restore memories, skills, and product docs onto machine
@@ -418,6 +426,10 @@ enum SyncCommands {
         /// Auth token for cloud endpoint
         #[arg(short, long)]
         token: Option<String>,
+
+        /// Custom encryption key passphrase override
+        #[arg(short, long)]
+        key: Option<String>,
     },
 
     /// Export database to text-first JSONL & Markdown vault (legacy)
@@ -519,14 +531,14 @@ async fn main() -> Result<()> {
             SyncCommands::Status { project } => {
                 commands::sync::status(project)?;
             }
-            SyncCommands::Push { project, endpoint, token } => {
-                commands::sync::push(project, endpoint, token).await?;
+            SyncCommands::Push { project, endpoint, token, key } => {
+                commands::sync::push(project, endpoint, token, key).await?;
             }
-            SyncCommands::Pull { project, endpoint, token } => {
-                commands::sync::pull(project, endpoint, token).await?;
+            SyncCommands::Pull { project, endpoint, token, key } => {
+                commands::sync::pull(project, endpoint, token, key).await?;
             }
-            SyncCommands::Restore { project, from_file, endpoint, token } => {
-                commands::sync::restore(project, from_file, endpoint, token).await?;
+            SyncCommands::Restore { project, from_file, endpoint, token, key } => {
+                commands::sync::restore(project, from_file, endpoint, token, key).await?;
             }
             SyncCommands::Export { path } => commands::sync::export_vault(path)?,
             SyncCommands::Import { path } => commands::sync::import_vault(path)?,

@@ -1,4 +1,5 @@
 pub mod config;
+pub mod crypto;
 pub mod db;
 pub mod docs;
 pub mod extraction;
@@ -10,6 +11,7 @@ pub mod retrieval;
 pub mod sync;
 
 pub use config::Config;
+pub use crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob, EncryptedDeltaWire};
 pub use db::Database;
 pub use docs::{DocumentScanner, DocumentWatcher};
 pub use extraction::{ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics, ExtractionWorker, ImplicitTaskSegmenter, LlmExtractor, LlmProviderConfig, TaskBoundaryReason, TaskSegment, TrajectoryDistiller};

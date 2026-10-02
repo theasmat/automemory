@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { AppEnv, SyncPushPayload, DeviceLease } from '../types';
+import type { AppEnv, SyncPushPayload, DeviceLease, BlindMemoryRecord, BlindSkillRecord } from '../types';
 import { verifyFirebaseAuth } from '../auth/firebase';
 import { resolveUserContext } from '../auth/quota';
 
@@ -17,14 +17,14 @@ syncRouter.use('/sync/*', async (c, next) => {
 });
 
 
-// POST /api/v1/sync/push - Push manifest and deltas to cloud
+// POST /api/v1/sync/push - Push manifest, encrypted deltas, and blind memories/skills
 syncRouter.post('/sync/push', async (c) => {
   const userCtx = c.get('userCtx');
   const body = await c.req.json<any>();
 
-  const projectSlug = body.project_slug || body.project_id;
+  const projectSlug = body.project_slug || body.project_id || body.blind_project_id;
   if (!projectSlug) {
-    return c.json({ error: 'BAD_REQUEST', message: 'project_slug or project_id is required' }, 400);
+    return c.json({ error: 'BAD_REQUEST', message: 'project_slug, project_id, or blind_project_id is required' }, 400);
   }
 
   // Device verification: enforce that caller has an active device lease if device_id is passed
@@ -47,30 +47,99 @@ syncRouter.post('/sync/push', async (c) => {
     }
   }
 
-  // Normalize manifest
+  // 1. Process and store Blind Memories if provided
+  let blindMemoriesStored = 0;
+  if (body.blind_memories && Array.isArray(body.blind_memories)) {
+    for (const bm of body.blind_memories) {
+      await c.env.DB.prepare(
+        `INSERT INTO blind_memories (
+           id, owner_uid, blind_project_id, ciphertext_base64, nonce_base64,
+           blind_scope, blind_type, blind_tags, confidence, importance, status, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(id) DO UPDATE SET
+           owner_uid = excluded.owner_uid,
+           blind_project_id = excluded.blind_project_id,
+           ciphertext_base64 = excluded.ciphertext_base64,
+           nonce_base64 = excluded.nonce_base64,
+           blind_tags = excluded.blind_tags,
+           confidence = excluded.confidence,
+           importance = excluded.importance,
+           status = excluded.status,
+           updated_at = excluded.updated_at`
+      )
+        .bind(
+          bm.id,
+          userCtx.uid,
+          bm.blind_project_id || projectSlug,
+          bm.ciphertext_base64,
+          bm.nonce_base64,
+          bm.blind_scope || 'project',
+          bm.blind_type || null,
+          JSON.stringify(bm.blind_tags || []),
+          bm.confidence ?? 1.0,
+          bm.importance ?? 0.8,
+          bm.status || 'active',
+          bm.created_at || new Date().toISOString(),
+          bm.updated_at || new Date().toISOString()
+        )
+        .run();
+      blindMemoriesStored++;
+    }
+  }
+
+  // 2. Process and store Blind Skills if provided
+  let blindSkillsStored = 0;
+  if (body.blind_skills && Array.isArray(body.blind_skills)) {
+    for (const bs of body.blind_skills) {
+      await c.env.DB.prepare(
+        `INSERT INTO blind_skills (
+           id, owner_uid, blind_project_id, ciphertext_base64, nonce_base64,
+           success_count, failure_count, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(id) DO UPDATE SET
+           owner_uid = excluded.owner_uid,
+           blind_project_id = excluded.blind_project_id,
+           ciphertext_base64 = excluded.ciphertext_base64,
+           nonce_base64 = excluded.nonce_base64,
+           success_count = excluded.success_count,
+           failure_count = excluded.failure_count,
+           updated_at = excluded.updated_at`
+      )
+        .bind(
+          bs.id,
+          userCtx.uid,
+          bs.blind_project_id || projectSlug,
+          bs.ciphertext_base64,
+          bs.nonce_base64,
+          bs.success_count ?? 0,
+          bs.failure_count ?? 0,
+          bs.created_at || new Date().toISOString(),
+          bs.updated_at || new Date().toISOString()
+        )
+        .run();
+      blindSkillsStored++;
+    }
+  }
+
+  // 3. Normalize manifest
+  const fileItems = body.encrypted_deltas || body.documents || [];
   const manifest = body.manifest || {
     version: 1,
     project_slug: projectSlug,
-    files: (body.documents || []).map((d: any) => ({
+    files: fileItems.map((d: any) => ({
       path: d.relative_path || d.path,
       category: d.category || 'general',
       sha256: d.content_hash || d.sha256,
-      size_bytes: d.content ? d.content.length : 0,
+      size_bytes: d.size_bytes || (d.ciphertext_base64 ? d.ciphertext_base64.length : (d.content ? d.content.length : 0)),
+      nonce_base64: d.nonce_base64,
       compressed_l0: d.l0_abstract,
       compressed_l1: d.l1_overview,
       updated_at: new Date().toISOString(),
     })),
-    memories_count: body.memories?.length || 0,
-    skills_count: body.skills?.length || 0,
+    memories_count: body.blind_memories?.length || body.memories?.length || 0,
+    skills_count: body.blind_skills?.length || body.skills?.length || 0,
     created_at: body.timestamp || new Date().toISOString(),
   };
-
-  // Normalize deltas
-  const deltas = body.deltas || (body.documents || []).map((d: any) => ({
-    path: d.relative_path || d.path,
-    sha256: d.content_hash || d.sha256,
-    content_base64: d.content ? btoa(d.content) : '',
-  }));
 
   const manifestStr = JSON.stringify(manifest);
   // Calculate SHA-256 hash
@@ -85,7 +154,6 @@ syncRouter.post('/sync/push', async (c) => {
   const projectId = body.project_id || `proj_${crypto.randomUUID()}`;
   const projectName = body.project_name || projectSlug;
 
-
   await c.env.DB.prepare(
     `INSERT INTO cloud_projects (id, owner_uid, org_id, slug, name, current_manifest_hash, created_at, updated_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now'))
@@ -96,7 +164,6 @@ syncRouter.post('/sync/push', async (c) => {
     .bind(projectId, userCtx.uid, userCtx.org_id || null, projectSlug, projectName, manifestHash)
     .run();
 
-  // Find the exact project id in case of conflict update
   const projRow = await c.env.DB.prepare(
     `SELECT id FROM cloud_projects WHERE owner_uid = ?1 AND slug = ?2`
   )
@@ -113,9 +180,33 @@ syncRouter.post('/sync/push', async (c) => {
     .bind(manifestHash, activeProjectId, manifestStr)
     .run();
 
-  // Store deltas in R2 if provided
+  // 4. Store encrypted or plaintext deltas in R2
   let deltasStored = 0;
-  if (deltas && deltas.length > 0 && c.env.STORAGE) {
+  if (c.env.STORAGE) {
+    // Encrypted deltas (Zero-Knowledge Blind Mode)
+    if (body.encrypted_deltas && Array.isArray(body.encrypted_deltas)) {
+      for (const ed of body.encrypted_deltas) {
+        const key = `blobs/${projectSlug}/${ed.sha256}`;
+        const binary = Uint8Array.from(atob(ed.ciphertext_base64), (m) => m.charCodeAt(0));
+        await c.env.STORAGE.put(key, binary, {
+          customMetadata: {
+            path: ed.path,
+            nonce_base64: ed.nonce_base64,
+            project_slug: projectSlug,
+            owner_uid: userCtx.uid,
+          },
+        });
+        deltasStored++;
+      }
+    }
+
+    // Standard plaintext deltas (Legacy / Non-blind fallback)
+    const deltas = body.deltas || (body.documents || []).map((d: any) => ({
+      path: d.relative_path || d.path,
+      sha256: d.content_hash || d.sha256,
+      content_base64: d.content ? btoa(d.content) : '',
+    }));
+
     for (const delta of deltas) {
       if (delta.content_base64) {
         const key = `blobs/${projectSlug}/${delta.sha256}`;
@@ -134,25 +225,26 @@ syncRouter.post('/sync/push', async (c) => {
 
   return c.json({
     success: true,
+    is_blind: !!(body.blind_memories || body.encrypted_deltas),
     project_id: activeProjectId,
     project_slug: projectSlug,
     manifest_hash: manifestHash,
     files_tracked: manifest.files.length,
-    memories_count: manifest.memories_count,
-    skills_count: manifest.skills_count,
+    blind_memories_stored: blindMemoriesStored,
+    blind_skills_stored: blindSkillsStored,
     deltas_stored: deltasStored,
     timestamp: new Date().toISOString(),
   });
 });
 
 
-// GET /api/v1/sync/pull - Pull latest project manifest and metadata
+// GET /api/v1/sync/pull - Pull latest project manifest, blind memories & skills
 syncRouter.get('/sync/pull', async (c) => {
   const userCtx = c.get('userCtx');
-  const projectSlug = c.req.query('project');
+  const projectSlug = c.req.query('project') || c.req.query('blind_project_id');
 
   if (!projectSlug) {
-    return c.json({ error: 'BAD_REQUEST', message: 'project query param required' }, 400);
+    return c.json({ error: 'BAD_REQUEST', message: 'project or blind_project_id query param required' }, 400);
   }
 
   const project = await c.env.DB.prepare(
@@ -161,27 +253,87 @@ syncRouter.get('/sync/pull', async (c) => {
     .bind(userCtx.uid, projectSlug)
     .first<any>();
 
-  if (!project || !project.current_manifest_hash) {
-    return c.json({ error: 'NOT_FOUND', message: 'No manifest found for project' }, 404);
+  let manifest: any = null;
+  let manifestHash: string | null = null;
+  if (project && project.current_manifest_hash) {
+    manifestHash = project.current_manifest_hash;
+    const manifestRow = await c.env.DB.prepare(
+      `SELECT manifest_json FROM cloud_manifests WHERE hash = ?1`
+    )
+      .bind(manifestHash)
+      .first<{ manifest_json: string }>();
+
+    if (manifestRow) {
+      manifest = JSON.parse(manifestRow.manifest_json);
+    }
   }
 
-  const manifestRow = await c.env.DB.prepare(
-    `SELECT manifest_json, created_at FROM cloud_manifests WHERE hash = ?1`
+  // Fetch Blind Memories for this project + global memories
+  const rawMem = await c.env.DB.prepare(
+    `SELECT id, blind_project_id, ciphertext_base64, nonce_base64, blind_scope, blind_type, blind_tags, confidence, importance, status, created_at, updated_at
+     FROM blind_memories
+     WHERE owner_uid = ?1 AND (blind_project_id = ?2 OR blind_scope = 'global')
+     ORDER BY updated_at DESC LIMIT 5000`
   )
-    .bind(project.current_manifest_hash)
-    .first<{ manifest_json: string; created_at: string }>();
+    .bind(userCtx.uid, projectSlug)
+    .all<BlindMemoryRecord>();
 
-  if (!manifestRow) {
-    return c.json({ error: 'NOT_FOUND', message: 'Manifest data missing' }, 404);
-  }
+  console.log(`[SYNC-PULL] uid=${userCtx.uid} slug=${projectSlug} rawMem=`, JSON.stringify(rawMem));
+  const blindMemories = rawMem.results || [];
+
+  // Parse blind_tags JSON
+  const parsedMemories = (blindMemories || []).map((m: any) => ({
+    ...m,
+    blind_tags: typeof m.blind_tags === 'string' ? JSON.parse(m.blind_tags) : m.blind_tags,
+  }));
+
+  // Fetch Blind Skills
+  const rawSkills = await c.env.DB.prepare(
+    `SELECT id, blind_project_id, ciphertext_base64, nonce_base64, success_count, failure_count, created_at, updated_at
+     FROM blind_skills
+     WHERE owner_uid = ?1 AND (blind_project_id = ?2 OR blind_project_id IS NULL)
+     ORDER BY updated_at DESC LIMIT 1000`
+  )
+    .bind(userCtx.uid, projectSlug)
+    .all<BlindSkillRecord>();
+  const blindSkills = rawSkills.results || [];
 
   return c.json({
-    project_id: project.id,
-    project_slug: project.slug,
-    manifest_hash: project.current_manifest_hash,
-    manifest: JSON.parse(manifestRow.manifest_json),
-    updated_at: project.updated_at,
+    success: true,
+    project_id: project ? project.id : null,
+    project_slug: projectSlug,
+    manifest_hash: manifestHash,
+    manifest,
+    blind_memories: parsedMemories,
+    blind_skills: blindSkills || [],
+    updated_at: project ? project.updated_at : new Date().toISOString(),
   });
+});
+
+// GET /api/v1/sync/blob/:project/:sha256 - Stream encrypted document / plan chunk from R2
+syncRouter.get('/sync/blob/:project/:sha256', async (c) => {
+  const userCtx = c.get('userCtx');
+  const projectSlug = c.req.param('project');
+  const sha256 = c.req.param('sha256');
+
+  const key = `blobs/${projectSlug}/${sha256}`;
+  const obj = await c.env.STORAGE?.get(key);
+  if (!obj) {
+    return c.json({ error: 'NOT_FOUND', message: 'Encrypted chunk not found in R2' }, 404);
+  }
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('etag', obj.httpEtag);
+  headers.set('Content-Type', 'application/octet-stream');
+  if (obj.customMetadata?.nonce_base64) {
+    headers.set('X-Nonce-Base64', obj.customMetadata.nonce_base64);
+  }
+  if (obj.customMetadata?.path) {
+    headers.set('X-Path', obj.customMetadata.path);
+  }
+
+  return new Response(obj.body, { headers });
 });
 
 // GET /api/v1/sync/restore/:project_id - Disaster recovery restore endpoint
@@ -212,7 +364,6 @@ syncRouter.get('/sync/restore/:project_id', async (c) => {
 
   const manifest = JSON.parse(manifestRow.manifest_json);
 
-  // Return restore manifest bundle
   return c.json({
     project: {
       id: project.id,

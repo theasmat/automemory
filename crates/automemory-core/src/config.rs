@@ -8,6 +8,8 @@ pub struct GlobalConfig {
     #[serde(default = "default_version")]
     pub version: u32,
     #[serde(default)]
+    pub cloud: CloudConfig,
+    #[serde(default)]
     pub vault: VaultConfig,
     #[serde(default)]
     pub defaults: DefaultSettings,
@@ -19,10 +21,31 @@ fn default_version() -> u32 {
     1
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudConfig {
+    pub endpoint: Option<String>,
+    pub auth_token: Option<String>,
+    pub encryption_key: Option<String>,
+    #[serde(default = "default_true")]
+    pub auto_sync: bool,
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: None,
+            auth_token: None,
+            encryption_key: None,
+            auto_sync: true,
+        }
+    }
+}
+
 impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
             version: 1,
+            cloud: CloudConfig::default(),
             vault: VaultConfig::default(),
             defaults: DefaultSettings::default(),
             projects: Vec::new(),
@@ -34,6 +57,7 @@ impl Default for GlobalConfig {
 pub struct VaultConfig {
     pub remote_url: Option<String>,
     pub local_vault_dir: Option<PathBuf>,
+    pub encryption_key: Option<String>,
     #[serde(default = "default_true")]
     pub auto_sync: bool,
     #[serde(default = "default_true")]
@@ -55,6 +79,7 @@ impl Default for VaultConfig {
         Self {
             remote_url: None,
             local_vault_dir: None,
+            encryption_key: None,
             auto_sync: true,
             auto_push: true,
             sync_interval_seconds: 300,

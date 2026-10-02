@@ -74,6 +74,40 @@ CREATE TABLE IF NOT EXISTS cloud_manifests (
     created_at TEXT NOT NULL
 );
 
+-- Zero-Knowledge Blind Storage Tables
+CREATE TABLE IF NOT EXISTS blind_memories (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    blind_project_id TEXT,
+    ciphertext_base64 TEXT NOT NULL,
+    nonce_base64 TEXT NOT NULL,
+    blind_scope TEXT NOT NULL DEFAULT 'project',
+    blind_type TEXT,
+    blind_tags TEXT DEFAULT '[]',
+    confidence REAL DEFAULT 1.0,
+    importance REAL DEFAULT 0.8,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_blind_memories_proj ON blind_memories(owner_uid, blind_project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_memories_status ON blind_memories(owner_uid, status);
+
+CREATE TABLE IF NOT EXISTS blind_skills (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    blind_project_id TEXT,
+    ciphertext_base64 TEXT NOT NULL,
+    nonce_base64 TEXT NOT NULL,
+    success_count INTEGER DEFAULT 0,
+    failure_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_blind_skills_proj ON blind_skills(owner_uid, blind_project_id);
+
 -- Seed default configurable pricing plans
 INSERT OR IGNORE INTO pricing_plans (plan_id, display_name, max_active_devices, max_team_members, max_storage_bytes, allowed_features, is_active, created_at, updated_at)
 VALUES 

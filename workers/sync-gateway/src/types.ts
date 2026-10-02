@@ -53,12 +53,47 @@ export interface DeviceLease {
   expires_at: string;
 }
 
+export interface BlindMemoryRecord {
+  id: string;
+  blind_project_id?: string;
+  ciphertext_base64: string;
+  nonce_base64: string;
+  blind_scope: string; // "global" | "project"
+  blind_type?: string;
+  blind_tags?: string[];
+  confidence?: number;
+  importance?: number;
+  status?: string; // "active" | "archived"
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlindSkillRecord {
+  id: string;
+  blind_project_id?: string;
+  ciphertext_base64: string;
+  nonce_base64: string;
+  success_count?: number;
+  failure_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EncryptedDelta {
+  path: string;
+  sha256: string;
+  ciphertext_base64: string;
+  nonce_base64: string;
+  size_bytes?: number;
+}
+
 export interface SyncPushPayload {
   project_id?: string;
   project_slug: string;
   project_name?: string;
   device_id: string;
-  manifest: {
+  is_blind?: boolean;
+  manifest?: {
     version: number;
     project_slug: string;
     files: Array<{
@@ -79,4 +114,8 @@ export interface SyncPushPayload {
     sha256: string;
     content_base64: string;
   }>;
+  blind_memories?: BlindMemoryRecord[];
+  blind_skills?: BlindSkillRecord[];
+  encrypted_deltas?: EncryptedDelta[];
 }
+

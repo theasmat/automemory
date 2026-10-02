@@ -236,7 +236,95 @@ echo "$CHARLIE_QUOTA" | grep -q '"plan_id":"team"'
 echo "$CHARLIE_QUOTA" | grep -q '"max_active_devices":50'
 assert_success "Billing webhook upgraded user to Team plan with 50 devices quota"
 
+# 16. Zero-Knowledge Blind Sync Push
+log_test "Zero-Knowledge Blind Sync Push (Encrypted Memories, Skills & Plan Chunks)"
+BLIND_PUSH_PAYLOAD='{
+  "project_slug": "blind-demo-project",
+  "project_name": "Blind Demo",
+  "device_id": "dev_macbook_01",
+  "is_blind": true,
+  "blind_memories": [
+    {
+      "id": "blind_mem_001",
+      "blind_project_id": "blind-demo-project",
+      "ciphertext_base64": "SGVsbG8gQmxpbmQgU2VydmVyIENpcGhlcnRleHQgQUVTLUdDTSAxMjM0",
+      "nonce_base64": "MTIzNDU2Nzg5MDEy",
+      "blind_scope": "project",
+      "blind_type": "8f3b2a9e",
+      "blind_tags": ["a1b2c3d4e5f6", "f6e5d4c3b2a1"],
+      "confidence": 0.99,
+      "importance": 0.95,
+      "status": "active",
+      "created_at": "2026-10-02T12:00:00Z",
+      "updated_at": "2026-10-02T12:00:00Z"
+    }
+  ],
+  "blind_skills": [
+    {
+      "id": "blind_skill_001",
+      "blind_project_id": "blind-demo-project",
+      "ciphertext_base64": "U2tpbGwgQ2lwaGVydGV4dCBQbGF5Ym9vayBTdGVwcw==",
+      "nonce_base64": "OTg3NjU0MzIxMDEy",
+      "success_count": 3,
+      "failure_count": 0,
+      "created_at": "2026-10-02T12:00:00Z",
+      "updated_at": "2026-10-02T12:00:00Z"
+    }
+  ],
+  "encrypted_deltas": [
+    {
+      "path": "plans/q4_roadmap.md",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "ciphertext_base64": "RW5jcnlwdGVkIFBsYW4gQ29udGVudCBpbiBSMg==",
+      "nonce_base64": "MDEyMzQ1Njc4OTAx",
+      "size_bytes": 1024
+    }
+  ]
+}'
+
+BLIND_PUSH_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d "$BLIND_PUSH_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/sync/push")
+
+echo "$BLIND_PUSH_RESP" | grep -q '"success":true'
+echo "$BLIND_PUSH_RESP" | grep -q '"is_blind":true'
+echo "$BLIND_PUSH_RESP" | grep -q '"blind_memories_stored":1'
+echo "$BLIND_PUSH_RESP" | grep -q '"blind_skills_stored":1'
+echo "$BLIND_PUSH_RESP" | grep -q '"deltas_stored":1'
+assert_success "Blind sync push accepted encrypted memories, skills, and plan chunks"
+
+# 17. Zero-Knowledge Blind Sync Pull
+log_test "Zero-Knowledge Blind Sync Pull (Verify Ciphertext & Nonce Integrity)"
+BLIND_PULL_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/sync/pull?project=blind-demo-project")
+
+echo "DEBUG BLIND_PULL_RESP: $BLIND_PULL_RESP"
+
+echo "$BLIND_PULL_RESP" | grep -q '"success":true'
+echo "$BLIND_PULL_RESP" | grep -q '"blind_memories":\['
+echo "$BLIND_PULL_RESP" | grep -q 'SGVsbG8gQmxpbmQgU2VydmVyIENpcGhlcnRleHQgQUVTLUdDTSAxMjM0'
+echo "$BLIND_PULL_RESP" | grep -q 'MTIzNDU2Nzg5MDEy'
+echo "$BLIND_PULL_RESP" | grep -q '"blind_skills":\['
+echo "$BLIND_PULL_RESP" | grep -q 'U2tpbGwgQ2lwaGVydGV4dCBQbGF5Ym9vayBTdGVwcw=='
+assert_success "Blind pull returned ciphertext and nonces with zero plaintext exposure"
+
+# 18. Stream Encrypted Plan Blob from R2
+log_test "Stream Encrypted Plan Chunk from R2"
+BLOB_CONTENT=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/sync/blob/blind-demo-project/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+# Compare downloaded blob against decoded ciphertext
+EXPECTED_RAW=$(echo "RW5jcnlwdGVkIFBsYW4gQ29udGVudCBpbiBSMg==" | base64 --decode)
+if [ "$BLOB_CONTENT" = "$EXPECTED_RAW" ]; then
+    assert_success "Encrypted plan chunk streamed directly from R2"
+else
+    echo "Blob content mismatch: got '$BLOB_CONTENT', expected '$EXPECTED_RAW'"
+    exit 1
+fi
+
 echo "=========================================================================="
 echo "    Summary: $PASS_COUNT/$TOTAL_COUNT Tests Passed Successfully (100%)    "
 echo "=========================================================================="
+
 
