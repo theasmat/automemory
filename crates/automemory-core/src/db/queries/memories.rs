@@ -164,7 +164,10 @@ impl Database {
         let mut sql = "SELECT id, scope, project_id, memory_type, content, summary, confidence, importance, freshness, status, source_kind, created_at, updated_at, last_recalled_at, tags, entities, metadata FROM memories WHERE 1=1".to_string();
 
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (scope = 'global' OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (scope = 'global' OR project_id = '{0}' OR project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
+                pid
+            ));
         }
         if let Some(s) = status {
             sql.push_str(&format!(" AND status = '{}'", s));
@@ -220,7 +223,10 @@ impl Database {
         "#.to_string();
 
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (m.scope = 'global' OR m.project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (m.scope = 'global' OR m.project_id = '{0}' OR m.project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR m.project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
+                pid
+            ));
         }
 
         sql.push_str(" ORDER BY rank ASC LIMIT ?2");

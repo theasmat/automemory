@@ -337,8 +337,12 @@ pub async fn pull(project_opt: Option<String>, endpoint_opt: Option<String>, tok
     // 1. Pull latest commits from GitHub memory vault if remote is configured
     let config = Config::default_config();
     let vault_path = global_cfg.vault.local_vault_dir.clone().unwrap_or(config.vault_dir.clone());
-    if automemory_core::sync::GitSync::is_git_repo(&vault_path) && global_cfg.vault.remote_url.is_some() {
-        println!("Pulling latest commits from GitHub memory vault: {}...", global_cfg.vault.remote_url.as_deref().unwrap_or_default());
+    if let Some(ref remote_url) = global_cfg.vault.remote_url {
+        if !automemory_core::sync::GitSync::is_git_repo(&vault_path) {
+            let _ = automemory_core::sync::GitSync::init_repo(&vault_path);
+        }
+        let _ = automemory_core::sync::GitSync::set_remote(&vault_path, "origin", remote_url);
+        println!("Pulling latest commits from GitHub memory vault: {}...", remote_url);
         if let Err(e) = automemory_core::sync::GitSync::pull(&vault_path, None, None) {
             println!("ℹ Git pull note: {}", e);
         } else {
@@ -642,21 +646,25 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
     manager.export_to_vault()?;
     println!("✓ Exported database to text-first vault at: {:?}", vault_path);
 
-    // If vault is a git repository, commit and push
-    if automemory_core::sync::GitSync::is_git_repo(&vault_path) {
-        let msg = format!("AutoMemory: automated vault sync at {}", Utc::now().to_rfc3339());
-        let committed = automemory_core::sync::GitSync::commit_all(&vault_path, &msg)?;
-        if committed {
-            println!("✓ Committed vault updates to local git repository.");
-            if global_cfg.vault.auto_push {
-                if let Some(ref remote_url) = global_cfg.vault.remote_url {
-                    println!("Pushing vault updates to GitHub remote: {}...", remote_url);
-                    if let Err(e) = automemory_core::sync::GitSync::push(&vault_path, None, None) {
-                        println!("ℹ Git push note: {}", e);
-                    } else {
-                        println!("✓ Successfully pushed vault updates to GitHub!");
-                    }
-                }
+    // Ensure vault git repository is initialized
+    if !automemory_core::sync::GitSync::is_git_repo(&vault_path) {
+        let _ = automemory_core::sync::GitSync::init_repo(&vault_path);
+    }
+
+    let msg = format!("AutoMemory: automated vault sync at {}", Utc::now().to_rfc3339());
+    let committed = automemory_core::sync::GitSync::commit_all(&vault_path, &msg)?;
+    if committed {
+        println!("✓ Committed vault updates to local git repository.");
+    }
+
+    if global_cfg.vault.auto_push {
+        if let Some(ref remote_url) = global_cfg.vault.remote_url {
+            let _ = automemory_core::sync::GitSync::set_remote(&vault_path, "origin", remote_url);
+            println!("Pushing vault updates to GitHub remote: {}...", remote_url);
+            if let Err(e) = automemory_core::sync::GitSync::push(&vault_path, None, None) {
+                println!("ℹ Git push note: {}", e);
+            } else {
+                println!("✓ Successfully pushed vault updates to GitHub!");
             }
         }
     }

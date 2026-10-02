@@ -292,12 +292,6 @@ enum ProjectCommands {
         /// Project name or local directory path
         name: String,
     },
-
-    /// Migrate a local .automemory project config into global config and clean up local folder
-    Migrate {
-        /// Optional path to project directory
-        path: Option<String>,
-    },
 }
 
 
@@ -492,9 +486,6 @@ async fn main() -> Result<()> {
             }
             ProjectCommands::Remove { name } => {
                 commands::project::remove(&name)?;
-            }
-            ProjectCommands::Migrate { path } => {
-                commands::project::migrate(path)?;
             }
         },
         Commands::Memory { command } => match command {

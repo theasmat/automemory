@@ -62,7 +62,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, name, description, trigger_patterns, preconditions, steps, caveats, success_count, failure_count, source_trace_ids, created_at, updated_at FROM procedural_skills WHERE 1=1".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{0}' OR project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
+                pid
+            ));
         }
         sql.push_str(" ORDER BY success_count DESC, updated_at DESC LIMIT ?1");
 
