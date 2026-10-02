@@ -92,7 +92,14 @@ impl<'a> DocCompiler<'a> {
             let content = if file_path.exists() {
                 fs::read_to_string(&file_path).unwrap_or_default()
             } else {
-                continue;
+                let cat_path = context_root.join("docs").join(&doc.category).join(
+                    Path::new(&doc.relative_path).file_name().unwrap_or_default()
+                );
+                if cat_path.exists() {
+                    fs::read_to_string(&cat_path).unwrap_or_default()
+                } else {
+                    continue;
+                }
             };
 
             let title = if !doc.title.is_empty() {

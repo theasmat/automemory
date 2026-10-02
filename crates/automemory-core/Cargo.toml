@@ -23,4 +23,5 @@ reqwest.workspace = true
 async-trait.workspace = true
 notify.workspace = true
 glob.workspace = true
+toml.workspace = true
 

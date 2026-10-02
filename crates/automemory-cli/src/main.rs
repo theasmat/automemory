@@ -261,24 +261,45 @@ enum ModeCommands {
 
 #[derive(Subcommand)]
 enum ProjectCommands {
-    /// List all registered projects
+    /// List all registered projects in global config (~/.automemory/config.toml)
     List,
 
-    /// Register a project directory
+    /// Register a project in the global registry
     Register {
-        /// Project unique slug (e.g. my-app)
+        /// Project unique name or slug (defaults to directory name)
         #[arg(short, long)]
-        slug: String,
+        name: Option<String>,
 
-        /// Human-readable display name
+        /// Local path to project root (defaults to current directory)
         #[arg(short, long)]
+        path: Option<String>,
+
+        /// Comma-separated list of trackable file patterns (e.g. 'plans/**/*.md,docs/**/*.md')
+        #[arg(short, long)]
+        track: Option<String>,
+
+        /// Dedicated remote GitHub vault repository URL
+        #[arg(long)]
+        vault_repo: Option<String>,
+
+        /// Automatically restore git-ignored files to workspace on sync pull
+        #[arg(long, default_value_t = true)]
+        restore_to_workspace: bool,
+    },
+
+    /// Remove a project from the global registry
+    Remove {
+        /// Project name or local directory path
         name: String,
+    },
 
-        /// Local path to project root
-        #[arg(short, long)]
+    /// Migrate a local .automemory project config into global config and clean up local folder
+    Migrate {
+        /// Optional path to project directory
         path: Option<String>,
     },
 }
+
 
 #[derive(Subcommand)]
 enum MemoryCommands {
@@ -466,8 +487,14 @@ async fn main() -> Result<()> {
         }
         Commands::Project { command } => match command {
             ProjectCommands::List => commands::project::list()?,
-            ProjectCommands::Register { slug, name, path } => {
-                commands::project::register(&slug, &name, path)?;
+            ProjectCommands::Register { name, path, track, vault_repo, restore_to_workspace } => {
+                commands::project::register(name, path, track, vault_repo, restore_to_workspace)?;
+            }
+            ProjectCommands::Remove { name } => {
+                commands::project::remove(&name)?;
+            }
+            ProjectCommands::Migrate { path } => {
+                commands::project::migrate(path)?;
             }
         },
         Commands::Memory { command } => match command {

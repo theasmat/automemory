@@ -34,6 +34,10 @@ impl DocumentScanner {
                 "prd/**/*.md".to_string(),
                 "adr/**/*.md".to_string(),
                 "rfc/**/*.md".to_string(),
+                "plans/**/*.md".to_string(),
+                "plan.md".to_string(),
+                "PLAN.md".to_string(),
+                "ROADMAP.md".to_string(),
                 "ARCHITECTURE.md".to_string(),
                 ".cursor/rules/**/*.md".to_string(),
                 "AGENTS.md".to_string(),
@@ -111,6 +115,8 @@ impl DocumentScanner {
             "business-rules"
         } else if lower_path.contains("/api/") || lower_path.contains("spec") || lower_path.contains("rfc") {
             "api"
+        } else if lower_path.contains("plan") || lower_path.contains("roadmap") || lower_path.contains("todo") {
+            "plan"
         } else {
             "general"
         }

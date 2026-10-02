@@ -52,6 +52,8 @@ pub fn track(
             "business-rules".to_string()
         } else if lower.contains("api") || lower.contains("spec") || lower.contains("schema") {
             "api".to_string()
+        } else if lower.contains("plan") || lower.contains("roadmap") || lower.contains("todo") {
+            "plan".to_string()
         } else {
             "general".to_string()
         }
@@ -167,12 +169,25 @@ pub fn compile(project_opt: Option<String>) -> Result<()> {
 
 pub fn scan(path_opt: Option<String>, project_opt: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let target_dir = path_opt.map(PathBuf::from).unwrap_or(cwd.clone());
+    let target_dir = path_opt.map(PathBuf::from).unwrap_or(cwd);
     let config = Config::default_config();
     let db = std::sync::Arc::new(Database::open(&config.db_path)?);
 
-    let project_id = project_opt.unwrap_or_else(|| infer_project_id(&cwd));
-    let project = match db.get_project_by_id(&project_id)? {
+    let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    let registered_proj = global_cfg.find_project_by_path(&target_dir);
+
+    let project_id = project_opt.unwrap_or_else(|| {
+        registered_proj
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| infer_project_id(&target_dir))
+    });
+
+    let trackable_patterns = registered_proj
+        .map(|p| p.trackable_files.clone())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(automemory_core::config::default_trackable_files);
+
+    let mut project = match db.get_project_by_id(&project_id)? {
         Some(p) => p,
         None => Project {
             id: project_id.clone(),
@@ -186,6 +201,8 @@ pub fn scan(path_opt: Option<String>, project_opt: Option<String>) -> Result<()>
             updated_at: chrono::Utc::now(),
         },
     };
+
+    project.document_config.include_patterns = trackable_patterns;
 
     println!("Scanning project directory for specifications & architecture docs...");
     println!("  📁 Target:  {}", target_dir.display());
@@ -204,6 +221,14 @@ pub fn scan(path_opt: Option<String>, project_opt: Option<String>) -> Result<()>
 }
 
 fn infer_project_id(cwd: &Path) -> String {
+    // 1. Check global config (~/.automemory/config.toml)
+    if let Ok(global_cfg) = automemory_core::config::GlobalConfig::load() {
+        if let Some(p) = global_cfg.find_project_by_path(cwd) {
+            return p.name.clone();
+        }
+    }
+
+    // 2. Fallback to legacy .automemory/config.json if present
     let cfg_path = cwd.join(".automemory").join("config.json");
     if let Ok(content) = fs::read_to_string(&cfg_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -213,6 +238,7 @@ fn infer_project_id(cwd: &Path) -> String {
         }
     }
 
+    // 3. Fallback to folder name
     cwd.file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "default-project".to_string())

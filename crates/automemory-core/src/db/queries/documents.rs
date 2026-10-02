@@ -84,7 +84,7 @@ impl Database {
     pub fn list_all_tracked_documents(&self, project_id: Option<&str>) -> Result<Vec<TrackedDocument>> {
         let conn = self.conn();
         let query = match project_id {
-            Some(_) => "SELECT id, project_id, relative_path, category, title, content_hash, remote_synced_hash, summary, l0_abstract, l1_overview, last_scanned_at, is_deleted FROM tracked_documents WHERE project_id = ?1 AND is_deleted = 0 ORDER BY relative_path ASC",
+            Some(_) => "SELECT id, project_id, relative_path, category, title, content_hash, remote_synced_hash, summary, l0_abstract, l1_overview, last_scanned_at, is_deleted FROM tracked_documents WHERE (project_id = ?1 OR project_id IN (SELECT slug FROM projects WHERE id = ?1) OR project_id IN (SELECT id FROM projects WHERE slug = ?1)) AND is_deleted = 0 ORDER BY relative_path ASC",
             None => "SELECT id, project_id, relative_path, category, title, content_hash, remote_synced_hash, summary, l0_abstract, l1_overview, last_scanned_at, is_deleted FROM tracked_documents WHERE is_deleted = 0 ORDER BY project_id, relative_path ASC",
         };
 

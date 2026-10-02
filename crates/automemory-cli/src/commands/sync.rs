@@ -315,16 +315,82 @@ pub async fn push(project_opt: Option<String>, endpoint_opt: Option<String>, tok
     println!("✓ Successfully pushed delta for project '{}'!", project_id);
     println!("  📄 Documents Synced: {} delta files", payload.documents.len());
     println!("  🧠 Active Memories:  {} synced", payload.memories.len());
-    println!("  📦 Local Snapshot:   {}", delta_file.display());
+    // Also update text-first Git Vault and push to GitHub if configured
+    let _ = export_vault(None);
 
     Ok(())
 }
 
 pub async fn pull(project_opt: Option<String>, endpoint_opt: Option<String>, token_opt: Option<String>) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_id = project_opt.unwrap_or_else(|| infer_project_id(&cwd));
+    let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    let registered_proj = global_cfg.find_project_by_path(&cwd);
+
+    let project_id = project_opt.unwrap_or_else(|| {
+        registered_proj
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| infer_project_id(&cwd))
+    });
 
     println!("Pulling remote updates for project '{}'...", project_id);
+
+    // 1. Pull latest commits from GitHub memory vault if remote is configured
+    let config = Config::default_config();
+    let vault_path = global_cfg.vault.local_vault_dir.clone().unwrap_or(config.vault_dir.clone());
+    if automemory_core::sync::GitSync::is_git_repo(&vault_path) && global_cfg.vault.remote_url.is_some() {
+        println!("Pulling latest commits from GitHub memory vault: {}...", global_cfg.vault.remote_url.as_deref().unwrap_or_default());
+        if let Err(e) = automemory_core::sync::GitSync::pull(&vault_path, None, None) {
+            println!("ℹ Git pull note: {}", e);
+        } else {
+            println!("✓ Successfully pulled latest vault commits from GitHub.");
+        }
+    }
+
+    // 2. Re-materialize git-ignored files to workspace if restore_to_workspace is enabled
+    let restore_enabled = registered_proj.map(|p| p.restore_to_workspace).unwrap_or(true);
+    let target_dir = registered_proj.map(|p| PathBuf::from(&p.local_dir)).unwrap_or_else(|| cwd.clone());
+
+    if restore_enabled {
+        let proj_vault_docs = vault_path.join("projects").join(&project_id).join("docs");
+        if proj_vault_docs.exists() {
+            let mut restored_count = 0;
+            if let Ok(entries) = glob::glob(&format!("{}/**/*", proj_vault_docs.display())) {
+                for entry in entries.flatten() {
+                    if entry.is_file() {
+                        if let Ok(rel) = entry.strip_prefix(&proj_vault_docs) {
+                            let dest = target_dir.join(rel);
+                            let should_write = if !dest.exists() {
+                                true
+                            } else if let (Ok(c1), Ok(c2)) = (fs::read(&entry), fs::read(&dest)) {
+                                c1 != c2
+                            } else {
+                                false
+                            };
+
+                            if should_write {
+                                if let Some(parent) = dest.parent() {
+                                    let _ = fs::create_dir_all(parent);
+                                }
+                                if let Ok(_) = fs::copy(&entry, &dest) {
+                                    restored_count += 1;
+                                    println!("  ✓ Restored document to workspace: {}", rel.display());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if restored_count > 0 {
+                println!("✓ Re-materialized {} git-ignored documents/plans in workspace!", restored_count);
+            }
+        }
+    }
+
+    // 3. Import vault updates into local SQLite database
+    if let Ok(db) = Database::open(&config.db_path) {
+        let manager = automemory_core::sync::VaultManager::new(&db, &vault_path);
+        let _ = manager.import_from_vault();
+    }
 
     let cfg_path = cwd.join(".automemory").join("config.json");
     let (endpoint, auth_token) = if let Some(ep) = endpoint_opt {
@@ -361,7 +427,7 @@ pub async fn pull(project_opt: Option<String>, endpoint_opt: Option<String>, tok
             }
         }
     } else {
-        println!("ℹ No remote endpoint configured. Using local single source.");
+        println!("✓ Single-source context is up to date.");
     }
 
     Ok(())
@@ -563,20 +629,49 @@ fn find_fuzzy_match_recursive(dir: &Path, cwd: &Path, expected_hash: &str, targe
     None
 }
 
-// Backward compatibility helpers
 pub fn export_vault(path: Option<String>) -> Result<()> {
     let config = Config::default_config();
-    let vault_path = path.map(PathBuf::from).unwrap_or(config.vault_dir);
+    let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    let vault_path = path
+        .map(PathBuf::from)
+        .or(global_cfg.vault.local_vault_dir.clone())
+        .unwrap_or(config.vault_dir);
+
     let db = Database::open(&config.db_path)?;
     let manager = automemory_core::sync::VaultManager::new(&db, &vault_path);
     manager.export_to_vault()?;
-    println!("✓ Exported database to vault at: {:?}", vault_path);
+    println!("✓ Exported database to text-first vault at: {:?}", vault_path);
+
+    // If vault is a git repository, commit and push
+    if automemory_core::sync::GitSync::is_git_repo(&vault_path) {
+        let msg = format!("AutoMemory: automated vault sync at {}", Utc::now().to_rfc3339());
+        let committed = automemory_core::sync::GitSync::commit_all(&vault_path, &msg)?;
+        if committed {
+            println!("✓ Committed vault updates to local git repository.");
+            if global_cfg.vault.auto_push {
+                if let Some(ref remote_url) = global_cfg.vault.remote_url {
+                    println!("Pushing vault updates to GitHub remote: {}...", remote_url);
+                    if let Err(e) = automemory_core::sync::GitSync::push(&vault_path, None, None) {
+                        println!("ℹ Git push note: {}", e);
+                    } else {
+                        println!("✓ Successfully pushed vault updates to GitHub!");
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
 pub fn import_vault(path: Option<String>) -> Result<()> {
     let config = Config::default_config();
-    let vault_path = path.map(PathBuf::from).unwrap_or(config.vault_dir);
+    let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    let vault_path = path
+        .map(PathBuf::from)
+        .or(global_cfg.vault.local_vault_dir.clone())
+        .unwrap_or(config.vault_dir);
+
     let db = Database::open(&config.db_path)?;
     let manager = automemory_core::sync::VaultManager::new(&db, &vault_path);
     manager.import_from_vault()?;
@@ -585,6 +680,14 @@ pub fn import_vault(path: Option<String>) -> Result<()> {
 }
 
 fn infer_project_id(cwd: &Path) -> String {
+    // 1. Check global config (~/.automemory/config.toml)
+    if let Ok(global_cfg) = automemory_core::config::GlobalConfig::load() {
+        if let Some(p) = global_cfg.find_project_by_path(cwd) {
+            return p.name.clone();
+        }
+    }
+
+    // 2. Fallback to legacy .automemory/config.json if present
     let cfg_path = cwd.join(".automemory").join("config.json");
     if let Ok(content) = fs::read_to_string(&cfg_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -594,6 +697,7 @@ fn infer_project_id(cwd: &Path) -> String {
         }
     }
 
+    // 3. Fallback to folder name
     cwd.file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "default-project".to_string())
