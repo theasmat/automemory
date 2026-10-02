@@ -194,8 +194,13 @@ CREATE TABLE IF NOT EXISTS tracked_documents (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     relative_path TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    title TEXT NOT NULL DEFAULT '',
     content_hash TEXT NOT NULL,
+    remote_synced_hash TEXT,
     summary TEXT,
+    l0_abstract TEXT,
+    l1_overview TEXT,
     last_scanned_at TEXT NOT NULL,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     UNIQUE(project_id, relative_path)
@@ -275,3 +280,37 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 
 CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id);
 
+CREATE TABLE IF NOT EXISTS custom_guardrail_rules (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    is_critical INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL,
+    description TEXT NOT NULL,
+    mitigation_hint TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_guardrails_proj ON custom_guardrail_rules(project_id, enabled);
+
+-- Procedural Skills (Consolidated Reusable Playbooks)
+CREATE TABLE IF NOT EXISTS procedural_skills (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    trigger_patterns TEXT NOT NULL,
+    preconditions TEXT NOT NULL,
+    steps TEXT NOT NULL,
+    caveats TEXT NOT NULL,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    source_trace_ids TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_procedural_skills_proj ON procedural_skills(project_id);

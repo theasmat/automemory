@@ -35,6 +35,7 @@ impl Database {
         // Initialize schema
         conn.execute_batch(SCHEMA_SQL)
             .context("Failed to execute database schema")?;
+        run_migrations(&conn);
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -47,6 +48,7 @@ impl Database {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA_SQL)
             .context("Failed to execute schema in memory")?;
+        run_migrations(&conn);
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -56,4 +58,12 @@ impl Database {
     pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("SQLite mutex poisoned")
     }
+}
+
+fn run_migrations(conn: &Connection) {
+    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'", []);
+    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT", []);
+    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT", []);
+    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT", []);
 }

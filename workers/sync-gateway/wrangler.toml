@@ -1,0 +1,19 @@
+name = "automemory-sync-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+FIREBASE_PROJECT_ID = "automemory-pro"
+ADMIN_SECRET = "automemory-admin-dev-secret"
+ENABLE_DEV_AUTH_BYPASS = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "automemory-db"
+database_id = "local-automemory-db"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "automemory-storage"
+preview_bucket_name = "automemory-storage-preview"

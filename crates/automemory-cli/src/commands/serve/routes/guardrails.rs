@@ -1,7 +1,8 @@
 use crate::commands::serve::state::{AppState, SearchParams};
+use automemory_core::guardrails::CustomGuardrailRule;
 use automemory_core::models::*;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -82,9 +83,139 @@ pub async fn api_set_mode(
     (StatusCode::OK, Json(json!({ "success": true, "mode": payload.mode, "project": slug })))
 }
 
-pub async fn api_guardrails_rules() -> impl IntoResponse {
-    let rules = automemory_core::guardrails::GuardrailRule::default_rules();
-    Json(rules)
+pub async fn api_guardrails_rules(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    let defaults = automemory_core::guardrails::GuardrailRule::default_rules();
+    let mut result = Vec::new();
+
+    for (idx, r) in defaults.into_iter().enumerate() {
+        result.push(json!({
+            "id": format!("builtin_{}", idx),
+            "name": r.name,
+            "category": r.category,
+            "pattern": r.pattern,
+            "is_critical": r.is_critical,
+            "action": if r.is_critical { "block" } else { "warn" },
+            "description": r.description,
+            "mitigation_hint": r.mitigation_hint,
+            "is_custom": false,
+            "enabled": true,
+        }));
+    }
+
+    if let Ok(customs) = state.db.list_custom_guardrail_rules(params.project_id.as_deref()) {
+        for c in customs {
+            result.push(json!({
+                "id": c.id,
+                "project_id": c.project_id,
+                "name": c.name,
+                "category": c.category,
+                "pattern": c.pattern,
+                "is_critical": c.is_critical,
+                "action": c.action,
+                "description": c.description,
+                "mitigation_hint": c.mitigation_hint,
+                "is_custom": true,
+                "enabled": c.enabled,
+                "created_at": c.created_at.to_rfc3339(),
+            }));
+        }
+    }
+
+    Json(result)
+}
+
+#[derive(Deserialize)]
+pub struct CreateRulePayload {
+    pub name: String,
+    pub category: Option<String>,
+    pub pattern: String,
+    pub is_critical: Option<bool>,
+    pub action: Option<String>,
+    pub description: Option<String>,
+    pub mitigation_hint: Option<String>,
+    pub project_id: Option<String>,
+}
+
+pub async fn api_guardrail_rule_add(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateRulePayload>,
+) -> impl IntoResponse {
+    if let Err(e) = regex::Regex::new(&payload.pattern) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("Invalid regex pattern: {}", e) })));
+    }
+
+    let rule = CustomGuardrailRule {
+        id: format!("custom_{}", uuid::Uuid::now_v7()),
+        project_id: payload.project_id,
+        name: payload.name,
+        category: payload.category.unwrap_or_else(|| "custom".to_string()),
+        pattern: payload.pattern,
+        is_critical: payload.is_critical.unwrap_or(false),
+        action: payload.action.unwrap_or_else(|| "block".to_string()),
+        description: payload.description.unwrap_or_default(),
+        mitigation_hint: payload.mitigation_hint.unwrap_or_default(),
+        enabled: true,
+        created_at: Utc::now(),
+    };
+
+    match state.db.save_custom_guardrail_rule(&rule) {
+        Ok(()) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "guardrail_rule_added",
+                "id": rule.id,
+                "name": rule.name,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::CREATED, Json(json!({ "success": true, "rule": rule })))
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+    }
+}
+
+pub async fn api_guardrail_rule_delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.db.delete_custom_guardrail_rule(&id) {
+        Ok(true) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "guardrail_rule_deleted",
+                "id": id,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "id": id })))
+        }
+        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Rule not found" }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ToggleRulePayload {
+    pub enabled: bool,
+}
+
+pub async fn api_guardrail_rule_toggle(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<ToggleRulePayload>,
+) -> impl IntoResponse {
+    match state.db.toggle_custom_guardrail_rule(&id, payload.enabled) {
+        Ok(true) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "guardrail_rule_toggled",
+                "id": id,
+                "enabled": payload.enabled,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "id": id, "enabled": payload.enabled })))
+        }
+        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Rule not found" }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+    }
 }
 
 #[derive(Deserialize)]

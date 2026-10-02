@@ -28,6 +28,32 @@ impl Database {
         Ok(())
     }
 
+    fn row_to_proposal(row: &rusqlite::Row) -> rusqlite::Result<ReviewProposal> {
+        let created_at_str: String = row.get(7)?;
+        let decided_at_str: Option<String> = row.get(8)?;
+
+        let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+        let decided_at = decided_at_str.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .ok()
+        });
+
+        Ok(ReviewProposal {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            proposal_type: row.get(2)?,
+            target_id: row.get(3)?,
+            description: row.get(4)?,
+            suggested_action: row.get(5)?,
+            status: row.get(6)?,
+            created_at,
+            decided_at,
+        })
+    }
+
     pub fn list_pending_proposals(&self, project_id: Option<&str>) -> Result<Vec<ReviewProposal>> {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE status = 'pending'".to_string();
@@ -37,37 +63,69 @@ impl Database {
         sql.push_str(" ORDER BY created_at DESC");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| {
-            let created_at_str: String = row.get(7)?;
-            let decided_at_str: Option<String> = row.get(8)?;
-
-            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now());
-            let decided_at = decided_at_str.and_then(|s| {
-                DateTime::parse_from_rfc3339(&s)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .ok()
-            });
-
-            Ok(ReviewProposal {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                proposal_type: row.get(2)?,
-                target_id: row.get(3)?,
-                description: row.get(4)?,
-                suggested_action: row.get(5)?,
-                status: row.get(6)?,
-                created_at,
-                decided_at,
-            })
-        })?;
+        let rows = stmt.query_map([], |row| Self::row_to_proposal(row))?;
 
         let mut list = Vec::new();
         for p in rows {
             list.push(p?);
         }
         Ok(list)
+    }
+
+    pub fn get_proposal_by_id(&self, id: &str) -> Result<Option<ReviewProposal>> {
+        let conn = self.conn();
+        let sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE id = ?1";
+        let mut stmt = conn.prepare(sql)?;
+        let mut rows = stmt.query([id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_proposal(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn find_pending_proposal(
+        &self,
+        project_id: Option<&str>,
+        target_id: &str,
+        description: &str,
+    ) -> Result<Option<ReviewProposal>> {
+        let conn = self.conn();
+        let mut sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE status = 'pending' AND target_id = ?1 AND description = ?2".to_string();
+        if let Some(pid) = project_id {
+            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+        }
+        sql.push_str(" ORDER BY created_at DESC LIMIT 1");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query([target_id, description])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_proposal(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn find_approved_proposal(
+        &self,
+        project_id: Option<&str>,
+        target_id: &str,
+        description: &str,
+    ) -> Result<Option<ReviewProposal>> {
+        let conn = self.conn();
+        let mut sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE status = 'approved' AND target_id = ?1 AND description = ?2".to_string();
+        if let Some(pid) = project_id {
+            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+        }
+        sql.push_str(" ORDER BY decided_at DESC LIMIT 1");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query([target_id, description])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_proposal(row)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn decide_proposal(&self, id: &str, approved: bool) -> Result<bool> {

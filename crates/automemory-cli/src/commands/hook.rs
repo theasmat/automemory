@@ -38,7 +38,13 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     let current_project = project_ref
         .id
         .as_deref()
-        .and_then(|id| db.get_project_by_id(id).ok().flatten());
+        .and_then(|id| db.get_project_by_id(id).ok().flatten())
+        .or_else(|| {
+            project_ref
+                .slug
+                .as_deref()
+                .and_then(|s| db.get_project_by_slug(s).ok().flatten())
+        });
     let autopilot_mode = current_project
         .as_ref()
         .map(|p| p.capture_policy.mode)
@@ -47,9 +53,14 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // Normalize Antigravity / AGY tool call
     let (tool_info, session_id, task_id) = normalize_payload(event, &raw_payload);
 
+    let effective_project_id = current_project
+        .as_ref()
+        .map(|p| p.id.as_str())
+        .or(project_ref.id.as_deref());
+
     // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
     if event == "pre-tool" {
-        if !evaluate_pre_tool_guardrail(&db, &raw_payload, tool_info.as_ref(), project_ref.id.as_deref(), autopilot_mode)? {
+        if !evaluate_pre_tool_guardrail(&db, &raw_payload, tool_info.as_ref(), effective_project_id, autopilot_mode)? {
             return Ok(());
         }
     }
@@ -266,7 +277,16 @@ fn normalize_payload(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let tool_call = raw.get("toolCall").or_else(|| raw.get("tool_call"));
+    let tool_call = raw
+        .get("toolCall")
+        .or_else(|| raw.get("tool_call"))
+        .or_else(|| {
+            if raw.get("toolName").is_some() || raw.get("name").is_some() || raw.get("tool").is_some() {
+                Some(raw)
+            } else {
+                None
+            }
+        });
 
     let tool_info = if let Some(tc) = tool_call {
         let raw_name = tc

@@ -91,6 +91,26 @@ impl ShellCommandTree {
                     }
                 }
             }
+
+            // Inline language scripts: python -c "...", node -e "...", etc.
+            if cmd.is_binary("python") || cmd.is_binary("python3") || cmd.is_binary("node") || cmd.is_binary("ruby") || cmd.is_binary("perl") {
+                let is_eval = cmd.has_flag("-c") || cmd.has_flag("-e");
+                if is_eval {
+                    for arg in &cmd.positional_args {
+                        let lower = arg.to_lowercase();
+                        if (lower.contains("rmtree") || lower.contains("rmdir") || lower.contains("rmsync") || lower.contains("unlink"))
+                            && (lower.contains("'/") || lower.contains("\"/") || lower.contains("'~") || lower.contains("\"~") || lower.contains("os.environ['home']"))
+                        {
+                            return true;
+                        }
+                        if lower.contains("system(") || lower.contains("popen(") || lower.contains("exec(") || lower.contains("spawn(") {
+                            if lower.contains("rm -rf /") || lower.contains("rm -rf ~") || lower.contains("rm -rf $home") {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
         }
         false
     }
@@ -366,6 +386,13 @@ fn unwrap_command_tokens(tokens: &[String]) -> Vec<ParsedCommand> {
 
     let binary = tokens[0].clone();
 
+    // 0. Handle tool invocation wrapper tokens (e.g. `run_command`, `exec_command`)
+    if (binary == "run_command" || binary == "exec_command") && tokens.len() >= 2 {
+        let mut unwrapped = unwrap_command_tokens(&tokens[1..]);
+        unwrapped.push(build_parsed_command(tokens));
+        return unwrapped;
+    }
+
     // 1. Handle `sudo`, `doas`, `env`
     if binary == "sudo" || binary == "doas" {
         let mut idx = 1;
@@ -486,5 +513,11 @@ mod tests {
 
         let t2 = ShellCommandTree::parse("alembic upgrade head");
         assert!(t2.is_db_migration());
+    }
+
+    #[test]
+    fn test_python_rm_root_detection() {
+        let t = ShellCommandTree::parse("python3 -c 'import shutil; shutil.rmtree(\"/\")'");
+        assert!(t.is_destructive_rm_root_or_home());
     }
 }

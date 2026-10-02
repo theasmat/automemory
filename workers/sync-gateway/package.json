@@ -1,0 +1,23 @@
+{
+  "name": "automemory-sync-gateway",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker + D1 + R2 sync gateway for AutoMemory Pro with Firebase Auth & dynamic pricing quotas",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "db:init": "wrangler d1 execute automemory-db --local --file=./schema.sql"
+  },
+  "dependencies": {
+    "hono": "^4.7.4",
+    "jose": "^6.0.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.2",
+    "@cloudflare/workers-types": "^4.20250320.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7",
+    "wrangler": "^4.145.0"
+  }
+}

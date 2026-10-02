@@ -223,4 +223,102 @@ If nothing durable was learned, respond with []"#;
 
         Ok(saved_memories)
     }
+
+    /// Check whether two memory statements contradict each other using the configured LLM.
+    /// Returns Some(explanation) if contradiction detected, None otherwise.
+    pub async fn check_contradiction(
+        &self,
+        config: &LlmProviderConfig,
+        stmt_a: &str,
+        stmt_b: &str,
+    ) -> Result<Option<String>> {
+        let system_prompt = r#"You are an architecture consistency validator for AutoMemory Pro.
+Analyze the two statements below. Determine if Statement A and Statement B contradict each other (for example: opposing architectural decisions, incompatible framework/database choices, or direct policy conflicts).
+Respond ONLY in JSON with:
+{
+  "contradicts": true,
+  "explanation": "Brief explanation of the contradiction"
+}
+or
+{
+  "contradicts": false,
+  "explanation": ""
+}"#;
+
+        let user_prompt = format!("Statement A: {}\n\nStatement B: {}", stmt_a, stmt_b);
+
+        let response_text = match config {
+            LlmProviderConfig::Ollama { endpoint, model } => {
+                let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+                let body = serde_json::json!({
+                    "model": model,
+                    "prompt": format!("{}\n\n{}", system_prompt, user_prompt),
+                    "stream": false,
+                    "format": "json"
+                });
+                let res = self.client.post(&url).json(&body).send().await?;
+                let json_res: serde_json::Value = res.json().await?;
+                json_res["response"].as_str().unwrap_or("{}").to_string()
+            }
+            LlmProviderConfig::OpenAi { endpoint, api_key, model } => {
+                let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+                let body = serde_json::json!({
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.0
+                });
+                let res = self.client.post(&url)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .json(&body)
+                    .send()
+                    .await?;
+                let json_res: serde_json::Value = res.json().await?;
+                json_res["choices"][0]["message"]["content"].as_str().unwrap_or("{}").to_string()
+            }
+            LlmProviderConfig::Anthropic { api_key, model } => {
+                let url = "https://api.anthropic.com/v1/messages";
+                let body = serde_json::json!({
+                    "model": model,
+                    "max_tokens": 1024,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_prompt}]
+                });
+                let res = self.client.post(url)
+                    .header("x-api-key", api_key)
+                    .header("anthropic-version", "2023-06-01")
+                    .json(&body)
+                    .send()
+                    .await?;
+                let json_res: serde_json::Value = res.json().await?;
+                json_res["content"][0]["text"].as_str().unwrap_or("{}").to_string()
+            }
+        };
+
+        #[derive(Deserialize)]
+        struct ContradictionRes {
+            contradicts: bool,
+            explanation: Option<String>,
+        }
+
+        let parsed: Option<ContradictionRes> = serde_json::from_str(&response_text)
+            .or_else(|_| {
+                if let Some(s) = response_text.find('{') {
+                    if let Some(e) = response_text.rfind('}') {
+                        return serde_json::from_str(&response_text[s..=e]);
+                    }
+                }
+                Ok(ContradictionRes { contradicts: false, explanation: None })
+            })
+            .ok();
+
+        if let Some(res) = parsed {
+            if res.contradicts {
+                return Ok(Some(res.explanation.unwrap_or_else(|| "Contradictory architectural statements".to_string())));
+            }
+        }
+        Ok(None)
+    }
 }

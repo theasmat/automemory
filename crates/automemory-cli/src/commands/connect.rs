@@ -22,13 +22,22 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
             connect_claude(&home, &cwd, &exe_path)?;
         }
         "cursor" => {
-            connect_cursor(&cwd, &exe_path)?;
+            connect_cursor(&cwd, &home, &exe_path, global)?;
+        }
+        "windsurf" | "codeium" => {
+            connect_windsurf(&home, &exe_path)?;
+        }
+        "cline" | "roo" | "roocode" => {
+            connect_cline(&home, &exe_path)?;
         }
         "codex" | "openai" => {
             connect_codex(&cwd, &exe_path)?;
         }
+        "gemini" => {
+            connect_agy_global(&home, &exe_path)?;
+        }
         other => {
-            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, codex", other);
+            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, windsurf, cline, codex, gemini", other);
             return Ok(());
         }
     }
@@ -200,13 +209,12 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str) -> Result<
     Ok(())
 }
 
-fn connect_cursor(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let cursor_dir = workspace_root.join(".cursor");
-    fs::create_dir_all(&cursor_dir)?;
-    let cursor_mcp = cursor_dir.join("mcp.json");
-
-    let mut val = if cursor_mcp.exists() {
-        serde_json::from_str(&fs::read_to_string(&cursor_mcp)?).unwrap_or_else(|_| serde_json::json!({}))
+fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
+    if let Some(parent) = target_file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut val = if target_file.exists() {
+        serde_json::from_str(&fs::read_to_string(target_file)?).unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
@@ -217,13 +225,33 @@ fn connect_cursor(workspace_root: &Path, exe_path: &str) -> Result<()> {
 
     val["mcpServers"]["automemory"] = serde_json::json!({
         "command": exe_path,
-        "args": ["mcp"]
+        "args": ["mcp"],
+        "env": {
+            "AUTOMEMORY_PROJECT_NAME": "auto"
+        }
     });
     val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
-    fs::write(&cursor_mcp, serde_json::to_string_pretty(&val)?)?;
+    fs::write(target_file, serde_json::to_string_pretty(&val)?)?;
+    Ok(())
+}
 
-    // Also create .cursorrules with AutoMemory context guidelines
+fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        #[cfg(target_os = "macos")]
+        let p = home.join("Library/Application Support/Cursor/User/globalStorage/mcp.json");
+        #[cfg(target_os = "windows")]
+        let p = home.join("AppData/Roaming/Cursor/User/globalStorage/mcp.json");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let p = home.join(".config/Cursor/User/globalStorage/mcp.json");
+        p
+    } else {
+        workspace_root.join(".cursor").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    // Also create .cursorrules in workspace with AutoMemory context guidelines
     let cursorrules_path = workspace_root.join(".cursorrules");
     let rules_content = r#"# AutoMemory Pro & Codebase Memory Companion Rules
 - You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`).
@@ -231,31 +259,60 @@ fn connect_cursor(workspace_root: &Path, exe_path: &str) -> Result<()> {
 - At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
 - Before modifying complex architectures, use `codebase-memory` to trace callers and call graphs.
 "#;
-    fs::write(&cursorrules_path, rules_content)?;
+    let _ = fs::write(&cursorrules_path, rules_content);
 
-    println!("✓ Successfully connected Dual-Engine Suite to Cursor at {}", cursor_mcp.display());
+    println!("✓ Successfully connected Dual-Engine Suite to Cursor at {}", target_path.display());
     println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
     println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
     println!("  📝 Created/updated .cursorrules for persistent memory & AST context");
     Ok(())
 }
 
-fn connect_codex(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let codex_dir = workspace_root.join(".codex");
-    fs::create_dir_all(&codex_dir)?;
-    let codex_config = codex_dir.join("config.json");
+fn connect_windsurf(home: &Path, exe_path: &str) -> Result<()> {
+    let windsurf_config = home.join(".codeium").join("windsurf").join("mcp_config.json");
+    merge_mcp_config(&windsurf_config, exe_path)?;
 
-    let val = serde_json::json!({
-        "mcpServers": {
-            "automemory": {
-                "command": exe_path,
-                "args": ["mcp"]
-            },
-            "codebase-memory": codebase_memory_config()
+    println!("✓ Successfully connected Dual-Engine Suite to Windsurf at {}", windsurf_config.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    Ok(())
+}
+
+fn connect_cline(home: &Path, exe_path: &str) -> Result<()> {
+    // 1. Cline MCP settings
+    #[cfg(target_os = "macos")]
+    let cline_path = home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+    #[cfg(target_os = "windows")]
+    let cline_path = home.join("AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let cline_path = home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+
+    merge_mcp_config(&cline_path, exe_path)?;
+
+    // 2. Roo Code MCP settings (if folder exists or create it)
+    #[cfg(target_os = "macos")]
+    let roo_path = home.join("Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+    #[cfg(target_os = "windows")]
+    let roo_path = home.join("AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let roo_path = home.join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+
+    if let Some(parent) = roo_path.parent() {
+        if parent.exists() {
+            let _ = merge_mcp_config(&roo_path, exe_path);
         }
-    });
+    }
 
-    fs::write(&codex_config, serde_json::to_string_pretty(&val)?)?;
+    println!("✓ Successfully connected Dual-Engine Suite to Cline / Roo Code at {}", cline_path.display());
+    println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
+    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    Ok(())
+}
+
+fn connect_codex(workspace_root: &Path, exe_path: &str) -> Result<()> {
+    let codex_config = workspace_root.join(".codex").join("config.json");
+    merge_mcp_config(&codex_config, exe_path)?;
+
     println!("✓ Successfully connected Dual-Engine Suite to Codex CLI at {}", codex_config.display());
     println!("  🧠 AutoMemory Pro (Agent Memory & Trajectory Distiller)");
     println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");

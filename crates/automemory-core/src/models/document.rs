@@ -6,8 +6,13 @@ pub struct TrackedDocument {
     pub id: String,
     pub project_id: String,
     pub relative_path: String,
+    pub category: String,
+    pub title: String,
     pub content_hash: String,
+    pub remote_synced_hash: Option<String>,
     pub summary: Option<String>,
+    pub l0_abstract: Option<String>,
+    pub l1_overview: Option<String>,
     pub last_scanned_at: DateTime<Utc>,
     pub is_deleted: bool,
 }

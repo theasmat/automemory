@@ -61,3 +61,30 @@ pub async fn api_failures(State(state): State<AppState>) -> impl IntoResponse {
     let failures = state.db.list_failures(None, None, 50).unwrap_or_default();
     Json(failures)
 }
+
+#[derive(serde::Deserialize)]
+pub struct ResolveFailurePayload {
+    pub fix_applied: String,
+    pub verification_result: Option<String>,
+}
+
+pub async fn api_failure_resolve(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<ResolveFailurePayload>,
+) -> impl IntoResponse {
+    let verification = payload.verification_result.unwrap_or_else(|| "Verified by user via dashboard".to_string());
+    match state.db.resolve_failure(&id, &payload.fix_applied, &verification) {
+        Ok(true) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "failure_resolved",
+                "id": id,
+                "fix_applied": payload.fix_applied,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "id": id })))
+        }
+        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Failure record not found" }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+    }
+}

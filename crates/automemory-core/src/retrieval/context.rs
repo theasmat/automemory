@@ -62,7 +62,18 @@ impl<'a> RetrievalEngine<'a> {
             lines.push("".to_string());
         }
 
-        // 4. Verification Check
+        // 4. Autonomous Procedural Playbooks
+        let skills = self.db.list_skills(project_id, 3)?;
+        if !skills.is_empty() {
+            lines.push("## Autonomous Procedural Playbooks".to_string());
+            for s in skills {
+                let steps_preview = s.steps.iter().take(2).cloned().collect::<Vec<_>>().join(" -> ");
+                lines.push(format!("- **{}**: {}", s.name, steps_preview));
+            }
+            lines.push("".to_string());
+        }
+
+        // 5. Verification Check
         lines.push("## Inviolable Verification".to_string());
         lines.push("- Always verify code changes with existing test suites before declaring tasks complete.".to_string());
         lines.push("- Never execute destructive system/git commands without explicit user confirmation.".to_string());
@@ -226,7 +237,83 @@ impl<'a> RetrievalEngine<'a> {
             add_section("Relevant Success Traces (Repeatable Procedures)", &traces_str, &mut sections, &mut current_chars);
         }
 
-        // 7. Memory Instructions
+        // 7. Autonomous Procedural Playbooks
+        let skills = self.db.list_skills(project_id, 5)?;
+        let mut skills_str = String::new();
+        for s in skills {
+            let steps_preview = s.steps.iter().take(3).cloned().collect::<Vec<_>>().join("\n  ");
+            skills_str.push_str(&format!(
+                "- **{}** (successes: {}):\n  {}\n",
+                s.name, s.success_count, steps_preview
+            ));
+        }
+        if !skills_str.is_empty() {
+            add_section("Autonomous Procedural Playbooks (Synthesized Skills)", &skills_str, &mut sections, &mut current_chars);
+        }
+
+        // 8. Adaptive Tiered Product Specifications & Architecture Guidelines (L0/L1/L2)
+        if let Some(pid) = project_id {
+            if let Ok(docs) = self.db.list_documents(pid) {
+                if !docs.is_empty() {
+                    let mut docs_str = String::new();
+                    let mut elevated_docs = Vec::new();
+                    let mut ambient_docs = Vec::new();
+
+                    for d in &docs {
+                        let rel = if let Some(q) = task_query {
+                            compute_doc_relevance(q, &d.title, &d.category, &d.relative_path, d.l0_abstract.as_deref())
+                        } else {
+                            0.0
+                        };
+
+                        if rel >= 3.0 {
+                            elevated_docs.push(d);
+                        } else {
+                            ambient_docs.push(d);
+                        }
+                    }
+
+                    // For highly relevant docs: expand to L2 section overview
+                    if !elevated_docs.is_empty() {
+                        docs_str.push_str("#### 🎯 Active Task Relevant Specifications (L2 Detail)\n");
+                        for d in &elevated_docs {
+                            docs_str.push_str(&format!(
+                                "##### [{}] {} (`{}`)\n",
+                                d.category.to_uppercase(),
+                                d.title,
+                                d.relative_path
+                            ));
+                            if let Some(l1) = &d.l1_overview {
+                                docs_str.push_str(l1);
+                                docs_str.push('\n');
+                            } else if let Some(l0) = &d.l0_abstract {
+                                docs_str.push_str(&format!("- {}\n", l0));
+                            }
+                        }
+                    }
+
+                    // For remaining docs: retain at ambient L0 abstract (minimal tokens)
+                    if !ambient_docs.is_empty() {
+                        if !elevated_docs.is_empty() {
+                            docs_str.push_str("\n#### Ambient Product Context (L0 Index)\n");
+                        }
+                        for d in ambient_docs.iter().take(6) {
+                            if let Some(l0) = &d.l0_abstract {
+                                docs_str.push_str(&format!("- **[{}] {}**: {} (`{}`)\n", d.category.to_uppercase(), d.title, l0, d.relative_path));
+                            } else {
+                                docs_str.push_str(&format!("- **[{}] {}** (`{}`)\n", d.category.to_uppercase(), d.title, d.relative_path));
+                            }
+                        }
+                    }
+
+                    if !docs_str.is_empty() {
+                        add_section("Product Specifications & Architecture Guidelines", &docs_str, &mut sections, &mut current_chars);
+                    }
+                }
+            }
+        }
+
+        // 9. Memory Instructions
         let instructions = "- Memories and traces are persistent across chats.\n- High-confidence facts have been verified by prior tool executions.\n- Use `memory_save` or `trace_save` for durable learnings, or `failure_resolve` when an error is fixed.\n";
         add_section("AutoMemory Context Guidelines", instructions, &mut sections, &mut current_chars);
 
@@ -318,4 +405,35 @@ pub struct SearchResult {
     pub content: String,
     pub score: f64,
     pub project_id: Option<String>,
+}
+
+fn compute_doc_relevance(query: &str, title: &str, category: &str, path: &str, l0: Option<&str>) -> f32 {
+    let q_lower = query.to_lowercase();
+    let q_words: Vec<&str> = q_lower.split_whitespace().filter(|w| w.len() > 2).collect();
+    if q_words.is_empty() {
+        return 0.0;
+    }
+
+    let mut score = 0.0f32;
+    let t_lower = title.to_lowercase();
+    let c_lower = category.to_lowercase();
+    let p_lower = path.to_lowercase();
+    let l0_lower = l0.map(|s| s.to_lowercase()).unwrap_or_default();
+
+    for w in &q_words {
+        if t_lower.contains(w) {
+            score += 3.0;
+        }
+        if p_lower.contains(w) {
+            score += 2.0;
+        }
+        if l0_lower.contains(w) {
+            score += 1.5;
+        }
+        if c_lower.contains(w) {
+            score += 1.0;
+        }
+    }
+
+    score
 }

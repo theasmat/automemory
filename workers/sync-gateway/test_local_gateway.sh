@@ -1,0 +1,242 @@
+#!/bin/bash
+set -eo pipefail
+
+GATEWAY_URL="http://127.0.0.1:8787"
+ADMIN_SECRET="automemory-admin-dev-secret"
+
+TIMESTAMP=$(date +%s)
+ALICE_UID="test_alice_${TIMESTAMP}"
+BOB_UID="test_bob_${TIMESTAMP}"
+TEST_USER_A="dev-token:${ALICE_UID}:alice@automemory.local"
+TEST_USER_B="dev-token:${BOB_UID}:bob@automemory.local"
+
+PASS_COUNT=0
+TOTAL_COUNT=0
+
+
+log_test() {
+    TOTAL_COUNT=$((TOTAL_COUNT + 1))
+    echo "[$TOTAL_COUNT] Testing: $1"
+}
+
+assert_success() {
+    if [ $? -eq 0 ]; then
+        PASS_COUNT=$((PASS_COUNT + 1))
+        echo "   ✓ PASS"
+    else
+        echo "   ✗ FAIL: $1"
+        exit 1
+    fi
+}
+
+# Ensure local database schema is applied
+npx wrangler d1 execute automemory-db --local --file=./schema.sql > /dev/null 2>&1 || true
+
+# If gateway is not running, spawn it in background
+SPAWNED_PID=""
+if ! curl -s "$GATEWAY_URL/health" > /dev/null 2>&1; then
+    echo "Starting local Wrangler dev gateway on port 8787..."
+    npx wrangler dev --port 8787 > /tmp/wrangler_test.log 2>&1 &
+    SPAWNED_PID=$!
+    trap 'if [ -n "$SPAWNED_PID" ]; then kill $SPAWNED_PID 2>/dev/null || true; fi' EXIT
+
+    # Wait for gateway to become healthy
+    for i in {1..30}; do
+        if curl -s "$GATEWAY_URL/health" | grep -q '"status":"ok"'; then
+            break
+        fi
+        sleep 0.5
+    done
+fi
+
+echo "=========================================================================="
+echo "    AutoMemory Pro: Cloudflare Worker Local Gateway Integration Suite     "
+echo "=========================================================================="
+
+
+# 1. Health check
+log_test "Gateway Health Endpoint"
+RESP=$(curl -s "$GATEWAY_URL/health")
+echo "$RESP" | grep -q '"status":"ok"'
+assert_success "Health check returned status ok"
+
+# 2. Check initial quota for new user (Alice) - Free Tier
+log_test "Free Tier User Initial Quota"
+QUOTA_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" "$GATEWAY_URL/api/v1/user/quota")
+echo "$QUOTA_RESP" | grep -q '"plan_id":"free"'
+echo "$QUOTA_RESP" | grep -q '"max_active_devices":1'
+assert_success "Alice resolved to free tier with max 1 active device"
+
+# 3. Register Device 1 for Alice
+log_test "Register Device 1 on Free Tier (Allowed)"
+DEV1_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"device_id":"dev_macbook_01","device_name":"Alice MacBook Pro"}' \
+    "$GATEWAY_URL/api/v1/auth/device/register")
+echo "$DEV1_RESP" | grep -q '"success":true'
+assert_success "Device 1 registered successfully"
+
+# 4. Attempt to Register Device 2 on Free Tier (Should be BLOCKED with 403)
+log_test "Register Device 2 on Free Tier (Blocked by Quota)"
+DEV2_HTTP_CODE=$(curl -s -o /tmp/dev2_resp.json -w "%{http_code}" -X POST \
+    -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"device_id":"dev_mac_mini_02","device_name":"Alice Mac Mini"}' \
+    "$GATEWAY_URL/api/v1/auth/device/register")
+
+if [ "$DEV2_HTTP_CODE" -eq 403 ]; then
+    grep -q "DEVICE_QUOTA_EXCEEDED" /tmp/dev2_resp.json
+    assert_success "Free tier correctly blocked device 2 with DEVICE_QUOTA_EXCEEDED"
+else
+    echo "Expected HTTP 403, got $DEV2_HTTP_CODE"
+    cat /tmp/dev2_resp.json
+    exit 1
+fi
+
+# 5. Admin API: List Pricing Plans
+log_test "Admin API: List Pricing Plans"
+PLANS_RESP=$(curl -s -H "X-Admin-Secret: $ADMIN_SECRET" "$GATEWAY_URL/api/v1/admin/pricing/plans")
+echo "$PLANS_RESP" | grep -q '"plan_id":"free"'
+echo "$PLANS_RESP" | grep -q '"plan_id":"plus"'
+echo "$PLANS_RESP" | grep -q '"plan_id":"team"'
+assert_success "Admin successfully retrieved seeded pricing tiers"
+
+# 6. Admin API: Upgrade Alice to Plus Plan (5 devices)
+log_test "Admin API: Upgrade User to Plus Plan"
+UPGRADE_RESP=$(curl -s -X POST -H "X-Admin-Secret: $ADMIN_SECRET" \
+    -H "Content-Type: application/json" \
+    -d "{\"uid\":\"$ALICE_UID\",\"plan_id\":\"plus\"}" \
+    "$GATEWAY_URL/api/v1/admin/users/plan")
+echo "$UPGRADE_RESP" | grep -q '"plan_id":"plus"'
+assert_success "Alice upgraded to plus plan"
+
+# 7. Verify Alice Quota Updated Dynamically
+log_test "Verify Alice Quota Dynamically Updated to 5 Devices"
+NEW_QUOTA=$(curl -s -H "Authorization: Bearer $TEST_USER_A" "$GATEWAY_URL/api/v1/user/quota")
+echo "$NEW_QUOTA" | grep -q '"plan_id":"plus"'
+echo "$NEW_QUOTA" | grep -q '"max_active_devices":5'
+assert_success "Alice quota reflects plus tier without restarts"
+
+# 8. Register Device 2 (Now Allowed)
+log_test "Register Device 2 on Plus Plan (Allowed)"
+DEV2_NEW_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"device_id":"dev_mac_mini_02","device_name":"Alice Mac Mini"}' \
+    "$GATEWAY_URL/api/v1/auth/device/register")
+echo "$DEV2_NEW_RESP" | grep -q '"success":true'
+assert_success "Device 2 registered successfully under plus tier"
+
+# 9. Admin API: Dynamic Quota Override (user_entitlements)
+log_test "Admin API: Set Custom Entitlements for Bob (10 devices override)"
+ENTITLE_RESP=$(curl -s -X POST -H "X-Admin-Secret: $ADMIN_SECRET" \
+    -H "Content-Type: application/json" \
+    -d "{\"uid\":\"$BOB_UID\",\"custom_max_devices\":10,\"notes\":\"VIP Beta Partner\"}" \
+    "$GATEWAY_URL/api/v1/admin/users/entitlements")
+echo "$ENTITLE_RESP" | grep -q '"custom_max_devices":10'
+assert_success "Custom entitlement override applied for Bob"
+
+
+# 10. Verify Bob Quota Reflects Custom Entitlement
+log_test "Verify Bob Quota Reflects Entitlement Override"
+BOB_QUOTA=$(curl -s -H "Authorization: Bearer $TEST_USER_B" "$GATEWAY_URL/api/v1/user/quota")
+echo "$BOB_QUOTA" | grep -q '"max_active_devices":10'
+assert_success "Bob has 10 devices quota via direct entitlement"
+
+# 11. Sync Push with Registered Device
+log_test "Sync Push Project Manifest & Deltas"
+PUSH_PAYLOAD='{
+  "project_slug": "automemory-demo",
+  "project_name": "AutoMemory Demo",
+  "device_id": "dev_macbook_01",
+  "manifest": {
+    "version": 1,
+    "project_slug": "automemory-demo",
+    "files": [
+      {
+        "path": "docs/prd/overview.md",
+        "category": "prd",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 1024,
+        "compressed_l0": "Product Overview L0",
+        "compressed_l1": "Product Overview L1",
+        "updated_at": "2026-09-30T12:00:00Z"
+      }
+    ],
+    "memories_count": 42,
+    "skills_count": 5,
+    "created_at": "2026-09-30T12:00:00Z"
+  },
+  "deltas": [
+    {
+      "path": "docs/prd/overview.md",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content_base64": "IyBEZW1vIFByb2R1Y3QgU3BlY2lmaWNhdGlvbgo="
+    }
+  ]
+}'
+
+PUSH_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d "$PUSH_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/sync/push")
+echo "$PUSH_RESP" | grep -q '"success":true'
+echo "$PUSH_RESP" | grep -q '"manifest_hash"'
+assert_success "Project manifest and deltas pushed to cloud gateway"
+
+# 12. Sync Pull
+log_test "Sync Pull Project Manifest"
+PULL_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/sync/pull?project=automemory-demo")
+echo "$PULL_RESP" | grep -q '"project_slug":"automemory-demo"'
+echo "$PULL_RESP" | grep -q 'Product Overview L0'
+assert_success "Project pulled with complete manifest matching push"
+
+# 13. Disaster Recovery Restore Bundle
+log_test "Disaster Recovery Full Restore Bundle"
+RESTORE_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/sync/restore/automemory-demo")
+echo "$RESTORE_RESP" | grep -q '"restore_ready":true'
+assert_success "Disaster recovery bundle returned for project"
+
+# 14. Device Revocation
+log_test "Device Revocation (Alice removes Device 2)"
+DEL_RESP=$(curl -s -X DELETE -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/auth/device/dev_mac_mini_02")
+echo "$DEL_RESP" | grep -q '"success":true'
+assert_success "Device lease revoked successfully"
+
+# 15. Billing Webhook: Automated Stripe Checkout Plan Upgrade
+log_test "Billing Webhook: Automated Plan Upgrade via Stripe Event"
+CHARLIE_UID="test_charlie_${TIMESTAMP}"
+TEST_USER_C="dev-token:${CHARLIE_UID}:charlie@automemory.local"
+
+WEBHOOK_PAYLOAD='{
+  "object": "event",
+  "type": "checkout.session.completed",
+  "data": {
+    "object": {
+      "client_reference_id": "'"$CHARLIE_UID"'",
+      "metadata": {
+        "uid": "'"$CHARLIE_UID"'",
+        "plan_id": "team"
+      }
+    }
+  }
+}'
+
+WEBHOOK_RESP=$(curl -s -X POST -H "Content-Type: application/json" \
+    -d "$WEBHOOK_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/billing/webhook")
+echo "$WEBHOOK_RESP" | grep -q '"received":true'
+echo "$WEBHOOK_RESP" | grep -q '"plan_id":"team"'
+
+# Verify Charlie's quota now reflects Team Plan (50 devices)
+CHARLIE_QUOTA=$(curl -s -H "Authorization: Bearer $TEST_USER_C" "$GATEWAY_URL/api/v1/user/quota")
+echo "$CHARLIE_QUOTA" | grep -q '"plan_id":"team"'
+echo "$CHARLIE_QUOTA" | grep -q '"max_active_devices":50'
+assert_success "Billing webhook upgraded user to Team plan with 50 devices quota"
+
+echo "=========================================================================="
+echo "    Summary: $PASS_COUNT/$TOTAL_COUNT Tests Passed Successfully (100%)    "
+echo "=========================================================================="
+

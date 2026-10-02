@@ -165,31 +165,65 @@
 
     <!-- Active Guardrail Policies Catalog -->
     <div class="space-y-4">
-      <div class="flex items-center justify-between pb-2 border-b border-dark-700">
+      <div class="flex items-center justify-between pb-2 border-b border-dark-700 flex-wrap gap-2">
         <div class="flex items-center gap-2">
           <ShieldCheck class="w-4 h-4 text-emerald-400" />
           <h2 class="text-sm font-bold text-white uppercase tracking-wider">
-            Active Built-in Guardrail Policies ({{ store.guardrailRules.length }})
+            Active Guardrail Policies ({{ store.guardrailRules.length }})
           </h2>
         </div>
-        <span class="text-xs text-gray-500">Evaluated on every pre-tool hook</span>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500">Evaluated on every pre-tool hook</span>
+          <button
+            @click="showAddRuleModal = true"
+            class="px-3 py-1 bg-gold-500 hover:bg-gold-400 text-black font-bold text-xs flex items-center gap-1 shadow-sm shadow-gold-500/20 transition-colors"
+          >
+            + Add Custom Rule
+          </button>
+        </div>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div
           v-for="rule in store.guardrailRules"
           :key="rule.id"
-          class="p-4 bg-dark-900 border border-dark-700 space-y-2.5 flex flex-col justify-between"
+          class="p-4 bg-dark-900 border space-y-2.5 flex flex-col justify-between"
+          :class="rule.is_custom ? 'border-cyan-800/60 bg-dark-900/90' : 'border-dark-700'"
         >
           <div>
-            <div class="flex items-center justify-between pb-2 border-b border-dark-800">
-              <span class="font-bold text-white text-xs">{{ rule.name }}</span>
-              <span
-                class="px-1.5 py-0.2 text-[10px] uppercase font-bold"
-                :class="rule.is_critical ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400 border border-amber-800'"
-              >
-                {{ rule.is_critical ? 'Critical Stop' : 'High Risk' }}
-              </span>
+            <div class="flex items-center justify-between pb-2 border-b border-dark-800 flex-wrap gap-1">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-white text-xs">{{ rule.name }}</span>
+                <span v-if="rule.is_custom" class="px-1 py-0.2 bg-cyan-950 text-cyan-400 border border-cyan-800 text-[9px] uppercase font-bold">
+                  Custom
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span
+                  class="px-1.5 py-0.2 text-[10px] uppercase font-bold"
+                  :class="rule.is_critical ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400 border border-amber-800'"
+                >
+                  {{ rule.is_critical ? 'Critical Stop' : 'High Risk' }}
+                </span>
+                <!-- Custom rule toggle & delete -->
+                <template v-if="rule.is_custom">
+                  <button
+                    @click="store.toggleGuardrailRule(rule.id, !rule.enabled)"
+                    class="px-1.5 py-0.2 text-[10px] border transition-colors font-mono"
+                    :class="rule.enabled ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-dark-800 text-gray-400 border-dark-700'"
+                    :title="rule.enabled ? 'Click to disable' : 'Click to enable'"
+                  >
+                    {{ rule.enabled ? 'Enabled' : 'Disabled' }}
+                  </button>
+                  <button
+                    @click="deleteRuleItem(rule.id, rule.name)"
+                    class="px-1.5 py-0.2 bg-dark-950 hover:bg-red-950/60 text-red-400 border border-dark-700 hover:border-red-800 text-[10px] transition-colors"
+                    title="Delete custom rule"
+                  >
+                    ✕
+                  </button>
+                </template>
+              </div>
             </div>
             <p class="text-[11px] text-gray-300 mt-2">{{ rule.description }}</p>
           </div>
@@ -206,6 +240,104 @@
         </div>
       </div>
     </div>
+
+    <!-- Add Custom Rule Modal -->
+    <div
+      v-if="showAddRuleModal"
+      class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono select-none"
+      @click.self="showAddRuleModal = false"
+    >
+      <div class="bg-dark-900 border border-gold-500/50 max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-3 border-b border-dark-700">
+          <div class="flex items-center gap-2">
+            <ShieldAlert class="w-4 h-4 text-gold-500" />
+            <span class="text-xs text-white font-bold">Add Custom Dynamic Guardrail Rule</span>
+          </div>
+          <button @click="showAddRuleModal = false" class="text-gray-500 hover:text-white text-sm">✕</button>
+        </div>
+
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-400 uppercase">Rule Name *</label>
+            <input
+              v-model="newRuleName"
+              type="text"
+              placeholder="e.g. Protect Production .env or Block hosts file"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-400 uppercase">Regex Pattern *</label>
+            <input
+              v-model="newRulePattern"
+              type="text"
+              placeholder="e.g. (?i)/etc/hosts|\.env\.production"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label class="text-[10px] text-gray-400 uppercase">Category</label>
+              <input
+                v-model="newRuleCategory"
+                type="text"
+                placeholder="e.g. security or config"
+                class="w-full bg-dark-950 border border-dark-700 p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+              />
+            </div>
+            <div class="flex items-center gap-2 pt-5">
+              <input
+                id="critical_checkbox"
+                v-model="newRuleCritical"
+                type="checkbox"
+                class="accent-gold-500 w-4 h-4"
+              />
+              <label for="critical_checkbox" class="text-xs text-gray-300 cursor-pointer">
+                Critical (Blocks in Vibe mode)
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-400 uppercase">Description</label>
+            <input
+              v-model="newRuleDescription"
+              type="text"
+              placeholder="Brief explanation of what this rule protects against"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-400 uppercase">Mitigation Hint</label>
+            <input
+              v-model="newRuleMitigation"
+              type="text"
+              placeholder="Guidance for agents when this command is blocked"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs text-white focus:outline-none focus:border-gold-500"
+            />
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-dark-800 flex items-center justify-end gap-2">
+          <button
+            @click="showAddRuleModal = false"
+            class="px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-gray-400 text-xs"
+          >
+            Cancel
+          </button>
+          <button
+            @click="submitCreateRule"
+            :disabled="!newRuleName.trim() || !newRulePattern.trim()"
+            class="px-4 py-1.5 bg-gold-500 hover:bg-gold-400 disabled:opacity-50 text-black font-bold text-xs transition-colors shadow-sm shadow-gold-500/20"
+          >
+            Create Rule
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -215,6 +347,39 @@ import { useAutoMemoryStore } from '~/stores/automemory';
 import { ShieldAlert, ShieldCheck, Terminal, Lightbulb } from 'lucide-vue-next';
 
 const store = useAutoMemoryStore();
+
+const showAddRuleModal = ref(false);
+const newRuleName = ref('');
+const newRulePattern = ref('');
+const newRuleCategory = ref('security');
+const newRuleCritical = ref(false);
+const newRuleDescription = ref('');
+const newRuleMitigation = ref('');
+
+const submitCreateRule = async () => {
+  if (!newRuleName.value.trim() || !newRulePattern.value.trim()) return;
+  const ok = await store.addGuardrailRule({
+    name: newRuleName.value.trim(),
+    pattern: newRulePattern.value.trim(),
+    category: newRuleCategory.value.trim() || undefined,
+    is_critical: newRuleCritical.value,
+    description: newRuleDescription.value.trim() || undefined,
+    mitigation_hint: newRuleMitigation.value.trim() || undefined,
+  });
+  if (ok) {
+    showAddRuleModal.value = false;
+    newRuleName.value = '';
+    newRulePattern.value = '';
+    newRuleDescription.value = '';
+    newRuleMitigation.value = '';
+  }
+};
+
+const deleteRuleItem = async (id: string, name: string) => {
+  if (confirm(`Delete custom guardrail rule '${name}'?`)) {
+    await store.deleteGuardrailRule(id);
+  }
+};
 
 const testToolName = ref('run_command');
 const testCommandLine = ref('rm -rf /');

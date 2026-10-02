@@ -39,8 +39,11 @@ pub async fn api_skills(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    let distiller = SkillDistiller::new(&state.db);
-    let skills = distiller.distill_skills(params.project_id.as_deref()).unwrap_or_default();
+    let mut skills = state.db.list_skills(params.project_id.as_deref(), 50).unwrap_or_default();
+    if skills.is_empty() {
+        let distiller = SkillDistiller::new(&state.db);
+        skills = distiller.distill_skills(params.project_id.as_deref()).unwrap_or_default();
+    }
     Json(skills)
 }
 
@@ -100,5 +103,63 @@ pub async fn api_proposals_decide(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": e.to_string() })),
         ),
+    }
+}
+
+pub async fn api_memory_archive(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match state.db.archive_memory(&id) {
+        Ok(true) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "memory_archived",
+                "id": id,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "id": id })))
+        }
+        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Memory not found" }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct UpdateMemoryPayload {
+    pub summary: Option<String>,
+    pub content: Option<String>,
+    pub reason: Option<String>,
+}
+
+pub async fn api_memory_update(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(payload): Json<UpdateMemoryPayload>,
+) -> impl IntoResponse {
+    match state.db.get_memory_by_id(&id) {
+        Ok(Some(mut mem)) => {
+            if let Some(s) = payload.summary {
+                mem.summary = s;
+            }
+            if let Some(c) = payload.content {
+                mem.content = c;
+            }
+            mem.updated_at = Utc::now();
+            let reason = payload.reason.unwrap_or_else(|| "Manual edit via dashboard".to_string());
+
+            match state.db.update_memory(&mem, Some(&reason), &[]) {
+                Ok(()) => {
+                    let _ = state.broadcast_tx.send(json!({
+                        "type": "memory_updated",
+                        "id": id,
+                        "timestamp": Utc::now().to_rfc3339(),
+                    }).to_string());
+                    (StatusCode::OK, Json(json!({ "success": true, "memory": mem })))
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+            }
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Memory not found" }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
     }
 }

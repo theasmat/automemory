@@ -151,15 +151,28 @@
             </span>
           </div>
 
-          <div class="flex items-center gap-2 text-gray-500 shrink-0">
-            <span v-if="m.project_id">{{ m.project_id }}</span>
-            <span class="text-gray-600 group-hover:text-gold-400 transition-colors">Details →</span>
+          <div class="flex items-center gap-1.5 text-gray-500 shrink-0">
+            <button
+              @click.stop="openEditMemory(m)"
+              class="px-2 py-0.5 bg-dark-950 hover:bg-dark-800 text-cyan-400 border border-dark-700 hover:border-cyan-500/50 transition-colors"
+              title="Edit memory summary and body"
+            >
+              Edit
+            </button>
+            <button
+              @click.stop="archiveMemoryItem(m.id)"
+              class="px-2 py-0.5 bg-dark-950 hover:bg-red-950/60 text-red-400 border border-dark-700 hover:border-red-800 transition-colors"
+              title="Archive memory"
+            >
+              Archive
+            </button>
+            <span class="text-gray-600 group-hover:text-gold-400 transition-colors ml-1">Details →</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Memory Detail Modal -->
+    <!-- Memory Detail / Edit Modal -->
     <div
       v-if="selectedMemory"
       class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono select-none"
@@ -174,7 +187,7 @@
             >
               {{ selectedMemory.type }}
             </span>
-            <span class="text-xs text-white font-bold">{{ selectedMemory.summary || 'Memory Details' }}</span>
+            <span class="text-xs text-white font-bold">{{ isEditing ? 'Edit Memory' : (selectedMemory.summary || 'Memory Details') }}</span>
           </div>
           <button @click="selectedMemory = null" class="text-gray-500 hover:text-white text-sm">✕</button>
         </div>
@@ -195,8 +208,27 @@
           </div>
         </div>
 
-        <!-- Full Content -->
-        <div class="space-y-1">
+        <!-- Edit Form vs View Mode -->
+        <div v-if="isEditing" class="space-y-4">
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-500 uppercase">Summary</label>
+            <input
+              v-model="editSummary"
+              type="text"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs font-mono text-white focus:outline-none focus:border-gold-500"
+            />
+          </div>
+          <div class="space-y-1">
+            <label class="text-[10px] text-gray-500 uppercase">Content Body</label>
+            <textarea
+              v-model="editContent"
+              rows="6"
+              class="w-full bg-dark-950 border border-dark-700 p-2 text-xs font-mono text-white focus:outline-none focus:border-gold-500"
+            ></textarea>
+          </div>
+        </div>
+
+        <div v-else class="space-y-1">
           <div class="text-[10px] text-gray-500 uppercase">Memory Body</div>
           <pre class="p-3 bg-dark-950 border border-dark-800 text-xs text-gray-200 whitespace-pre-wrap overflow-x-auto max-h-60">{{ selectedMemory.content }}</pre>
         </div>
@@ -221,13 +253,47 @@
           </div>
         </div>
 
-        <div class="pt-3 border-t border-dark-800 flex justify-end">
-          <button
-            @click="selectedMemory = null"
-            class="px-4 py-1.5 bg-dark-800 hover:bg-dark-700 text-white text-xs border border-dark-700"
-          >
-            Close
-          </button>
+        <!-- Footer Actions -->
+        <div class="pt-3 border-t border-dark-800 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <button
+              v-if="!isEditing"
+              @click="archiveMemoryItem(selectedMemory.id)"
+              class="px-3 py-1.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 text-xs transition-colors"
+            >
+              Archive Memory
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="!isEditing"
+              @click="startEditing(selectedMemory)"
+              class="px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-cyan-400 border border-cyan-800/60 text-xs transition-colors"
+            >
+              Edit
+            </button>
+            <template v-else>
+              <button
+                @click="isEditing = false"
+                class="px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-gray-400 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveMemoryEdit"
+                class="px-3 py-1.5 bg-gold-500 hover:bg-gold-400 text-black font-bold text-xs shadow-sm shadow-gold-500/20"
+              >
+                Save Changes
+              </button>
+            </template>
+            <button
+              v-if="!isEditing"
+              @click="selectedMemory = null"
+              class="px-4 py-1.5 bg-dark-800 hover:bg-dark-700 text-white text-xs border border-dark-700"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -269,7 +335,45 @@ const totalDisplayedTokens = computed(() => {
 });
 
 const openMemoryDetail = (m: Memory) => {
+  isEditing.value = false;
   selectedMemory.value = m;
+};
+
+const isEditing = ref(false);
+const editSummary = ref('');
+const editContent = ref('');
+
+const openEditMemory = (m: Memory) => {
+  selectedMemory.value = m;
+  startEditing(m);
+};
+
+const startEditing = (m: Memory) => {
+  isEditing.value = true;
+  editSummary.value = m.summary;
+  editContent.value = m.content;
+};
+
+const saveMemoryEdit = async () => {
+  if (!selectedMemory.value) return;
+  const ok = await store.updateMemory(selectedMemory.value.id, {
+    summary: editSummary.value,
+    content: editContent.value,
+  });
+  if (ok) {
+    selectedMemory.value.summary = editSummary.value;
+    selectedMemory.value.content = editContent.value;
+    isEditing.value = false;
+  }
+};
+
+const archiveMemoryItem = async (id: string) => {
+  if (confirm('Archive this cognitive memory? It will no longer be injected into active LLM context.')) {
+    await store.archiveMemory(id);
+    if (selectedMemory.value?.id === id) {
+      selectedMemory.value = null;
+    }
+  }
 };
 
 const getTypeBadgeClass = (type: string) => {

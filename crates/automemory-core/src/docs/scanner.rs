@@ -7,6 +7,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::db::Database;
+use crate::extraction::DocCompiler;
 use crate::models::{Project, TrackedDocument};
 use crate::redaction::contains_secrets;
 
@@ -28,8 +29,12 @@ impl DocumentScanner {
         let include_patterns = if project.document_config.include_patterns.is_empty() {
             vec![
                 "PRD.md".to_string(),
-                "docs/architecture.md".to_string(),
-                "docs/decisions/**/*.md".to_string(),
+                "docs/**/*.md".to_string(),
+                "specs/**/*.md".to_string(),
+                "prd/**/*.md".to_string(),
+                "adr/**/*.md".to_string(),
+                "rfc/**/*.md".to_string(),
+                "ARCHITECTURE.md".to_string(),
                 ".cursor/rules/**/*.md".to_string(),
                 "AGENTS.md".to_string(),
                 "CLAUDE.md".to_string(),
@@ -66,7 +71,7 @@ impl DocumentScanner {
 
         // Exclude check
         for exc in &project.document_config.exclude_patterns {
-            if rel_path.contains(exc) || rel_path.starts_with('.') && !rel_path.starts_with(".cursor") {
+            if rel_path.contains(exc) || (rel_path.starts_with('.') && !rel_path.starts_with(".cursor")) {
                 // skip excluded files
             }
         }
@@ -86,6 +91,34 @@ impl DocumentScanner {
         hasher.update(content.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
 
+        let title = content
+            .lines()
+            .find(|l| l.starts_with("# "))
+            .map(|l| l.trim_start_matches("# ").trim().to_string())
+            .unwrap_or_else(|| {
+                Path::new(&rel_path)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "Document".to_string())
+            });
+
+        let lower_path = rel_path.to_lowercase();
+        let category = if lower_path.contains("/prd/") || lower_path.contains("prd") {
+            "prd"
+        } else if lower_path.contains("/adr/") || lower_path.contains("adr") || lower_path.contains("architect") {
+            "adr"
+        } else if lower_path.contains("/rules/") || lower_path.contains("business") || lower_path.contains("invariant") {
+            "business-rules"
+        } else if lower_path.contains("/api/") || lower_path.contains("spec") || lower_path.contains("rfc") {
+            "api"
+        } else {
+            "general"
+        }
+        .to_string();
+
+        let l0 = DocCompiler::extract_l0_abstract(&content, &title);
+        let l1 = DocCompiler::extract_l1_overview(&content, &title, &category);
+
         let existing = self.db.get_document_by_path(&project.id, &rel_path)?;
 
         let doc = match existing {
@@ -94,8 +127,13 @@ impl DocumentScanner {
                     info!("Document updated: {} in project {}", rel_path, project.slug);
                     self.db.record_document_revision(&d.id, &content, &hash)?;
                     d.content_hash = hash;
+                    d.title = title;
+                    d.category = category.clone();
+                    d.l0_abstract = Some(l0.clone());
+                    d.l1_overview = Some(l1.clone());
                     d.last_scanned_at = Utc::now();
                     d.is_deleted = false;
+                    self.db.track_document(&d, Some(&content))?;
                 }
                 d
             }
@@ -106,8 +144,13 @@ impl DocumentScanner {
                     id: new_id,
                     project_id: project.id.clone(),
                     relative_path: rel_path.clone(),
+                    category: category.clone(),
+                    title,
                     content_hash: hash.clone(),
-                    summary: None,
+                    remote_synced_hash: None,
+                    summary: Some(l0.clone()),
+                    l0_abstract: Some(l0.clone()),
+                    l1_overview: Some(l1.clone()),
                     last_scanned_at: Utc::now(),
                     is_deleted: false,
                 };
@@ -115,6 +158,28 @@ impl DocumentScanner {
                 new_doc
             }
         };
+
+        // Materialize in canonical context if project context exists
+        if let Some(home) = dirs::home_dir() {
+            let base_projects = home.join(".automemory_pro").join("context").join("projects");
+            let target_root = if base_projects.join(&project.slug).exists() {
+                Some(base_projects.join(&project.slug))
+            } else if base_projects.join(&project.id).exists() {
+                Some(base_projects.join(&project.id))
+            } else {
+                None
+            };
+
+            if let Some(context_root) = target_root {
+                let target_dir = context_root.join("docs").join(&category);
+                let _ = fs::create_dir_all(&target_dir);
+                let fname = Path::new(&rel_path).file_name().unwrap_or_default();
+                let _ = fs::write(target_dir.join(fname), &content);
+                let compiler = DocCompiler::new(&self.db);
+                let _ = compiler.compile_project_docs(&project.id, &context_root);
+                info!("✓ Auto-compiled L0/L1 context overview at {:?}", context_root.join(".overview.md"));
+            }
+        }
 
         Ok(doc)
     }

@@ -40,6 +40,8 @@ export const useAutoMemoryStore = defineStore('automemory', {
     activeProject: null as string | null,
     currentMode: 'vibe' as 'vibe' | 'strict' | 'review',
     guardrailRules: [] as any[],
+    docs: [] as any[],
+    syncStatus: null as any,
 
     // UI state
     isConnected: false,
@@ -106,10 +108,20 @@ export const useAutoMemoryStore = defineStore('automemory', {
           this.fetchFailures(),
           this.fetchProposals(),
           this.fetchProjects(),
+          this.fetchDocs(),
+          this.fetchSyncStatus(),
         ]);
       } finally {
         this.isLoading = false;
       }
+    },
+
+    async fetchDocs() {
+      this.docs = await api.getDocs(this.activeProject);
+    },
+
+    async fetchSyncStatus() {
+      this.syncStatus = await api.getSyncStatus(this.activeProject);
     },
 
     async fetchStats() {
@@ -220,6 +232,86 @@ export const useAutoMemoryStore = defineStore('automemory', {
         project_id: this.activeProject,
         mode: this.currentMode,
       });
+    },
+
+    async archiveMemory(id: string) {
+      const ok = await api.archiveMemory(id);
+      if (ok) {
+        this.memories = this.memories.filter((m) => m.id !== id);
+        this.stats.active_memories = Math.max(0, this.stats.active_memories - 1);
+        this.stats.archived_memories += 1;
+        this.showLiveToast('Memory archived successfully', 'success');
+      }
+      return ok;
+    },
+
+    async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string }) {
+      const ok = await api.updateMemory(id, payload);
+      if (ok) {
+        const mem = this.memories.find((m) => m.id === id);
+        if (mem) {
+          if (payload.summary) mem.summary = payload.summary;
+          if (payload.content) mem.content = payload.content;
+        }
+        this.showLiveToast('Memory updated successfully', 'success');
+      }
+      return ok;
+    },
+
+    async resolveFailure(id: string, fixApplied: string, verificationResult?: string) {
+      const ok = await api.resolveFailure(id, {
+        fix_applied: fixApplied,
+        verification_result: verificationResult,
+      });
+      if (ok) {
+        const f = this.failures.find((item) => item.id === id);
+        if (f) {
+          f.status = 'resolved';
+          f.fix_applied = fixApplied;
+          if (verificationResult) f.verification_result = verificationResult;
+        }
+        this.stats.unresolved_failures = Math.max(0, this.stats.unresolved_failures - 1);
+        this.showLiveToast('Failure resolved and playbook recorded', 'success');
+      }
+      return ok;
+    },
+
+    async addGuardrailRule(rule: {
+      name: string;
+      pattern: string;
+      category?: string;
+      is_critical?: boolean;
+      description?: string;
+      mitigation_hint?: string;
+    }) {
+      const ok = await api.addGuardrailRule({
+        ...rule,
+        project_id: this.activeProject,
+      });
+      if (ok) {
+        this.showLiveToast(`Custom guardrail rule '${rule.name}' activated`, 'success');
+        await this.fetchGuardrailRules();
+      }
+      return ok;
+    },
+
+    async deleteGuardrailRule(id: string) {
+      const ok = await api.deleteGuardrailRule(id);
+      if (ok) {
+        this.guardrailRules = this.guardrailRules.filter((r) => r.id !== id);
+        this.showLiveToast('Custom guardrail rule deleted', 'info');
+      }
+      return ok;
+    },
+
+    async toggleGuardrailRule(id: string, enabled: boolean) {
+      const ok = await api.toggleGuardrailRule(id, enabled);
+      if (ok) {
+        const r = this.guardrailRules.find((rule) => rule.id === id);
+        if (r) r.enabled = enabled;
+        this.showLiveToast(`Rule ${enabled ? 'enabled' : 'disabled'}`, 'info');
+      }
+      return ok;
     },
 
     // ── WebSocket Real-Time Engine ──────────────────────────────────────────

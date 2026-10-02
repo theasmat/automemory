@@ -74,6 +74,8 @@ import {
   ShieldAlert,
   Sparkles,
   BookOpen,
+  FileText,
+  Cloud,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -91,6 +93,20 @@ const navItems = computed(() => [
     path: '/overview',
     label: 'Overview',
     icon: LayoutDashboard,
+  },
+  {
+    path: '/docs',
+    label: 'Product Specs',
+    icon: FileText,
+    badge: store.docs?.length,
+    badgeClass: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30',
+  },
+  {
+    path: '/sync',
+    label: 'Cloud Sync',
+    icon: Cloud,
+    badge: store.syncStatus?.pending_deltas > 0 ? store.syncStatus.pending_deltas : undefined,
+    badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/50 animate-pulse',
   },
   {
     path: '/memories',

@@ -146,4 +146,100 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+
+  async archiveMemory(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/memories/${encodeURIComponent(id)}/archive`, {
+        method: 'POST',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string }): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/memories/${encodeURIComponent(id)}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async resolveFailure(id: string, payload: { fix_applied: string; verification_result?: string }): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/failures/${encodeURIComponent(id)}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async addGuardrailRule(payload: {
+    name: string;
+    pattern: string;
+    category?: string;
+    is_critical?: boolean;
+    description?: string;
+    mitigation_hint?: string;
+    project_id?: string | null;
+  }): Promise<boolean> {
+    try {
+      const res = await fetch('/api/guardrails/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async deleteGuardrailRule(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/guardrails/rules/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async toggleGuardrailRule(id: string, enabled: boolean): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/guardrails/rules/${encodeURIComponent(id)}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async getDocs(projectId?: string | null): Promise<any[]> {
+    const url = projectId
+      ? `/api/docs?project_id=${encodeURIComponent(projectId)}`
+      : '/api/docs';
+    return (await request<any[]>(url)) || [];
+  },
+
+  async getSyncStatus(projectId?: string | null): Promise<any | null> {
+    const url = projectId
+      ? `/api/sync/status?project_id=${encodeURIComponent(projectId)}`
+      : '/api/sync/status';
+    return await request<any>(url);
+  },
 };

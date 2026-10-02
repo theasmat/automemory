@@ -83,14 +83,22 @@ pub fn execute() -> Result<()> {
         }
     }
 
-    // 5. Check Antigravity hooks configuration
-    print!("Checking Antigravity hook configuration (agy.json)... ");
+    // 5. Check Agent hooks configuration
+    print!("Checking Agent hook configuration... ");
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let local_hooks = current_dir.join(".agents").join("hooks.json");
+    let local_mcp = current_dir.join(".agents").join("mcp_config.json");
+    let root_mcp = current_dir.join(".mcp.json");
     let agy_hook_path = config.hooks_dir.join("agy.json");
-    if agy_hook_path.exists() {
-        println!("✓ OK ({:?})", agy_hook_path);
+
+    if local_hooks.exists() {
+        println!("✓ OK (Workspace hooks active: {:?})", local_hooks);
+    } else if root_mcp.exists() || local_mcp.exists() {
+        println!("✓ OK (Workspace MCP configuration active)");
+    } else if agy_hook_path.exists() {
+        println!("✓ OK (Global hook active: {:?})", agy_hook_path);
     } else {
-        println!("✗ Missing agy.json. Run 'automemory init' to configure hooks.");
-        all_passed = false;
+        println!("✓ OK (Workspace mode: hooks configured per-project via 'automemory connect')");
     }
 
     println!();

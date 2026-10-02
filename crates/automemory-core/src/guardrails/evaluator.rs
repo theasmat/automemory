@@ -42,9 +42,19 @@ pub struct GuardrailEvaluator<'a> {
 
 impl<'a> GuardrailEvaluator<'a> {
     pub fn new(db: Option<&'a Database>) -> Self {
+        let mut rules = GuardrailRule::default_rules();
+        if let Some(d) = db {
+            if let Ok(custom_rules) = d.list_custom_guardrail_rules(None) {
+                for cr in custom_rules {
+                    if cr.enabled {
+                        rules.push(cr.into());
+                    }
+                }
+            }
+        }
         Self {
             db,
-            rules: GuardrailRule::default_rules(),
+            rules,
         }
     }
 
@@ -131,59 +141,47 @@ impl<'a> GuardrailEvaluator<'a> {
             };
         }
 
-        // Mode-dependent High-Risk AST Checks (Strict blocks, Vibe warns)
+        // Mode-dependent High-Risk AST Checks (Strict blocks, Review queues proposal, Vibe warns)
         if tree.is_db_migration() {
-            let (action, requires_confirmation) = match mode {
-                AutopilotMode::Strict => (GuardrailAction::Block, true),
-                _ => (GuardrailAction::Warn, false),
-            };
-            return GuardrailDecision {
-                action,
-                severity: GuardrailSeverity::Warning,
-                risk_score: 0.75,
-                title: "High-Risk: Database Schema Migration".to_string(),
-                risk_summary: format!("Database schema migration command detected. (Enforced by {} mode)", mode),
-                mitigation_hint: Some("Verify backup and ensure schema changes are backwards compatible.".to_string()),
-                rule_matched: Some("rule_db_migration_ast".to_string()),
-                matched_failure_id: None,
-                requires_confirmation,
-            };
+            return self.handle_high_risk(
+                "rule_db_migration_ast",
+                "High-Risk: Database Schema Migration",
+                "Database schema migration command detected.",
+                Some("Verify backup and ensure schema changes are backwards compatible.".to_string()),
+                &command_str,
+                project_id,
+                mode,
+                0.75,
+                None,
+            );
         }
 
         if tree.is_cloud_infra_delete() {
-            let (action, requires_confirmation) = match mode {
-                AutopilotMode::Strict => (GuardrailAction::Block, true),
-                _ => (GuardrailAction::Warn, false),
-            };
-            return GuardrailDecision {
-                action,
-                severity: GuardrailSeverity::Warning,
-                risk_score: 0.8,
-                title: "High-Risk: Cloud Infrastructure Teardown".to_string(),
-                risk_summary: format!("Destructive cloud/container teardown detected. (Enforced by {} mode)", mode),
-                mitigation_hint: Some("Verify target cluster and namespace before destroying resources.".to_string()),
-                rule_matched: Some("rule_cloud_infra_delete_ast".to_string()),
-                matched_failure_id: None,
-                requires_confirmation,
-            };
+            return self.handle_high_risk(
+                "rule_cloud_infra_delete_ast",
+                "High-Risk: Cloud Infrastructure Teardown",
+                "Destructive cloud/container teardown detected.",
+                Some("Verify target cluster and namespace before destroying resources.".to_string()),
+                &command_str,
+                project_id,
+                mode,
+                0.8,
+                None,
+            );
         }
 
         if tree.is_destructive_git_reset() {
-            let (action, requires_confirmation) = match mode {
-                AutopilotMode::Strict => (GuardrailAction::Block, true),
-                _ => (GuardrailAction::Warn, false),
-            };
-            return GuardrailDecision {
-                action,
-                severity: GuardrailSeverity::Warning,
-                risk_score: 0.7,
-                title: "High-Risk: Destructive Git Reset/Clean".to_string(),
-                risk_summary: format!("Git reset --hard or git clean will discard uncommitted changes. (Enforced by {} mode)", mode),
-                mitigation_hint: Some("Run git stash before resetting to prevent unrecoverable loss.".to_string()),
-                rule_matched: Some("rule_git_hard_reset_ast".to_string()),
-                matched_failure_id: None,
-                requires_confirmation,
-            };
+            return self.handle_high_risk(
+                "rule_git_hard_reset_ast",
+                "High-Risk: Destructive Git Reset/Clean",
+                "Git reset --hard or git clean will discard uncommitted changes.",
+                Some("Run git stash before resetting to prevent unrecoverable loss.".to_string()),
+                &command_str,
+                project_id,
+                mode,
+                0.7,
+                None,
+            );
         }
 
         // 2. ── Regex Rule Matching (File Tampering & Supplemental Patterns) ──
@@ -204,23 +202,17 @@ impl<'a> GuardrailEvaluator<'a> {
                         };
                     }
 
-                    let (action, requires_confirmation) = match mode {
-                        AutopilotMode::Strict => (GuardrailAction::Block, true),
-                        AutopilotMode::Vibe => (GuardrailAction::Warn, false),
-                        AutopilotMode::Review => (GuardrailAction::Warn, false),
-                    };
-
-                    return GuardrailDecision {
-                        action,
-                        severity: GuardrailSeverity::Warning,
-                        risk_score: 0.75,
-                        title: format!("High-Risk Guardrail: {}", rule.name),
-                        risk_summary: format!("{} (Enforced by {} mode)", rule.description, mode),
-                        mitigation_hint: Some(rule.mitigation_hint.clone()),
-                        rule_matched: Some(rule.id.clone()),
-                        matched_failure_id: None,
-                        requires_confirmation,
-                    };
+                    return self.handle_high_risk(
+                        &rule.id,
+                        &format!("High-Risk Guardrail: {}", rule.name),
+                        &rule.description,
+                        Some(rule.mitigation_hint.clone()),
+                        &command_str,
+                        project_id,
+                        mode,
+                        0.75,
+                        None,
+                    );
                 }
             }
         }
@@ -230,26 +222,21 @@ impl<'a> GuardrailEvaluator<'a> {
             if let Ok(failures) = db.list_failures(project_id, Some("unresolved"), 20) {
                 for f in failures {
                     if self.matches_failure_signature(&command_str, &f.error_message, f.failed_tool.as_deref()) {
-                        let (action, requires_confirmation) = match mode {
-                            AutopilotMode::Strict => (GuardrailAction::Block, true),
-                            _ => (GuardrailAction::Warn, false),
-                        };
-
-                        return GuardrailDecision {
-                            action,
-                            severity: GuardrailSeverity::Warning,
-                            risk_score: 0.8,
-                            title: format!("Known Gotcha Alert: {}", f.task_title),
-                            risk_summary: format!(
+                        return self.handle_high_risk(
+                            "known_failure_match",
+                            &format!("Known Gotcha Alert: {}", f.task_title),
+                            &format!(
                                 "This action matches a known unresolved failure: {}. Root cause: {}",
                                 f.error_message,
                                 f.root_cause_hypothesis.unwrap_or_else(|| "Unknown".to_string())
                             ),
-                            mitigation_hint: Some("Review past failure resolution or test cautiously.".to_string()),
-                            rule_matched: Some("known_failure_match".to_string()),
-                            matched_failure_id: Some(f.id),
-                            requires_confirmation,
-                        };
+                            Some("Review past failure resolution or test cautiously.".to_string()),
+                            &command_str,
+                            project_id,
+                            mode,
+                            0.8,
+                            Some(f.id),
+                        );
                     }
                 }
             }
@@ -270,27 +257,34 @@ impl<'a> GuardrailEvaluator<'a> {
     }
 
     fn extract_command_string(&self, tool_name: &str, args: &Value) -> String {
+        let effective_args = if let Some(sub_args) = args.get("args").or_else(|| args.get("toolArgs")) {
+            sub_args
+        } else {
+            args
+        };
+
+        if let Some(cmd) = effective_args.get("CommandLine").and_then(|v| v.as_str()) {
+            return cmd.to_string();
+        }
+        if let Some(cmd) = effective_args.get("command").and_then(|v| v.as_str()) {
+            return cmd.to_string();
+        }
+
         let mut parts = Vec::new();
         parts.push(tool_name.to_string());
 
-        if let Some(cmd) = args.get("CommandLine").and_then(|v| v.as_str()) {
-            parts.push(cmd.to_string());
-        }
-        if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
-            parts.push(cmd.to_string());
-        }
-        if let Some(path) = args.get("TargetFile").and_then(|v| v.as_str()) {
+        if let Some(path) = effective_args.get("TargetFile").and_then(|v| v.as_str()) {
             parts.push(path.to_string());
         }
-        if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+        if let Some(path) = effective_args.get("path").and_then(|v| v.as_str()) {
             parts.push(path.to_string());
         }
-        if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
+        if let Some(query) = effective_args.get("query").and_then(|v| v.as_str()) {
             parts.push(query.to_string());
         }
 
         if parts.len() == 1 {
-            parts.push(args.to_string());
+            parts.push(effective_args.to_string());
         }
 
         parts.join(" ")
@@ -309,6 +303,109 @@ impl<'a> GuardrailEvaluator<'a> {
             }
         }
         false
+    }
+
+    fn handle_high_risk(
+        &self,
+        rule_id: &str,
+        title: &str,
+        risk_summary: &str,
+        mitigation_hint: Option<String>,
+        command_str: &str,
+        project_id: Option<&str>,
+        mode: AutopilotMode,
+        risk_score: f64,
+        matched_failure_id: Option<String>,
+    ) -> GuardrailDecision {
+        match mode {
+            AutopilotMode::Strict => GuardrailDecision {
+                action: GuardrailAction::Block,
+                severity: GuardrailSeverity::Warning,
+                risk_score,
+                title: title.to_string(),
+                risk_summary: format!("{} (Enforced by strict mode)", risk_summary),
+                mitigation_hint,
+                rule_matched: Some(rule_id.to_string()),
+                matched_failure_id,
+                requires_confirmation: true,
+            },
+            AutopilotMode::Review => {
+                let desc = format!("Command requires operator review: {}", command_str);
+                if let Some(db) = self.db {
+                    if let Ok(Some(_approved)) = db.find_approved_proposal(project_id, rule_id, &desc) {
+                        return GuardrailDecision {
+                            action: GuardrailAction::Allow,
+                            severity: GuardrailSeverity::Info,
+                            risk_score: 0.0,
+                            title: format!("Approved: {}", title),
+                            risk_summary: "Action was previously reviewed and approved by operator.".to_string(),
+                            mitigation_hint: None,
+                            rule_matched: Some(rule_id.to_string()),
+                            matched_failure_id,
+                            requires_confirmation: false,
+                        };
+                    }
+
+                    let prop_id = match db.find_pending_proposal(project_id, rule_id, &desc) {
+                        Ok(Some(existing)) => existing.id,
+                        _ => {
+                            let new_id = uuid::Uuid::now_v7().to_string();
+                            let prop = crate::models::ReviewProposal {
+                                id: new_id.clone(),
+                                project_id: project_id.map(String::from),
+                                proposal_type: "tool_execution_review".to_string(),
+                                target_id: rule_id.to_string(),
+                                description: desc,
+                                suggested_action: format!("allow {}", command_str),
+                                status: "pending".to_string(),
+                                created_at: chrono::Utc::now(),
+                                decided_at: None,
+                            };
+                            let _ = db.save_proposal(&prop);
+                            new_id
+                        }
+                    };
+
+                    GuardrailDecision {
+                        action: GuardrailAction::Block,
+                        severity: GuardrailSeverity::Warning,
+                        risk_score,
+                        title: format!("Review Required: {}", title),
+                        risk_summary: format!(
+                            "Command queued for operator review in REVIEW mode (Proposal ID: {}). Use memory.proposals.decide to approve or reject.",
+                            prop_id
+                        ),
+                        mitigation_hint: Some(format!("Operator approval required for proposal '{}' before command can proceed.", prop_id)),
+                        rule_matched: Some(rule_id.to_string()),
+                        matched_failure_id,
+                        requires_confirmation: true,
+                    }
+                } else {
+                    GuardrailDecision {
+                        action: GuardrailAction::Block,
+                        severity: GuardrailSeverity::Warning,
+                        risk_score,
+                        title: format!("Review Required: {}", title),
+                        risk_summary: format!("{} (Review mode active; queued for review)", risk_summary),
+                        mitigation_hint,
+                        rule_matched: Some(rule_id.to_string()),
+                        matched_failure_id,
+                        requires_confirmation: true,
+                    }
+                }
+            }
+            AutopilotMode::Vibe => GuardrailDecision {
+                action: GuardrailAction::Warn,
+                severity: GuardrailSeverity::Warning,
+                risk_score,
+                title: title.to_string(),
+                risk_summary: format!("{} (Allowed with warning in vibe mode)", risk_summary),
+                mitigation_hint,
+                rule_matched: Some(rule_id.to_string()),
+                matched_failure_id,
+                requires_confirmation: false,
+            },
+        }
     }
 }
 
@@ -361,5 +458,35 @@ mod tests {
 
         assert_eq!(decision.action, GuardrailAction::Allow);
         assert_eq!(decision.risk_score, 0.0);
+    }
+
+    #[test]
+    fn test_high_risk_migration_review_mode_proposals_lifecycle() {
+        let db = Database::open_in_memory().unwrap();
+
+        let evaluator = GuardrailEvaluator::new(Some(&db));
+        let args = serde_json::json!({ "CommandLine": "npx prisma migrate reset --force" });
+
+        // 1. In Review mode: initial run must block and create a pending proposal
+        let review_decision = evaluator.evaluate("run_command", &args, Some("proj-test"), AutopilotMode::Review);
+        assert_eq!(review_decision.action, GuardrailAction::Block);
+        assert!(review_decision.requires_confirmation);
+        assert!(review_decision.risk_summary.contains("Proposal ID:"));
+
+        // 2. Verify the pending proposal exists in the database
+        let pending = db.list_pending_proposals(Some("proj-test")).unwrap();
+        assert_eq!(pending.len(), 1);
+        let prop = &pending[0];
+        assert_eq!(prop.proposal_type, "tool_execution_review");
+        assert_eq!(prop.target_id, "rule_db_migration_ast");
+
+        // 3. Operator approves the proposal
+        let decided = db.decide_proposal(&prop.id, true).unwrap();
+        assert!(decided);
+
+        // 4. In Review mode: subsequent run now succeeds with Allow
+        let approved_decision = evaluator.evaluate("run_command", &args, Some("proj-test"), AutopilotMode::Review);
+        assert_eq!(approved_decision.action, GuardrailAction::Allow);
+        assert_eq!(approved_decision.risk_score, 0.0);
     }
 }

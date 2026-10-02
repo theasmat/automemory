@@ -14,7 +14,7 @@ pub use db::Database;
 pub use docs::{DocumentScanner, DocumentWatcher};
 pub use extraction::{ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics, ExtractionWorker, ImplicitTaskSegmenter, LlmExtractor, LlmProviderConfig, TaskBoundaryReason, TaskSegment, TrajectoryDistiller};
 pub use graph::{GraphBuilder, GraphEdge, GraphEntity, GraphQuery, ImpactReport};
-pub use guardrails::{GuardrailAction, GuardrailDecision, GuardrailEvaluator, GuardrailRule, GuardrailSeverity, RiskCategory};
+pub use guardrails::{CustomGuardrailRule, GuardrailAction, GuardrailDecision, GuardrailEvaluator, GuardrailRule, GuardrailSeverity, RiskCategory};
 pub use models::*;
 pub use redaction::{contains_secrets, redact_json, redact_text};
 pub use retrieval::{HybridScorer, RetrievalEngine, ScoredCandidate, SearchResult, VectorEngine};

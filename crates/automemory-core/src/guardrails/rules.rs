@@ -115,3 +115,45 @@ impl GuardrailRule {
         ]
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomGuardrailRule {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub name: String,
+    pub category: String,
+    pub pattern: String,
+    pub is_critical: bool,
+    pub action: String, // "block" or "warn"
+    pub description: String,
+    pub mitigation_hint: String,
+    pub enabled: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<CustomGuardrailRule> for GuardrailRule {
+    fn from(c: CustomGuardrailRule) -> Self {
+        let category = match c.category.to_lowercase().as_str() {
+            "catastrophic_filesystem" => RiskCategory::CatastrophicFilesystem,
+            "production_git_destruction" => RiskCategory::ProductionGitDestruction,
+            "database_migration_or_drop" => RiskCategory::DatabaseMigrationOrDrop,
+            "cloud_infrastructure_mutation" => RiskCategory::CloudInfrastructureMutation,
+            "secret_exposure" => RiskCategory::SecretExposure,
+            "destructive_git_reset" => RiskCategory::DestructiveGitReset,
+            "critical_config_tamper" => RiskCategory::CriticalConfigTamper,
+            "known_failure_signature" => RiskCategory::KnownFailureSignature,
+            _ => RiskCategory::StandardAction,
+        };
+
+        Self {
+            id: c.id,
+            name: c.name,
+            category,
+            pattern: c.pattern,
+            is_critical: c.is_critical,
+            description: c.description,
+            mitigation_hint: c.mitigation_hint,
+        }
+    }
+}
+
