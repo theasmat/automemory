@@ -1,4 +1,4 @@
-name: AutoMemory Pro CI
+name: AutoMemory CI
 
 on:
   push:

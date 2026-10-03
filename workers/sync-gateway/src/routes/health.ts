@@ -6,7 +6,7 @@ export const healthRouter = new Hono<{ Bindings: Env }>();
 healthRouter.all('/health', (c) => {
   return c.json({
     status: 'ok',
-    service: 'AutoMemory Pro Cloud Sync Gateway',
+    service: 'AutoMemory Cloud Sync Gateway',
     edge: 'cloudflare-workers',
     timestamp: new Date().toISOString(),
   });

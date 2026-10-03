@@ -2,7 +2,7 @@
 
 ## 1. The Autonomous Agent Lifecycle
 
-AutoMemory Pro interfaces with coding agents through an **out-of-process hook mechanism** and a standard **Model Context Protocol (MCP)** interface. This guarantees zero lock-in, zero runtime performance degradation for the host agent, and full crash isolation.
+AutoMemory interfaces with coding agents through an **out-of-process hook mechanism** and a standard **Model Context Protocol (MCP)** interface. This guarantees zero lock-in, zero runtime performance degradation for the host agent, and full crash isolation.
 
 ```mermaid
 sequenceDiagram

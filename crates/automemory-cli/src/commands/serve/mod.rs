@@ -137,7 +137,7 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("┌────────────────────────────────────────────────────────┐");
-    println!("│              AutoMemory Pro Daemon Active              │");
+    println!("│                AutoMemory Daemon Active                │");
     println!("├────────────────────────────────────────────────────────┤");
     println!("│  Dashboard Web UI: http://127.0.0.1:{:<5}              │", port);
     println!("│  WebSocket Engine: ws://127.0.0.1:{:<5}/ws             │", port);

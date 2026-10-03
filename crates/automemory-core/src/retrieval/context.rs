@@ -318,7 +318,7 @@ impl<'a> RetrievalEngine<'a> {
         add_section("AutoMemory Context Guidelines", instructions, &mut sections, &mut current_chars);
 
         let mut output = String::new();
-        output.push_str("# AutoMemory Pro Active Context\n\n");
+        output.push_str("# AutoMemory Active Context\n\n");
         for sec in sections {
             output.push_str(&sec);
             output.push('\n');

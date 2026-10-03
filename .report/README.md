@@ -1,4 +1,4 @@
-# AutoMemory Pro: Complete Project & Architecture Report
+# AutoMemory: Complete Project & Architecture Report
 
 > **The High-Performance Judgment, Safety Guardrails, Procedural Memory & Long-Term Context Engine for Autonomous Coding Agents.**
 
@@ -29,7 +29,7 @@ This comprehensive technical report is structured into four core chapters:
 4. **[Targets, SLAs & Competitive Benchmarks](file:///Users/as/Dev/Projects/opensources/automemory/.report/targets_and_benchmarks.md)**
    - Target Personas & Ecosystem Distribution (Antigravity, Claude Code, Cursor, Cline).
    - Measured Performance SLAs vs. Targets (Sub-2ms Interception, 100:1 Compression, 72.4% Token Reduction).
-   - In-Depth Competitive Comparison Matrix: **AutoMemory Pro vs. Mem0 vs. Zep vs. LangMem vs. Plain Vector DBs**.
+   - In-Depth Competitive Comparison Matrix: **AutoMemory vs. Mem0 vs. Zep vs. LangMem vs. Plain Vector DBs**.
    - Strategic Engineering Roadmap & Milestone Timeline.
 
 ---

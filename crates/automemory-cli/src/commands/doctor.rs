@@ -7,13 +7,13 @@ use std::time::Instant;
 use uuid::Uuid;
 
 pub fn execute() -> Result<()> {
-    println!("=== AutoMemory Pro System Diagnostic (doctor) ===\n");
+    println!("=== AutoMemory System Diagnostic (doctor) ===\n");
     let mut all_passed = true;
 
     let config = Config::default_config();
 
     // 1. Check directories
-    print!("Checking directories (~/.automemory_pro)... ");
+    print!("Checking directories (~/.automemory)... ");
     if config.home_dir.exists() && config.hooks_dir.exists() {
         println!("✓ OK ({:?})", config.home_dir);
     } else {
@@ -38,7 +38,7 @@ pub fn execute() -> Result<()> {
                 scope: MemoryScope::Global,
                 project_id: None,
                 memory_type: MemoryType::Fact,
-                content: "AutoMemory Pro diagnostic verification probe.".to_string(),
+                content: "AutoMemory diagnostic verification probe.".to_string(),
                 summary: "Doctor diagnostic test".to_string(),
                 confidence: 1.0,
                 importance: 0.5,
@@ -103,7 +103,7 @@ pub fn execute() -> Result<()> {
 
     println!();
     if all_passed {
-        println!("✓ All health checks passed! AutoMemory Pro is fully operational.");
+        println!("✓ All health checks passed! AutoMemory is fully operational.");
     } else {
         println!("⚠ Some checks failed. Review warnings above.");
     }

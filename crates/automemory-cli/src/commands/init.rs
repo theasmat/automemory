@@ -85,7 +85,7 @@ pub fn execute(agent: Option<String>) -> Result<()> {
     let _ = db.save_project(&proj);
     let _ = db.add_project_path(&proj.id, &path_str, true);
 
-    println!("✓ AutoMemory Pro initialized successfully!");
+    println!("✓ AutoMemory initialized successfully!");
     println!("  Database: {:?}", config.db_path);
     println!("  Hooks:    {:?}", hook_file);
     println!("  Project:  {} ({})", folder_name, path_str);

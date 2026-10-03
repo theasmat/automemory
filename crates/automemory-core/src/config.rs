@@ -236,7 +236,13 @@ pub struct Config {
 impl Config {
     pub fn default_config() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let base = home.join(".automemory_pro");
+        let primary = home.join(".automemory");
+        let legacy = home.join(".automemory_pro");
+        let base = if !primary.exists() && legacy.exists() {
+            legacy
+        } else {
+            primary
+        };
         let vault_dir = GlobalConfig::load()
             .ok()
             .and_then(|g| g.vault.local_vault_dir)

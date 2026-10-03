@@ -2,7 +2,7 @@
 
 ## 1. Crate Hierarchy & Modular Architecture
 
-AutoMemory Pro is written entirely in **Rust 2021 Edition** for high concurrency, memory safety, and sub-millisecond execution times. The workspace is organized into three decoupled crates:
+AutoMemory is written entirely in **Rust 2021 Edition** for high concurrency, memory safety, and sub-millisecond execution times. The workspace is organized into three decoupled crates:
 
 ```
 automemory/
@@ -26,7 +26,7 @@ graph TD
 
 ## 2. SQLite Database & Storage Engine
 
-AutoMemory Pro stores all state locally in a single SQLite database located at `~/.automemory_pro/automemory.db`.
+AutoMemory stores all state locally in a single SQLite database located at `~/.automemory/automemory.db`.
 
 ### PRAGMA Optimizations
 To maximize throughput and eliminate database locking during concurrent hook evaluations:
@@ -156,7 +156,7 @@ $$\text{RRF\_Score}(d) = \frac{1}{60 + R_{\text{FTS5}}(d)} + \frac{1}{60 + R_{\t
 
 ## 5. Model Context Protocol (MCP) Interface
 
-AutoMemory Pro implements the **MCP Specification (2024-11-05)** over both standard I/O (stdio) and HTTP JSON-RPC at `http://127.0.0.1:4545/mcp`.
+AutoMemory implements the **MCP Specification (2024-11-05)** over both standard I/O (stdio) and HTTP JSON-RPC at `http://127.0.0.1:4545/mcp`.
 
 ### Core Tool Catalog (23 Standardized Tools)
 

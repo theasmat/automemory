@@ -1,4 +1,4 @@
--- AutoMemory Pro Cloud Gateway Database Schema (Cloudflare D1 / SQLite)
+-- AutoMemory Cloud Gateway Database Schema (Cloudflare D1 / SQLite)
 
 CREATE TABLE IF NOT EXISTS pricing_plans (
     plan_id TEXT PRIMARY KEY,

@@ -93,7 +93,7 @@ pub fn track(
 
     db.track_document(&doc, Some(&content))?;
 
-    // Copy to canonical context directory: ~/.automemory_pro/context/projects/{project_id}/docs/{category}/
+    // Copy to canonical context directory: ~/.automemory/context/projects/{project_id}/docs/{category}/
     let context_root = config.home_dir.join("context").join("projects").join(&project_id);
     let target_context_dir = context_root.join("docs").join(&category);
     fs::create_dir_all(&target_context_dir)?;

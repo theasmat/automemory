@@ -1,8 +1,8 @@
-# What We Are Building: AutoMemory Pro
+# What We Are Building: AutoMemory
 
 ## 1. Executive Summary & Vision
 
-**AutoMemory Pro** is an open-source, ultra-fast, local-first **Judgment, Safety Guardrail, Procedural Memory, and Long-Term Context Engine** engineered specifically for autonomous AI coding agents (such as Google Antigravity, Claude Code, Cursor, Copilot Workspace, Cline, and Windsurf).
+**AutoMemory** is an open-source, ultra-fast, local-first **Judgment, Safety Guardrail, Procedural Memory, and Long-Term Context Engine** engineered specifically for autonomous AI coding agents (such as Google Antigravity, Claude Code, Cursor, Copilot Workspace, Cline, and Windsurf).
 
 Modern LLM coding agents are transitioning from interactive chat assistants to **autonomous background workers** that execute dozens or hundreds of tool actions in a single session ("vibe coding" / full-auto loops). However, existing agent memory solutions suffer from fundamental flaws:
 1. **Dumb Storage Syndrome**: Traditional systems (e.g., raw vector databases or key-value stores) store passive text snippets without understanding tool execution trajectories, shell command ASTs, or behavioral workflows.
@@ -10,7 +10,7 @@ Modern LLM coding agents are transitioning from interactive chat assistants to *
 3. **Catastrophic Failure Vulnerability**: Autonomous agents operating in background loops can run destructive commands (`rm -rf /`, `git push origin main --force`, raw database drops, or disk formats) without semantic safety guardrails.
 4. **Memory Rot & Contradiction Blindness**: As codebases evolve (e.g. migrating from Vue 2 to Vue 3 or Webpack to Vite), old memories persist indefinitely, actively misleading agents with obsolete rules.
 
-**AutoMemory Pro solves these problems by providing an active judgment and workflow layer** that runs out-of-process alongside any coding agent.
+**AutoMemory solves these problems by providing an active judgment and workflow layer** that runs out-of-process alongside any coding agent.
 
 ```mermaid
 graph TD
@@ -29,9 +29,9 @@ graph TD
 
 ---
 
-## 2. Core Pillars of AutoMemory Pro
+## 2. Core Pillars of AutoMemory
 
-AutoMemory Pro is built on four core architectural pillars:
+AutoMemory is built on four core architectural pillars:
 
 ### Pillar 1: Active Safety & Mode-Driven Guardrails
 Instead of treating safety as an afterthought, AutoMemory intercepts tool calls before execution via an AST shell lexer. It operates across three distinct autopilot modes:
@@ -56,7 +56,7 @@ Agent session trajectories often contain 90% noise (exploratory greps, failed fi
 
 ## 3. The Problem Space & Value Proposition
 
-| Pain Point in Autonomous Coding | Traditional Vector / Key-Value Memory | AutoMemory Pro Solution |
+| Pain Point in Autonomous Coding | Traditional Vector / Key-Value Memory | AutoMemory Solution |
 | :--- | :--- | :--- |
 | **Agent executes dangerous subshell commands** (`sudo sh -c 'rm -rf /'`) | Ignored until shell executes and destroys disk | AST shell lexer unwraps subshells and halts agent in `<2ms` with exit code 1 |
 | **Agent context window fills with verbose read traces** | Floods context window with 50K+ tokens of exploratory noise | Evidence-preserving distillation compresses traces 100:1, saving 60–80% tokens |

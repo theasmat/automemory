@@ -136,7 +136,7 @@ pub fn init(project_id: Option<String>, endpoint: Option<String>, token: Option<
     // Protect .automemory and .context in .gitignore
     update_gitignore(&cwd)?;
 
-    println!("✓ Initialized AutoMemory Pro cloud sync configuration for '{}':", proj_id);
+    println!("✓ Initialized AutoMemory cloud sync configuration for '{}':", proj_id);
     println!("  📁 Config: {}", config_path.display());
     println!("  🛡️  Protection: Verified .automemory and .context in .gitignore");
 
@@ -151,7 +151,7 @@ pub fn status(project_opt: Option<String>) -> Result<()> {
     let project_id = project_opt.unwrap_or_else(|| infer_project_id(&cwd));
     let docs = db.list_documents(&project_id)?;
 
-    println!("=== AutoMemory Pro Cloud Sync Status: '{}' ===\n", project_id);
+    println!("=== AutoMemory Cloud Sync Status: '{}' ===\n", project_id);
 
     let cfg_path = cwd.join(".automemory").join("config.json");
     if let Ok(content) = fs::read_to_string(&cfg_path) {
@@ -711,7 +711,7 @@ pub async fn restore(
     };
 
     println!("========================================================");
-    println!("   AutoMemory Pro — Disaster Recovery & Machine Reset   ");
+    println!("     AutoMemory — Disaster Recovery & Machine Reset     ");
     println!("   Restoring Project Context: '{}'", project_id);
     println!("========================================================\n");
 
@@ -847,7 +847,7 @@ pub async fn restore(
     }
 
     println!("\n✓ Disaster recovery complete! Project '{}' is fully restored.", project_id);
-    println!("  🔗 Local symlink: .context/ -> ~/.automemory_pro/context/projects/{}", project_id);
+    println!("  🔗 Local symlink: .context/ -> ~/.automemory/context/projects/{}", project_id);
 
     Ok(())
 }
@@ -991,7 +991,7 @@ fn update_gitignore(cwd: &Path) -> Result<()> {
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
-        content.push_str("\n# AutoMemory Pro single-source local context\n.context\n");
+        content.push_str("\n# AutoMemory single-source local context\n.context\n");
         modified = true;
     }
 
@@ -1023,7 +1023,7 @@ pub async fn pair(
     if let Some(phrase) = join_phrase {
         // --- Joining an existing device vault ---
         println!("==========================================================================");
-        println!("   AutoMemory Pro — Device Pairing: Joining Existing Zero-Knowledge Vault   ");
+        println!("     AutoMemory — Device Pairing: Joining Existing Zero-Knowledge Vault   ");
         println!("==========================================================================");
 
         let key = match automemory_core::bip39::mnemonic_to_master_key(&phrase) {
@@ -1108,7 +1108,7 @@ pub async fn pair(
         let qr_art = automemory_core::bip39::render_terminal_qr(&phrase);
 
         println!("==========================================================================");
-        println!("             AutoMemory Pro — Zero-Knowledge Device Pairing               ");
+        println!("               AutoMemory — Zero-Knowledge Device Pairing                 ");
         println!("==========================================================================");
         println!();
         println!("Scan this QR block matrix from another terminal or copy the recovery seed:\n");
@@ -1143,7 +1143,7 @@ pub async fn watch(project_opt: Option<String>, interval_secs: u64) -> Result<()
     });
 
     println!("==========================================================================");
-    println!("   AutoMemory Pro — Real-Time Background File Watcher & Auto-Sync Engine  ");
+    println!("     AutoMemory — Real-Time Background File Watcher & Auto-Sync Engine    ");
     println!("==========================================================================");
     println!("Watching project '{}' in {}", project_id, cwd.display());
     println!("Polling interval: {}s. Auto-pushing git-ignored plans & encrypted deltas.", interval_secs);

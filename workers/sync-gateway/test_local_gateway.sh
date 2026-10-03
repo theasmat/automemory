@@ -50,7 +50,7 @@ if ! curl -s "$GATEWAY_URL/health" > /dev/null 2>&1; then
 fi
 
 echo "=========================================================================="
-echo "    AutoMemory Pro: Cloudflare Worker Local Gateway Integration Suite     "
+echo "      AutoMemory: Cloudflare Worker Local Gateway Integration Suite       "
 echo "=========================================================================="
 
 
@@ -326,7 +326,7 @@ fi
 # 19. Developer Web Console UI Serving
 log_test "Developer Web Console HTML Endpoint (/dashboard)"
 DASH_RESP=$(curl -s -L "$GATEWAY_URL/dashboard")
-echo "$DASH_RESP" | grep -q "AutoMemory Pro - Edge Control Console"
+echo "$DASH_RESP" | grep -q "AutoMemory - Edge Control Console"
 echo "$DASH_RESP" | grep -q "Zero-Knowledge Blind Architecture Verified"
 echo "$DASH_RESP" | grep -q "Device Fleet Manager"
 assert_success "Web console HTML page served successfully with zero-knowledge guarantee"
@@ -456,7 +456,7 @@ assert_success "Vector search correctly isolated results by project slug"
 # 30. CLI Device Pairing & Keychain Verification
 log_test "CLI Device Pairing Command (Phrase & QR Code)"
 PAIR_OUTPUT=$(cargo run -q --bin automemory -- sync pair 2>/dev/null)
-echo "$PAIR_OUTPUT" | grep -q "AutoMemory Pro — Zero-Knowledge Device Pairing"
+echo "$PAIR_OUTPUT" | grep -q "AutoMemory — Zero-Knowledge Device Pairing"
 echo "$PAIR_OUTPUT" | grep -q "Recovery Phrase:"
 echo "$PAIR_OUTPUT" | grep -q "automemory sync pair --join"
 assert_success "CLI sync pair command rendered visual QR matrix and recovery phrase"

@@ -1,4 +1,4 @@
-# AutoMemory Pro
+# AutoMemory
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
@@ -6,9 +6,9 @@
 [![Cloudflare Edge](https://img.shields.io/badge/edge-Cloudflare%20Workers%20%2B%20D1%20%2B%20Vectorize-F38020.svg)](#cloudflare-edge-gateway--developer-dashboard)
 [![CI](https://github.com/theasmat/automemory/actions/workflows/ci.yml/badge.svg)](https://github.com/theasmat/automemory/actions/workflows/ci.yml)
 
-**AutoMemory Pro** is an open-source, local-first, zero-knowledge persistent memory and autonomous intelligence platform for AI coding agents (Antigravity, Claude Code, Cursor, Codex). Built natively in Rust for blistering performance, AutoMemory Pro passively captures task evidence, tool outcomes, architectural decisions, failure post-mortems, user preferences, and repeatable procedures without ever blocking your coding workflow.
+**AutoMemory** is an open-source, local-first, zero-knowledge persistent memory and autonomous intelligence platform for AI coding agents (Antigravity, Claude Code, Cursor, Codex). Built natively in Rust for blistering performance, AutoMemory passively captures task evidence, tool outcomes, architectural decisions, failure post-mortems, user preferences, and repeatable procedures without ever blocking your coding workflow.
 
-AutoMemory Pro features a **Zero-Knowledge Blind Cloud Architecture** powered by Cloudflare Workers, D1, R2, and Vectorize, paired with **OpenViking-style Plan Synchronization** that backs up git-ignored project plans and specifications into private GitHub vaults without cluttering target repositories.
+AutoMemory features a **Zero-Knowledge Blind Cloud Architecture** powered by Cloudflare Workers, D1, R2, and Vectorize, paired with **OpenViking-style Plan Synchronization** that backs up git-ignored project plans and specifications into private GitHub vaults without cluttering target repositories.
 
 ---
 
@@ -79,7 +79,7 @@ AutoMemory Pro features a **Zero-Knowledge Blind Cloud Architecture** powered by
 
 ## 🔒 Zero-Knowledge Security Model
 
-AutoMemory Pro enforces absolute end-to-end zero-knowledge encryption:
+AutoMemory enforces absolute end-to-end zero-knowledge encryption:
 
 1. **Client-Side Key Derivation**: Your Master Encryption Key never leaves your local workstation. It is derived from your passkey or BIP-39 mnemonic seed using PBKDF2 with HMAC-SHA256 and 600,000 iterations.
 2. **Deterministic Blind Hashes**: Projects, memories, and skill identifiers are hashed with HMAC-SHA256 (`HMAC-SHA256(MasterKey, Salt || PlaintextID)`). Cloudflare edge servers see only random 64-character hex strings and cannot correlate your project names or content.
@@ -103,7 +103,7 @@ sudo cp target/release/automemory /usr/local/bin/
 automemory init --agent agy
 ```
 
-This creates `~/.automemory_pro/`, initializes the local encrypted SQLite WAL store, writes the Antigravity lifecycle hook (`agy.json`), and registers your current workspace.
+This creates `~/.automemory/`, initializes the local encrypted SQLite WAL store, writes the Antigravity lifecycle hook (`agy.json`), and registers your current workspace.
 
 ### 3. Verify System Health with Doctor
 
@@ -112,16 +112,16 @@ automemory doctor
 ```
 
 ```text
-=== AutoMemory Pro System Diagnostic (doctor) ===
+=== AutoMemory System Diagnostic (doctor) ===
 
-Checking directories (~/.automemory_pro)... ✓ OK
+Checking directories (~/.automemory)... ✓ OK
 Checking SQLite database connectivity & WAL mode... ✓ OK (opened in 1.42ms)
 Benchmarking FTS5 search & memory operations... ✓ OK (FTS5 search latency: 0.98ms)
   Active memories: 14, Archived: 0, Trackable plans: 3
 Checking Antigravity hook configuration (agy.json)... ✓ OK
 Checking Zero-Knowledge Encryption Master Key... ✓ OK (AES-256-GCM authenticated)
 
-✓ All health checks passed! AutoMemory Pro is fully operational.
+✓ All health checks passed! AutoMemory is fully operational.
 ```
 
 ### 4. Pair Secondary Machines (BIP-39 & QR Code)
@@ -154,21 +154,18 @@ AutoMemory will monitor your registered project paths and push git-ignored archi
 
 ## 📄 OpenViking-Style Git-Ignored Plan Synchronization
 
-AutoMemory Pro solves the challenge of preserving AI agent plans, roadmaps, and scratchpads across multiple machines without polluting public repositories:
+AutoMemory solves the challenge of preserving AI agent plans, roadmaps, and scratchpads across multiple machines without polluting public repositories:
 
 1. **Zero Workspace Clutter**: Keep `plans/`, `docs/specs/`, and `.gemini/` git-ignored in your target codebase.
-2. **Global Config Mapping**: Configure tracked files in `~/.automemory_pro/config.json`:
-   ```json
-   {
-     "vault_repo": "git@github.com:youruser/my-agent-vault.git",
-     "projects": [
-       {
-         "name": "my-project",
-         "path": "/Users/user/Dev/my-project",
-         "track_files": ["plans/**", "docs/specs/**", "ARCHITECTURE.md"]
-       }
-     ]
-   }
+2. **Global Config Mapping**: Configure tracked files in `~/.automemory/config.toml`:
+   ```toml
+   [vault]
+   remote_url = "git@github.com:youruser/my-agent-vault.git"
+
+   [[projects]]
+   name = "my-project"
+   local_dir = "/Users/user/Dev/my-project"
+   trackable_files = ["plans/**", "docs/specs/**", "ARCHITECTURE.md"]
    ```
 3. **Seamless Push & Pull**:
    - `automemory sync push`: Collects all matched files, commits them to your private vault repository under `projects/<project-slug>/`, and pushes encrypted memory deltas to the edge.
@@ -211,7 +208,7 @@ AutoMemory Pro solves the challenge of preserving AI agent plans, roadmaps, and 
 
 ## 🔌 Model Context Protocol (MCP) Tool Suite
 
-AutoMemory Pro exposes 30+ native MCP tools for direct integration with AI coding agents:
+AutoMemory exposes 30+ native MCP tools for direct integration with AI coding agents:
 
 ### Context & Memory Retrieval
 - `memory.recall`: Query memories relevant to user task or prompt.
@@ -236,7 +233,7 @@ AutoMemory Pro exposes 30+ native MCP tools for direct integration with AI codin
 
 ## 🌐 Cloudflare Edge Gateway & Developer Dashboard
 
-AutoMemory Pro includes a production-ready Cloudflare Worker sync gateway (`workers/sync-gateway`):
+AutoMemory includes a production-ready Cloudflare Worker sync gateway (`workers/sync-gateway`):
 
 - **Zero-Knowledge D1 SQLite Engine**: Stores device registrations, encrypted deltas, sync events, and blind vector metadata.
 - **R2 Blob Storage**: Stores large encrypted plan bundles and full memory backups.
@@ -251,7 +248,7 @@ AutoMemory Pro includes a production-ready Cloudflare Worker sync gateway (`work
 
 ## 🧪 Testing & Verification
 
-The AutoMemory Pro test suite validates the entire workspace across Rust and TypeScript:
+The AutoMemory test suite validates the entire workspace across Rust and TypeScript:
 
 ```bash
 # Run all native Rust workspace tests (42 unit, integration, and benchmark tests)

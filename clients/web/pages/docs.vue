@@ -58,7 +58,7 @@
 
       <div class="flex items-center gap-2 text-xs font-mono text-gray-500">
         <span>Single-Source:</span>
-        <code class="text-cyan-400 bg-dark-900 px-1.5 py-0.5 border border-dark-800">.context/ -> ~/.automemory_pro/context</code>
+        <code class="text-cyan-400 bg-dark-900 px-1.5 py-0.5 border border-dark-800">.context/ -> ~/.automemory/context</code>
       </div>
     </div>
 

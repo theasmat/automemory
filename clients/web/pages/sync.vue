@@ -146,7 +146,7 @@
       </div>
 
       <p class="text-xs font-mono text-gray-400 leading-relaxed">
-        When switching computers or resetting your environment, AutoMemory Pro reconstructs all architectural decisions, procedural skills, and product documents with zero loss.
+        When switching computers or resetting your environment, AutoMemory reconstructs all architectural decisions, procedural skills, and product documents with zero loss.
       </p>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
@@ -180,7 +180,7 @@
           </h2>
         </div>
         <span class="text-xs font-mono text-gray-500">
-          ~/.automemory_pro/context/projects/{{ syncData?.project_id || 'c-todo-app' }}/deltas/
+          ~/.automemory/context/projects/{{ syncData?.project_id || 'c-todo-app' }}/deltas/
         </span>
       </div>
 

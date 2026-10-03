@@ -44,7 +44,7 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
             - **Project Slug**: `{}`\n\
             - **Canonical Storage**: `{}`\n\n\
             ### Active Decisions & Guidelines\n\
-            (AutoMemory Pro automatically compiles active decisions and playbooks here)\n",
+            (AutoMemory automatically compiles active decisions and playbooks here)\n",
             project_id,
             project_id,
             context_root.display()
@@ -156,7 +156,7 @@ fn update_gitignore(cwd: &Path) -> Result<()> {
         if !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
-        content.push_str("\n# AutoMemory Pro single-source local context\n.context\n");
+        content.push_str("\n# AutoMemory single-source local context\n.context\n");
         modified = true;
     }
 

@@ -1,4 +1,4 @@
-# AutoMemory Pro — Product Requirements & Technical Design
+# AutoMemory — Product Requirements & Technical Design
 
 **Status:** Draft v0.1  
 **Audience:** Product owner, coding agents, maintainers, contributors  
@@ -8,7 +8,7 @@
 
 ## 1. Product Summary
 
-AutoMemory Pro is a persistent memory system for AI coding agents. It automatically captures useful task evidence, tool outcomes, decisions, errors, preferences, project documents, and successful procedures. In a new chat, it retrieves only the relevant context for the current project plus user-level preferences, so the agent can continue work without re-reading or re-discovering the entire codebase.
+AutoMemory is a persistent memory system for AI coding agents. It automatically captures useful task evidence, tool outcomes, decisions, errors, preferences, project documents, and successful procedures. In a new chat, it retrieves only the relevant context for the current project plus user-level preferences, so the agent can continue work without re-reading or re-discovering the entire codebase.
 
 The product is a superset of typical coding-agent memory tools:
 
@@ -31,7 +31,7 @@ Coding agents start new chats with little or no knowledge of prior work. They of
 - Fail to carry useful context between Antigravity, Claude Code, Cursor, Codex, and other agent environments.
 - Cannot easily synchronize private planning documents such as PRDs, architecture notes, and decision records that are intentionally `.gitignore`d in the source-code repository.
 
-AutoMemory Pro must make memory automatic and durable. The user should not have to repeatedly tell the agent to remember outcomes, and an agent running in auto-approve mode must still create an auditable memory trail.
+AutoMemory must make memory automatic and durable. The user should not have to repeatedly tell the agent to remember outcomes, and an agent running in auto-approve mode must still create an auditable memory trail.
 
 ## 3. Goals
 

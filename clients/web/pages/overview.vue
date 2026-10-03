@@ -11,7 +11,7 @@
             <span class="text-xs font-mono text-gray-400">Zero-latency persistent cognitive brain</span>
           </div>
           <h1 class="text-2xl font-bold font-mono text-white tracking-tight">
-            AutoMemory Pro Dashboard
+            AutoMemory Dashboard
           </h1>
           <p class="text-xs font-mono text-gray-400 mt-1 max-w-2xl">
             Deterministic cross-session AI memory, 100-to-1 trajectory distillation, interactive session replay, and Tree-Sitter companion AST intelligence.
@@ -40,11 +40,11 @@
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-        <!-- Engine 1: AutoMemory Pro -->
+        <!-- Engine 1: AutoMemory -->
         <div class="p-4 bg-dark-900 border border-gold-500/20 space-y-2">
           <div class="flex items-center gap-2">
             <BrainCircuit class="w-4 h-4 text-gold-500" />
-            <span class="text-xs font-mono font-bold text-gold-400">AutoMemory Pro (Agent Brain)</span>
+            <span class="text-xs font-mono font-bold text-gold-400">AutoMemory (Agent Brain)</span>
           </div>
           <p class="text-[11px] font-mono text-gray-400 leading-relaxed">
             Cognitive memory store, 100-to-1 trajectory distillation, interactive session replay, local vault sync, secret redaction, and fast BM25 context assembly.

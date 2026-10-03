@@ -1,6 +1,6 @@
-# AutoMemory Pro — Human Tester & Edge Case Testing Guide
+# AutoMemory — Human Tester & Edge Case Testing Guide
 
-This guide provides everything a human QA engineer or tester needs to test **AutoMemory Pro** in a live coding environment with real agent prompts, edge cases, and UI verification.
+This guide provides everything a human QA engineer or tester needs to test **AutoMemory** in a live coding environment with real agent prompts, edge cases, and UI verification.
 
 ---
 

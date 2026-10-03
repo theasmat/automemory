@@ -1,4 +1,4 @@
--- AutoMemory Pro Core Database Schema
+-- AutoMemory Core Database Schema
 
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,

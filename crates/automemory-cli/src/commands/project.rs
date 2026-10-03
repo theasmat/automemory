@@ -12,7 +12,7 @@ pub fn list() -> Result<()> {
     let config = Config::default_config();
 
     println!("==========================================================================");
-    println!("           AutoMemory Pro — Central Project Registry                      ");
+    println!("             AutoMemory — Central Project Registry                        ");
     println!("           Global Config: {}                                              ", GlobalConfig::config_path().display());
     println!("==========================================================================\n");
 

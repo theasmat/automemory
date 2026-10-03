@@ -6,6 +6,7 @@ use std::path::Path;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::db::Database;
 use crate::extraction::DocCompiler;
 use crate::models::{Project, TrackedDocument};
@@ -166,25 +167,24 @@ impl DocumentScanner {
         };
 
         // Materialize in canonical context if project context exists
-        if let Some(home) = dirs::home_dir() {
-            let base_projects = home.join(".automemory_pro").join("context").join("projects");
-            let target_root = if base_projects.join(&project.slug).exists() {
-                Some(base_projects.join(&project.slug))
-            } else if base_projects.join(&project.id).exists() {
-                Some(base_projects.join(&project.id))
-            } else {
-                None
-            };
+        let config = Config::default_config();
+        let base_projects = config.home_dir.join("context").join("projects");
+        let target_root = if base_projects.join(&project.slug).exists() {
+            Some(base_projects.join(&project.slug))
+        } else if base_projects.join(&project.id).exists() {
+            Some(base_projects.join(&project.id))
+        } else {
+            None
+        };
 
-            if let Some(context_root) = target_root {
-                let target_dir = context_root.join("docs").join(&category);
-                let _ = fs::create_dir_all(&target_dir);
-                let fname = Path::new(&rel_path).file_name().unwrap_or_default();
-                let _ = fs::write(target_dir.join(fname), &content);
-                let compiler = DocCompiler::new(&self.db);
-                let _ = compiler.compile_project_docs(&project.id, &context_root);
-                info!("✓ Auto-compiled L0/L1 context overview at {:?}", context_root.join(".overview.md"));
-            }
+        if let Some(context_root) = target_root {
+            let target_dir = context_root.join("docs").join(&category);
+            let _ = fs::create_dir_all(&target_dir);
+            let fname = Path::new(&rel_path).file_name().unwrap_or_default();
+            let _ = fs::write(target_dir.join(fname), &content);
+            let compiler = DocCompiler::new(&self.db);
+            let _ = compiler.compile_project_docs(&project.id, &context_root);
+            info!("✓ Auto-compiled L0/L1 context overview at {:?}", context_root.join(".overview.md"));
         }
 
         Ok(doc)

@@ -22,7 +22,7 @@ impl McpServer {
                 let res = json!({
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {
-                        "name": "automemory-pro",
+                        "name": "automemory",
                         "version": "0.1.0"
                     },
                     "capabilities": {

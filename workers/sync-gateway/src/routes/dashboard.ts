@@ -195,7 +195,7 @@ dashboardRouter.post('/api/v1/dashboard/webhooks/test', async (c) => {
     source: 'automemory-sync-gateway',
     timestamp: new Date().toISOString(),
     user_uid: userCtx.uid,
-    message: 'AutoMemory Pro Webhook Connectivity Verification Test',
+    message: 'AutoMemory Webhook Connectivity Verification Test',
   });
 
   const startTime = Date.now();
@@ -261,7 +261,7 @@ dashboardRouter.get('/dashboard', (c) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AutoMemory Pro - Edge Control Console</title>
+  <title>AutoMemory - Edge Control Console</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {

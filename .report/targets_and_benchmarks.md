@@ -2,7 +2,7 @@
 
 ## 1. Target Audience & Ecosystem Personas
 
-AutoMemory Pro is engineered for developers and teams deploying autonomous coding agents:
+AutoMemory is engineered for developers and teams deploying autonomous coding agents:
 
 
 
@@ -31,9 +31,9 @@ AutoMemory Pro is engineered for developers and teams deploying autonomous codin
 
 ## 3. Competitive Benchmark Matrix
 
-A comprehensive, objective comparison of AutoMemory Pro against leading AI agent memory frameworks:
+A comprehensive, objective comparison of AutoMemory against leading AI agent memory frameworks:
 
-| Feature / Metric | AutoMemory Pro | Mem0 | Zep / Graphiti | LangMem (LangChain) | Plain Vector DB (Chroma / Pinecone) |
+| Feature / Metric | AutoMemory | Mem0 | Zep / Graphiti | LangMem (LangChain) | Plain Vector DB (Chroma / Pinecone) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Primary Domain** | **Agentic Coding & Software Workflows** | General Conversational Chat | Conversational Knowledge Graph | LangGraph Agent State | Generic Vector Similarity |
 | **Runtime Architecture** | **Zero-dependency compiled Rust Binary** | Python / Cloud API | Python / Cloud API / Neo4j | Python / LangGraph | Python / C++ Server |
@@ -55,7 +55,7 @@ A comprehensive, objective comparison of AutoMemory Pro against leading AI agent
 
 ```mermaid
 gantt
-    title AutoMemory Pro Engineering Roadmap
+    title AutoMemory Engineering Roadmap
     dateFormat  YYYY-MM-DD
     section Phase 1: Core Foundation
     SQLite WAL + FTS5 Store          :done, 2026-08-01, 2026-08-15

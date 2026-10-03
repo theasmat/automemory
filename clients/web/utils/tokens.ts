@@ -1,4 +1,4 @@
-// Utility functions for LLM token estimation and formatting in AutoMemory Pro
+// Utility functions for LLM token estimation and formatting in AutoMemory
 
 /**
  * Estimates token count using standard byte-pair encoding / character heuristics (~3.8 chars per token for code & English text).

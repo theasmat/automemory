@@ -10,13 +10,13 @@ pub fn list(project: Option<String>) -> Result<()> {
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
 
-    println!("=== AutoMemory Pro Built-in Rules ===");
+    println!("=== AutoMemory Built-in Rules ===");
     for r in GuardrailRule::default_rules() {
         let crit = if r.is_critical { "CRITICAL" } else { "HIGH-RISK" };
         println!("  • [{}] {} (Pattern: `{}`)", crit, r.name, r.pattern);
     }
 
-    println!("\n=== AutoMemory Pro Custom Guardrail Rules ===");
+    println!("\n=== AutoMemory Custom Guardrail Rules ===");
     let custom_rules = db.list_custom_guardrail_rules(project.as_deref())?;
     if custom_rules.is_empty() {
         println!("  (No custom rules configured. Use 'automemory rule add' to create one)");

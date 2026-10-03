@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "automemory")]
-#[command(about = "AutoMemory Pro: Open-source local-first persistent memory engine for coding agents", version = "0.1.0")]
+#[command(about = "AutoMemory: Open-source local-first persistent memory engine for coding agents", version = "0.1.0")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -13,14 +13,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize AutoMemory Pro configuration and agent hooks
+    /// Initialize AutoMemory configuration and agent hooks
     Init {
         /// Agent to configure (e.g. agy, claude, cursor)
         #[arg(short, long, default_value = "agy")]
         agent: String,
     },
 
-    /// Automatically connect and configure AutoMemory Pro into host coding agents
+    /// Automatically connect and configure AutoMemory into host coding agents
     Connect {
         /// Agent host to connect (agy, claude, cursor)
         #[arg(default_value = "agy")]
@@ -31,7 +31,7 @@ enum Commands {
         global: bool,
     },
 
-    /// Link project to canonical single-source context (~/.automemory_pro/context/projects/<id>) via local .context symlink
+    /// Link project to canonical single-source context (~/.automemory/context/projects/<id>) via local .context symlink
     Link {
         /// Project ID or slug (inferred from directory if omitted)
         project_id: Option<String>,

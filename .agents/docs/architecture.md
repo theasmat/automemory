@@ -1,4 +1,4 @@
-# AutoMemory Pro — Technical Architecture
+# AutoMemory — Technical Architecture
 
 **Status:** Draft v0.1  
 **Audience:** Coding agents, engineers, maintainers  
@@ -8,7 +8,7 @@
 
 ## 1. System Overview
 
-AutoMemory Pro consists of:
+AutoMemory consists of:
 
 1. **Local runtime daemon** — persistent memory store, event queue, extraction worker, retrieval engine, and sync coordinator.
 2. **MCP server** — exposes memory, project, preference, trace, failure, document, and sync tools over stdio and HTTP.

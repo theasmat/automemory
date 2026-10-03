@@ -1,7 +1,7 @@
 {
   "name": "automemory-sync-gateway",
   "version": "0.1.0",
-  "description": "Cloudflare Worker + D1 + R2 sync gateway for AutoMemory Pro with Firebase Auth & dynamic pricing quotas",
+  "description": "Cloudflare Worker + D1 + R2 sync gateway for AutoMemory with Firebase Auth & dynamic pricing quotas",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",

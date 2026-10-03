@@ -87,7 +87,7 @@ impl LlmExtractor {
             }
         }
 
-        let system_prompt = r#"You are AutoMemory Pro's extraction engine. Analyze the following tool events from an AI coding session.
+        let system_prompt = r#"You are AutoMemory's extraction engine. Analyze the following tool events from an AI coding session.
 Extract only durable facts, architectural decisions, bug root-causes and fixes, or project conventions.
 Ignore trivial actions, generic greetings, and standard directory listings.
 
@@ -232,7 +232,7 @@ If nothing durable was learned, respond with []"#;
         stmt_a: &str,
         stmt_b: &str,
     ) -> Result<Option<String>> {
-        let system_prompt = r#"You are an architecture consistency validator for AutoMemory Pro.
+        let system_prompt = r#"You are an architecture consistency validator for AutoMemory.
 Analyze the two statements below. Determine if Statement A and Statement B contradict each other (for example: opposing architectural decisions, incompatible framework/database choices, or direct policy conflicts).
 Respond ONLY in JSON with:
 {

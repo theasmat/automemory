@@ -1,4 +1,4 @@
-# AutoMemory Pro — Hooks Configuration Guide
+# AutoMemory — Hooks Configuration Guide
 
 **Audience:** Coding agents, users, maintainers  
 **Purpose:** Describe how hooks are installed and configured for Antigravity and future agents.
@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-AutoMemory Pro uses out-of-process hooks to capture agent events. Hooks are configured per agent in JSON files under `~/.automemory_pro/hooks/`.
+AutoMemory uses out-of-process hooks to capture agent events. Hooks are configured per agent in JSON files under `~/.automemory/hooks/`.
 
 Example files:
 
@@ -122,7 +122,7 @@ Each file lists commands to run for specific lifecycle events.
 
 ### 3.2 How It Works
 
-1. User runs `automemory init` — CLI auto-generates `agy.json` in `~/.automemory_pro/hooks/`.
+1. User runs `automemory init` — CLI auto-generates `agy.json` in `~/.automemory/hooks/`.
 2. Antigravity reads `agy.json` on startup.
 3. Hooks fire automatically on every event — no manual reminder needed.
 4. Hooks are out-of-process (separate Rust binary) — safer, no crash risk.
@@ -214,7 +214,7 @@ automemory init --agent agy
 
 ### 7.2 Manual Installation
 
-1. Create `agy.json` in `~/.automemory_pro/hooks/`.
+1. Create `agy.json` in `~/.automemory/hooks/`.
 2. Point Antigravity to this file in its configuration.
 3. Run `automemory doctor` to validate.
 
@@ -234,7 +234,7 @@ automemory disconnect --agent agy
 
 ### 8.1 Hooks Not Firing
 
-- Check `~/.automemory_pro/hooks/agy.json` exists.
+- Check `~/.automemory/hooks/agy.json` exists.
 - Verify Antigravity is configured to read hook files.
 - Run `automemory doctor` to test event delivery.
 
@@ -256,7 +256,7 @@ automemory disconnect --agent agy
 
 New agent adapters follow the same pattern:
 
-1. Create `<agent>.json` in `~/.automemory_pro/hooks/`.
+1. Create `<agent>.json` in `~/.automemory/hooks/`.
 2. Implement adapter to normalize vendor events.
 3. Test with `automemory doctor`.
 4. Document in this guide.

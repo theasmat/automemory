@@ -1,6 +1,6 @@
-# AutoMemory Pro: Real & Verified Achievements Ledger (`.achievements/`)
+# AutoMemory: Real & Verified Achievements Ledger (`.achievements/`)
 
-This directory documents the **factual, audited, and tested** achievements of AutoMemory Pro based on actual codebase inspection, test suite execution, and runtime benchmarking.
+This directory documents the **factual, audited, and tested** achievements of AutoMemory based on actual codebase inspection, test suite execution, and runtime benchmarking.
 
 ---
 
@@ -22,7 +22,7 @@ This directory documents the **factual, audited, and tested** achievements of Au
 
 ## Architectural Delegation & Companion Integration
 
-To avoid bloated in-house re-inventions, AutoMemory Pro explicitly integrates with companion tools:
+To avoid bloated in-house re-inventions, AutoMemory explicitly integrates with companion tools:
 
 1. **AST Code Graph**:
    - **AutoMemory Core**: Provides graph schema (`graph_entities`, `graph_edges`), BFS traversal, and blast-radius impact analysis.

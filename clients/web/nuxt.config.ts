@@ -5,7 +5,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'AutoMemory Pro — Agent Memory Dashboard',
+      title: 'AutoMemory — Agent Memory Dashboard',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
