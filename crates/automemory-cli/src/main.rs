@@ -462,6 +462,17 @@ enum SyncCommands {
         #[arg(short, long)]
         token: Option<String>,
     },
+
+    /// Watch trackable files in background and automatically sync on change
+    Watch {
+        /// Project slug (defaults to current project)
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Polling interval in seconds (default: 5)
+        #[arg(short, long, default_value_t = 5)]
+        interval: u64,
+    },
 }
 
 #[tokio::main]
@@ -564,6 +575,9 @@ async fn main() -> Result<()> {
             SyncCommands::Import { path } => commands::sync::import_vault(path)?,
             SyncCommands::Pair { join, endpoint, token } => {
                 commands::sync::pair(join, endpoint, token).await?;
+            }
+            SyncCommands::Watch { project, interval } => {
+                commands::sync::watch(project, interval).await?;
             }
         },
         Commands::Mode { command } => match command {

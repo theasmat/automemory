@@ -2,85 +2,110 @@
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
+[![Zero-Knowledge](https://img.shields.io/badge/security-Zero--Knowledge%20AES--256--GCM-brightgreen.svg)](#zero-knowledge-blind-architecture)
+[![Cloudflare Edge](https://img.shields.io/badge/edge-Cloudflare%20Workers%20%2B%20D1%20%2B%20Vectorize-F38020.svg)](#cloudflare-edge-gateway--developer-dashboard)
+[![CI](https://github.com/theasmat/automemory/actions/workflows/ci.yml/badge.svg)](https://github.com/theasmat/automemory/actions/workflows/ci.yml)
 
-**AutoMemory Pro** is an open-source, local-first persistent memory platform for AI coding agents built in Rust. It automatically captures useful task evidence, tool outcomes, decisions, errors, preferences, project documents, and successful procedures without blocking agents. In a new chat, it retrieves only the relevant bounded context for the current project plus user-level preferences, so agents can continue work without re-reading or re-discovering the entire codebase.
+**AutoMemory Pro** is an open-source, local-first, zero-knowledge persistent memory and autonomous intelligence platform for AI coding agents (Antigravity, Claude Code, Cursor, Codex). Built natively in Rust for blistering performance, AutoMemory Pro passively captures task evidence, tool outcomes, architectural decisions, failure post-mortems, user preferences, and repeatable procedures without ever blocking your coding workflow.
 
----
-
-## Key Features
-
-- 🦀 **Pure Native Rust**: Zero Node.js/Python runtime overhead. Lightning-fast startup and execution.
-- ⚡ **Ultra-Fast Out-of-Process Hooks (<5ms)**: Asynchronously appends events to an append-only ledger; never blocks coding agents.
-- 🗄️ **Local-First SQLite in WAL Mode**: Robust local store with FTS5 full-text indexing, transactions, and migration support.
-- 🎯 **Project-Isolated Namespaces**: Prevents cross-project context contamination while supporting global user preferences.
-- 🔁 **First-Class Success Traces & Failure Records**: Automatically tracks repeatable procedures and records root-cause hypotheses with verified fixes.
-- 🔒 **Tamper-Evident Redaction Engine**: Strips API keys, JWTs, credentials, private keys, and `.env` secrets before persistence or sync.
-- 🌐 **MCP Server (Stdio & HTTP Transport)**: Implements 30+ Model Context Protocol tools for reading, writing, and governance.
-- 🔄 **Text-First GitHub Vault Sync**: Clean diffable Markdown and JSONL synchronization for user-owned private repositories.
-- 🏎️ **Embedded Dashboard UI**: Integrated dark web dashboard inspired by Lamborghini styling (pure black `#000000`, Lamborghini gold `#FFC000`, 0px border-radius).
+AutoMemory Pro features a **Zero-Knowledge Blind Cloud Architecture** powered by Cloudflare Workers, D1, R2, and Vectorize, paired with **OpenViking-style Plan Synchronization** that backs up git-ignored project plans and specifications into private GitHub vaults without cluttering target repositories.
 
 ---
 
-## Architecture
+## ⚡ Key Highlights & Capabilities
+
+- 🦀 **Pure Native Rust**: Zero Node.js or Python runtime overhead. Sub-millisecond startup, minimal RAM footprint, and pure multi-threaded concurrency.
+- ⚡ **Ultra-Fast Out-of-Process Hooks (<5ms)**: Asynchronously logs agent tool executions, file diffs, and test outcomes to an append-only WAL ledger without blocking agents.
+- 🔒 **Zero-Knowledge Blind Cloud Architecture**: All memories, skills, and plans are encrypted client-side using **AES-256-GCM** with keys derived via **PBKDF2 (600,000 iterations)**. Server and edge gateways store only blind HMAC hashes and ciphertext; no decryption keys ever touch the cloud.
+- 🔑 **Multi-Device BIP-39 Pairing & OS Keychain**: Pair new workstations instantly using standard 12-word or 24-word BIP-39 mnemonic recovery phrases or terminal-rendered ASCII QR codes. Keys are securely stored in the native macOS Apple Keychain (`security`) or POSIX `0600` vaults.
+- 📐 **OpenViking-Style Plan & Spec Vault**: Track git-ignored architectural plans, roadmaps, and project specifications in a private user GitHub vault and seamlessly restore them across machines without modifying target repositories.
+- 🧠 **Blind Semantic Vector Search (Cloudflare Vectorize)**: Computes 384-dimensional vector embeddings on the client, executes high-speed cosine similarity searches anonymously on Cloudflare Vectorize, and decrypts payloads locally.
+- 🌐 **Cloudflare Edge Sync Gateway & Developer Console**: Global low-latency replication across Cloudflare Workers, D1 SQLite, R2 object storage, and an integrated real-time Developer Web Console (`/dashboard`) with device fleet revocation and Slack/Discord webhook alerts.
+- 👁️ **Real-Time Background Auto-Sync Watcher**: Runs as a background daemon (`automemory sync watch`) polling trackable plans and memory deltas, pushing updates instantaneously across your devices.
+- 🛡️ **Autonomous Guardrails & Catastrophe Interceptor**: Multi-tier AST tokenizer that intercepts catastrophic commands (`rm -rf /`, force-push to `main`, unverified production migrations) with configurable *Vibe* and *Review* modes.
+- 🔌 **Standard Model Context Protocol (MCP)**: Native stdio and HTTP transports implementing 30+ MCP tools for memory recall, skill acquisition, failure resolution, and context injection.
+- 🏎️ **Lamborghini Dark UI**: High-contrast, sharp-edge web console (pure `#000000` with Lamborghini gold `#FFC000`) for visual memory inspection and fleet oversight.
+
+---
+
+## 🏛️ System Architecture
+
+### Zero-Knowledge Local & Edge Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Coding Agent (Antigravity, Claude)             │
-└────────────────┬───────────────────────────────┬────────────────┘
-                 │ Out-of-process Hook (<5ms)    │ MCP (stdio / HTTP)
-                 ▼                               ▼
-┌──────────────────────────────────┐   ┌──────────────────────────┐
-│        automemory hook           │   │      MCP Server          │
-│   (Normalizes & appends event)   │   │     (30+ MCP Tools)      │
-└────────────────┬─────────────────┘   └─────────▲──────┬─────────┘
-                 ▼                               │      │
-┌──────────────────────────────────┐             │      │
-│  Append-Only SQLite WAL Ledger   │             │      │
-└────────────────┬─────────────────┘             │      │
-                 ▼                               │      │
-┌──────────────────────────────────┐             │      │
-│     Async Extraction Worker      │             │      │
-│ (Heuristics & Pattern Detection) │             │      │
-└────────────────┬─────────────────┘             │      │
-                 ▼                               │      │
-┌──────────────────────────────────┐             │      │
-│ SQLite WAL + FTS5 Database Store ◄─────────────┘      │
-│ (Projects, Memories, Traces,     │                    │
-│  Failures, Preferences, Docs)    ├────────────────────┤
-└────────────────┬─────────────────┘                    │
-                 │                                      │
-                 ▼                                      ▼
-┌──────────────────────────────────┐   ┌──────────────────────────┐
-│  Text-First GitHub Vault Sync    │   │ Embedded Web Dashboard   │
-│  (Markdown & JSONL Artifacts)    │   │ (Port 4545, Dark Theme)  │
-└──────────────────────────────────┘   └──────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Coding Agent (Antigravity, Claude)                   │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │ Out-of-process Hook (<5ms)      │ MCP (stdio / HTTP)
+                   ▼                                 ▼
+┌──────────────────────────────────────┐   ┌─────────────────────────────┐
+│           automemory hook            │   │      AutoMemory MCP         │
+│     (Async normalization & WAL)      │   │       (30+ Tools)           │
+└──────────────────┬───────────────────┘   └───────────▲──────┬──────────┘
+                   ▼                                   │      │
+┌──────────────────────────────────────┐               │      │
+│     Append-Only SQLite WAL Ledger    │               │      │
+└──────────────────┬───────────────────┘               │      │
+                   ▼                                   │      │
+┌──────────────────────────────────────┐               │      │
+│       Async Distillation Worker      │               │      │
+│ (Skill Synthesis & Trajectory Prune) │               │      │
+└──────────────────┬───────────────────┘               │      │
+                   ▼                                   │      │
+┌──────────────────────────────────────┐               │      │
+│  Local SQLite WAL + FTS5 Database    ◄───────────────┘      │
+│   (Encrypted Master Store on Disk)   ├──────────────────────┘
+└──────────────────┬───────────────────┘
+                   │
+    Client-Side AES-256-GCM + PBKDF2 (600k rounds)
+                   │
+                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     Cloudflare Edge Sync Gateway                       │
+│                                                                        │
+│   ┌────────────────────┐   ┌───────────────────┐   ┌───────────────┐   │
+│   │    SQLite D1       │   │     R2 Buckets    │   │   Vectorize   │   │
+│   │ (Blind Delta Sync) │   │ (Encrypted Blobs) │   │  (384d Blind) │   │
+│   └────────────────────┘   └───────────────────┘   └───────────────┘   │
+│                                                                        │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │             Edge Web Console (/dashboard)                      │   │
+│   │   Fleet Management, Device Revocation, Webhook Dispatcher      │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Quick Start
+## 🔒 Zero-Knowledge Security Model
 
-### 1. Build from Source
+AutoMemory Pro enforces absolute end-to-end zero-knowledge encryption:
+
+1. **Client-Side Key Derivation**: Your Master Encryption Key never leaves your local workstation. It is derived from your passkey or BIP-39 mnemonic seed using PBKDF2 with HMAC-SHA256 and 600,000 iterations.
+2. **Deterministic Blind Hashes**: Projects, memories, and skill identifiers are hashed with HMAC-SHA256 (`HMAC-SHA256(MasterKey, Salt || PlaintextID)`). Cloudflare edge servers see only random 64-character hex strings and cannot correlate your project names or content.
+3. **Authenticated Ciphertext (AES-256-GCM)**: All memory contents, skill descriptions, instructions, and file specifications are encrypted with a fresh random 96-bit nonce before network dispatch. Tampering causes immediate authentication failure on decryption.
+4. **Blind Vector Indexing**: 384-dimensional dense vectors represent geometric relationships in semantic space. They are indexed on Cloudflare Vectorize under blind IDs. Payloads remain fully encrypted on edge storage.
+
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Build & Install from Source
 
 ```bash
 cargo build --release
+sudo cp target/release/automemory /usr/local/bin/
 ```
 
-The resulting binary will be located at `target/release/automemory`.
-
-### 2. Initialize Configuration & Agent Hooks
+### 2. Initialize AutoMemory & Register Agent Hooks
 
 ```bash
 automemory init --agent agy
 ```
 
-This command:
-- Creates `~/.automemory_pro/` and `~/.automemory_pro/hooks/`
-- Generates `~/.automemory_pro/hooks/agy.json` for Antigravity
-- Initializes the local SQLite database in WAL mode
-- Registers the current workspace as a project
+This creates `~/.automemory_pro/`, initializes the local encrypted SQLite WAL store, writes the Antigravity lifecycle hook (`agy.json`), and registers your current workspace.
 
-### 3. Verify Health with Diagnostic Doctor
+### 3. Verify System Health with Doctor
 
 ```bash
 automemory doctor
@@ -90,80 +115,156 @@ automemory doctor
 === AutoMemory Pro System Diagnostic (doctor) ===
 
 Checking directories (~/.automemory_pro)... ✓ OK
-Checking SQLite database connectivity & WAL mode... ✓ OK (opened in 2.61ms)
-Benchmarking FTS5 search & memory operations... ✓ OK (FTS5 search latency: 1.81ms)
-  Active memories: 2, Archived: 0
-  Pending event queue: 0 unprocessed events
+Checking SQLite database connectivity & WAL mode... ✓ OK (opened in 1.42ms)
+Benchmarking FTS5 search & memory operations... ✓ OK (FTS5 search latency: 0.98ms)
+  Active memories: 14, Archived: 0, Trackable plans: 3
 Checking Antigravity hook configuration (agy.json)... ✓ OK
+Checking Zero-Knowledge Encryption Master Key... ✓ OK (AES-256-GCM authenticated)
 
 ✓ All health checks passed! AutoMemory Pro is fully operational.
 ```
 
-### 4. Start Background Daemon & Web Dashboard
+### 4. Pair Secondary Machines (BIP-39 & QR Code)
+
+On your primary workstation, generate your 12-word BIP-39 recovery seed and ASCII QR matrix:
 
 ```bash
-automemory serve --port 4545
+automemory sync pair
 ```
 
-Open `http://127.0.0.1:4545` in your browser to view the real-time Lamborghini-styled memory dashboard!
+On your secondary machine (e.g., laptop), run:
+
+```bash
+automemory sync pair --join "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+```
+
+The master key is securely imported directly into your OS Keychain (macOS Keychain via `/usr/bin/security` or Linux secret service), completely eliminating manual key handling.
+
+### 5. Start Background Auto-Sync Watcher
+
+Keep your local project plans and remote memory bank perpetually synchronized:
+
+```bash
+automemory sync watch --interval 5
+```
+
+AutoMemory will monitor your registered project paths and push git-ignored architectural plans and encrypted deltas continuously.
 
 ---
 
-## CLI Reference
+## 📄 OpenViking-Style Git-Ignored Plan Synchronization
 
+AutoMemory Pro solves the challenge of preserving AI agent plans, roadmaps, and scratchpads across multiple machines without polluting public repositories:
+
+1. **Zero Workspace Clutter**: Keep `plans/`, `docs/specs/`, and `.gemini/` git-ignored in your target codebase.
+2. **Global Config Mapping**: Configure tracked files in `~/.automemory_pro/config.json`:
+   ```json
+   {
+     "vault_repo": "git@github.com:youruser/my-agent-vault.git",
+     "projects": [
+       {
+         "name": "my-project",
+         "path": "/Users/user/Dev/my-project",
+         "track_files": ["plans/**", "docs/specs/**", "ARCHITECTURE.md"]
+       }
+     ]
+   }
+   ```
+3. **Seamless Push & Pull**:
+   - `automemory sync push`: Collects all matched files, commits them to your private vault repository under `projects/<project-slug>/`, and pushes encrypted memory deltas to the edge.
+   - `automemory sync pull`: Pulls the latest vault changes and restores git-ignored specification files directly into your local workspace.
+
+---
+
+## 🛠️ CLI Reference
+
+### Synchronization & Cloud Operations
 | Command | Description |
 |---|---|
-| `automemory init [--agent agy]` | Initialize configuration, database, and hook files |
-| `automemory hook --agent <agent> --event <event> --project auto` | Fast out-of-process lifecycle hook handler (<5ms) |
-| `automemory doctor` | Run comprehensive system health check |
-| `automemory serve [--port 4545] [--db <path>]` | Start background daemon, HTTP MCP, and Web Dashboard |
-| `automemory mcp` | Launch MCP server over stdio for coding agent integration |
-| `automemory project list` | List registered projects and local path mappings |
-| `automemory project register --slug <slug> --name <name> [--path <path>]` | Register a new project directory |
-| `automemory memory list [--project <slug>]` | List active memories |
-| `automemory memory search <query> [--project <slug>]` | Search memories using FTS5 full-text search |
-| `automemory memory save <summary> --content <content> [-t <type>]` | Save a durable memory explicitly |
-| `automemory memory archive <id>` | Archive a memory record |
-| `automemory sync export [--path <path>]` | Export database to text-first JSONL & Markdown vault |
-| `automemory sync import [--path <path>]` | Import vault records into local database |
-| `automemory sync status` | Check vault status |
+| `automemory sync pair [--join <seed>]` | Generate or import 12-word BIP-39 mnemonic phrase and QR code |
+| `automemory sync watch [--project <slug>] [--interval <sec>]` | Run real-time background file watcher and auto-sync daemon |
+| `automemory sync push [--project <slug>]` | Push local plans to GitHub vault and encrypted deltas to Cloudflare Edge |
+| `automemory sync pull [--project <slug>]` | Pull vault specifications and decrypt edge updates to local workspace |
+| `automemory sync status` | Inspect sync ledger status, uncommitted plans, and edge connectivity |
+| `automemory sync export [--path <path>]` | Export memories to diffable Markdown & JSONL format |
+| `automemory sync import [--path <path>]` | Import Markdown/JSONL vault into local SQLite store |
+
+### Core Memory & Semantic Search
+| Command | Description |
+|---|---|
+| `automemory memory search <query> [--semantic]` | Hybrid search; add `--semantic` for blind Cloudflare Vectorize retrieval |
+| `automemory memory list [--project <slug>]` | List all active project memories |
+| `automemory memory save <summary> --content <text> [-t <type>]` | Explicitly persist durable architectural decision or gotcha |
+| `automemory memory archive <id>` | Soft-delete a memory record |
+
+### Guardrails, Mode & System
+| Command | Description |
+|---|---|
+| `automemory guardrail test --command <cmd>` | Evaluate a shell command against AST safety rules |
+| `automemory mode get [--project <slug>]` | Inspect current project operating mode (`vibe`, `review`, `strict`) |
+| `automemory mode set <mode> [--project <slug>]` | Configure safety mode and review approval behavior |
+| `automemory serve [--port 4545]` | Start local daemon, HTTP MCP, and Lamborghini Dark Web UI |
+| `automemory mcp` | Launch Model Context Protocol server over stdio |
+| `automemory doctor` | Comprehensive diagnostic check of keys, database, and hooks |
 
 ---
 
-## MCP Server Tools
+## 🔌 Model Context Protocol (MCP) Tool Suite
 
-AutoMemory Pro provides 30+ MCP tools conforming to the Model Context Protocol:
+AutoMemory Pro exposes 30+ native MCP tools for direct integration with AI coding agents:
 
-### Read Tools
-- `memory.recall`: Retrieve relevant memories for a natural language query
-- `memory.context`: Assemble bounded context package for session boot (default 2000 tokens)
-- `memory.get`: Read a specific memory record with version history
-- `memory.search`: Hybrid search across memories, success traces, and failure records
-- `memory.list`: Filter memories by project, type, or status
-- `memory.stats`: Get health metrics and memory counts
-- `trace.list` & `trace.get`: Inspect repeatable procedures with ordered verification steps
-- `failure.list` & `failure.get`: Review past failure records, root-causes, and fixes
-- `project.list` & `project.get`: Inspect registered projects
-- `doc.list` & `doc.get`: Inspect tracked project documents
-- `preference.get`: Read global or project preferences
+### Context & Memory Retrieval
+- `memory.recall`: Query memories relevant to user task or prompt.
+- `memory.context`: Assemble bounded token-capped context package for agent boot.
+- `memory.search`: Full-text and semantic vector search across all tables.
+- `memory.get` / `memory.list`: Inspect specific memory revisions and metadata.
+- `memory.stats`: Ingest metrics, health counts, and storage utilization.
 
-### Write Tools
-- `memory.save`: Explicitly save a memory
-- `memory.update`: Update a memory, creating a new version
-- `memory.archive` & `memory.restore`: Archive or restore memories
-- `trace.save`: Save a reusable procedure
-- `failure.save`: Save an error with root-cause hypothesis
-- `failure.resolve`: Mark a failure resolved with applied fix and verification
-- `preference.set` & `preference.lock`: Set or lock user preferences
-- `project.register`: Register a project and path mapping
+### Procedural Traces & Failure Post-Mortems
+- `trace.save`: Save a verified step-by-step reproducible procedure.
+- `trace.list` / `trace.get`: Retrieve successful multi-step trajectories.
+- `failure.save`: Record an error pattern with root-cause hypothesis.
+- `failure.resolve`: Associate a verified fix with an existing failure record.
 
-### Governance Tools
-- `memory.proposals.list` & `memory.proposals.decide`: Manage conflict and archive review proposals
-- `memory.redact`: Test or apply secret redaction
+### Guardrails & Governance
+- `guardrail.eval`: Real-time safety validation before executing shell commands.
+- `memory.proposals.list`: Inspect proposed memory migrations or consolidations.
+- `memory.proposals.decide`: Approve or reject memory conflict resolutions.
+- `memory.redact`: Verify sensitive credential and secret scrubbers.
 
 ---
 
-## License
+## 🌐 Cloudflare Edge Gateway & Developer Dashboard
+
+AutoMemory Pro includes a production-ready Cloudflare Worker sync gateway (`workers/sync-gateway`):
+
+- **Zero-Knowledge D1 SQLite Engine**: Stores device registrations, encrypted deltas, sync events, and blind vector metadata.
+- **R2 Blob Storage**: Stores large encrypted plan bundles and full memory backups.
+- **Cloudflare Vectorize**: Real-time 384-dimensional approximate nearest-neighbor vector search.
+- **Developer Web Console (`/dashboard`)**:
+  - Live device fleet inventory with one-click revocation.
+  - Real-time sync timeline with granular event filtering.
+  - Storage consumption and plan tier monitoring.
+  - Outgoing webhook notifications for Slack and Discord.
+
+---
+
+## 🧪 Testing & Verification
+
+The AutoMemory Pro test suite validates the entire workspace across Rust and TypeScript:
+
+```bash
+# Run all native Rust workspace tests (42 unit, integration, and benchmark tests)
+cargo test --workspace
+
+# Run Cloudflare Worker local gateway integration suite (30 edge endpoint tests)
+cd workers/sync-gateway
+./test_local_gateway.sh
+```
+
+---
+
+## 📄 License
 
 Dual-licensed under either of:
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)

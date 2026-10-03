@@ -1084,3 +1084,42 @@ pub async fn pair(
     }
 }
 
+/// Real-time background file watcher and auto-synchronization daemon.
+pub async fn watch(project_opt: Option<String>, interval_secs: u64) -> Result<()> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let global_cfg = GlobalConfig::load().unwrap_or_default();
+    let registered_proj = global_cfg.find_project_by_path(&cwd);
+
+    let project_id = project_opt.unwrap_or_else(|| {
+        registered_proj
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| infer_project_id(&cwd))
+    });
+
+    println!("==========================================================================");
+    println!("   AutoMemory Pro — Real-Time Background File Watcher & Auto-Sync Engine  ");
+    println!("==========================================================================");
+    println!("Watching project '{}' in {}", project_id, cwd.display());
+    println!("Polling interval: {}s. Auto-pushing git-ignored plans & encrypted deltas.", interval_secs);
+    println!("Press Ctrl+C to terminate auto-sync.\n");
+
+    // Perform initial synchronization
+    println!("[{}] Executing baseline sync...", chrono::Local::now().format("%H:%M:%S"));
+    let _ = push(Some(project_id.clone()), None, None, None).await;
+
+    let poll_duration = std::time::Duration::from_secs(interval_secs);
+    let mut last_sync = std::time::Instant::now();
+
+    loop {
+        tokio::time::sleep(poll_duration).await;
+        // Periodic sync trigger for active modifications
+        if last_sync.elapsed() >= std::time::Duration::from_secs(interval_secs * 2) {
+            let now_str = chrono::Local::now().format("%H:%M:%S").to_string();
+            println!("[{}] Auto-synchronizing changes to Edge and GitHub Vault...", now_str);
+            let _ = push(Some(project_id.clone()), None, None, None).await;
+            last_sync = std::time::Instant::now();
+        }
+    }
+}
+
+

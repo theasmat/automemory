@@ -1,0 +1,55 @@
+name: AutoMemory Pro CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  rust-check-and-test:
+    name: Rust Workspace (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Workspace Check
+        run: cargo check --workspace
+
+      - name: Workspace Tests
+        run: cargo test --workspace --verbose
+
+  worker-check-and-test:
+    name: Cloudflare Worker Gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/sync-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm ci || npm install
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+      - name: Gateway Local Integration Suite
+        run: ./test_local_gateway.sh
