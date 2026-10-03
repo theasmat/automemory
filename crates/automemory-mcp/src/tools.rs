@@ -352,7 +352,21 @@ impl ToolRegistry {
             // Governance Tools
             ToolDefinition {
                 name: "memory.proposals.list".to_string(),
-                description: "List pending review proposals for conflict resolution or archiving".to_string(),
+                description: "List review proposals with optional status, type, and pagination filters".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string" },
+                        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "all"] },
+                        "proposal_type": { "type": "string" },
+                        "limit": { "type": "integer" },
+                        "offset": { "type": "integer" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "memory.proposals.summary".to_string(),
+                description: "Get aggregate summary and counts of proposals grouped by status and proposal type".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -362,7 +376,7 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "memory.proposals.decide".to_string(),
-                description: "Approve or reject a review proposal".to_string(),
+                description: "Approve or reject a review proposal (automatically executes proposal side-effects such as archiving duplicate memories)".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -370,6 +384,19 @@ impl ToolRegistry {
                         "approved": { "type": "boolean" }
                     },
                     "required": ["id", "approved"]
+                }),
+            },
+            ToolDefinition {
+                name: "memory.proposals.decide_all".to_string(),
+                description: "Atomically approve or reject all pending proposals matching optional project and proposal_type filters (automatically executes side-effects)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string" },
+                        "proposal_type": { "type": "string" },
+                        "approved": { "type": "boolean" }
+                    },
+                    "required": ["approved"]
                 }),
             },
             ToolDefinition {
@@ -569,14 +596,18 @@ impl ToolRegistry {
 
             "memory.stats" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                match self.db.count_memories(project_id) {
-                    Ok((active, archived)) => ToolCallResult::json(&json!({
-                        "active_memories": active,
-                        "archived_memories": archived,
-                        "total": active + archived
-                    })),
-                    Err(e) => ToolCallResult::error(format!("Stats error: {}", e)),
-                }
+                let (active, archived) = self.db.count_memories(project_id).unwrap_or((0, 0));
+                let prop_summary = self.db.get_proposals_summary(project_id).ok();
+                let failures = self.db.list_failures(project_id, None, 1000).unwrap_or_default();
+                let traces = self.db.list_traces(project_id, 1000).unwrap_or_default();
+                ToolCallResult::json(&json!({
+                    "active_memories": active,
+                    "archived_memories": archived,
+                    "total_memories": active + archived,
+                    "failures_count": failures.len(),
+                    "traces_count": traces.len(),
+                    "proposals": prop_summary
+                }))
             }
 
             "trace.list" => {
@@ -992,9 +1023,21 @@ impl ToolRegistry {
             // ==========================================
             "memory.proposals.list" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                match self.db.list_pending_proposals(project_id) {
+                let status = arguments.get("status").and_then(|v| v.as_str());
+                let proposal_type = arguments.get("proposal_type").and_then(|v| v.as_str());
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+                let offset = arguments.get("offset").and_then(|v| v.as_u64()).map(|v| v as usize);
+                match self.db.list_proposals(project_id, status, proposal_type, limit, offset) {
                     Ok(props) => ToolCallResult::json(&props),
                     Err(e) => ToolCallResult::error(format!("Failed to list proposals: {}", e)),
+                }
+            }
+
+            "memory.proposals.summary" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                match self.db.get_proposals_summary(project_id) {
+                    Ok(summary) => ToolCallResult::json(&summary),
+                    Err(e) => ToolCallResult::error(format!("Failed to get proposals summary: {}", e)),
                 }
             }
 
@@ -1011,6 +1054,19 @@ impl ToolRegistry {
                     Ok(true) => ToolCallResult::json(&json!({ "decided": true, "id": id, "approved": approved })),
                     Ok(false) => ToolCallResult::error("Proposal not found"),
                     Err(e) => ToolCallResult::error(format!("Decide proposal error: {}", e)),
+                }
+            }
+
+            "memory.proposals.decide_all" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let proposal_type = arguments.get("proposal_type").and_then(|v| v.as_str());
+                let approved = match arguments.get("approved").and_then(|v| v.as_bool()) {
+                    Some(a) => a,
+                    None => return ToolCallResult::error("Missing parameter: approved"),
+                };
+                match self.db.decide_all_proposals(project_id, proposal_type, approved) {
+                    Ok(batch) => ToolCallResult::json(&batch),
+                    Err(e) => ToolCallResult::error(format!("Decide all proposals error: {}", e)),
                 }
             }
 

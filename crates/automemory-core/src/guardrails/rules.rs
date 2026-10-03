@@ -112,6 +112,15 @@ impl GuardrailRule {
                 description: "Direct modification or deletion of secret environment configuration.".to_string(),
                 mitigation_hint: "Ensure environment secrets are handled securely without exposing values.".to_string(),
             },
+            Self {
+                id: "rule_raw_sqlite_internal_db".to_string(),
+                name: "Raw SQLite Access to Internal AutoMemory Database".to_string(),
+                category: RiskCategory::DatabaseMigrationOrDrop,
+                pattern: r"(?i)\bsqlite3\s+.*automemory\.db\b".to_string(),
+                is_critical: false,
+                description: "Direct raw SQLite manipulation of AutoMemory internal database.".to_string(),
+                mitigation_hint: "Use native CLI 'automemory proposal ...' or MCP tools 'memory.proposals.*' instead of raw SQLite commands.".to_string(),
+            },
         ]
     }
 }

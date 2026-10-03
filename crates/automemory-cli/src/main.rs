@@ -114,6 +114,77 @@ enum Commands {
         #[command(subcommand)]
         command: SkillCommands,
     },
+
+    /// Manage review proposals, deduplication merges, and conflict governance
+    Proposal {
+        #[command(subcommand)]
+        command: ProposalCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProposalCommands {
+    /// Show aggregated summary of proposals by status and type
+    Summary {
+        /// Project slug or ID filter
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// List review proposals with optional filtering
+    List {
+        /// Status filter (pending, approved, rejected, all)
+        #[arg(short, long, default_value = "pending")]
+        status: String,
+
+        /// Proposal type filter (e.g. duplicate_merge, tool_execution_review)
+        #[arg(short = 't', long)]
+        proposal_type: Option<String>,
+
+        /// Maximum number of proposals to display
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+
+        /// Pagination offset
+        #[arg(short, long, default_value_t = 0)]
+        offset: usize,
+
+        /// Project slug or ID filter
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Approve or reject a specific review proposal
+    Decide {
+        /// Proposal ID
+        id: String,
+
+        /// Approve the proposal
+        #[arg(long, default_value_t = true)]
+        approve: bool,
+
+        /// Reject the proposal
+        #[arg(long)]
+        reject: bool,
+    },
+    /// Approve all pending proposals (and automatically archive duplicate memories)
+    ApproveAll {
+        /// Optional proposal type filter (e.g. duplicate_merge)
+        #[arg(short = 't', long)]
+        proposal_type: Option<String>,
+
+        /// Project slug or ID filter
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Reject all pending proposals
+    RejectAll {
+        /// Optional proposal type filter (e.g. duplicate_merge)
+        #[arg(short = 't', long)]
+        proposal_type: Option<String>,
+
+        /// Project slug or ID filter
+        #[arg(short, long)]
+        project: Option<String>,
+    },
 }
 
 
@@ -613,6 +684,26 @@ async fn main() -> Result<()> {
             SkillCommands::List { project } => commands::skill::list(project)?,
             SkillCommands::Export { project, target, min_runs } => {
                 commands::skill::export(project, target, min_runs)?;
+            }
+        },
+        Commands::Proposal { command } => match command {
+            ProposalCommands::Summary { project } => commands::proposal::summary(project)?,
+            ProposalCommands::List {
+                status,
+                proposal_type,
+                limit,
+                offset,
+                project,
+            } => commands::proposal::list(status, proposal_type, limit, offset, project)?,
+            ProposalCommands::Decide { id, approve, reject } => {
+                let final_approval = if reject { false } else { approve };
+                commands::proposal::decide(id, final_approval)?;
+            }
+            ProposalCommands::ApproveAll { proposal_type, project } => {
+                commands::proposal::approve_all(proposal_type, project)?;
+            }
+            ProposalCommands::RejectAll { proposal_type, project } => {
+                commands::proposal::reject_all(proposal_type, project)?;
             }
         },
     }

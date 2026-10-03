@@ -8,6 +8,7 @@ pub mod memory;
 pub mod mode;
 pub mod project;
 pub mod link;
+pub mod proposal;
 pub mod rule;
 pub mod serve;
 pub mod skill;
