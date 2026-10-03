@@ -7,16 +7,18 @@ use automemory_core::redaction::redact_json;
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 use std::process::Command;
 use uuid::Uuid;
 
 /// Main entrypoint for the CLI `hook` command.
 /// Evaluates guardrails on `pre-tool` events and records append-only event traces.
 pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
-    // Read stdin payload if any
+    // Read stdin payload if piped; skip if running interactively in terminal
     let mut input = String::new();
-    let _ = io::stdin().read_to_string(&mut input);
+    if !io::stdin().is_terminal() {
+        let _ = io::stdin().read_to_string(&mut input);
+    }
     let raw_payload: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
 
     // Quick open database; gracefully fail-open if DB is unreachable
@@ -57,6 +59,20 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         .as_ref()
         .map(|p| p.id.as_str())
         .or(project_ref.id.as_deref());
+
+    // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
+    if event == "boot" {
+        let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
+        let ctx = engine.assemble_context(effective_project_id, None, 2000).unwrap_or_default();
+        if !ctx.trim().is_empty() {
+            println!("{}", json!({
+                "context": ctx,
+                "additionalContext": ctx,
+                "prompt": ctx,
+            }));
+            return Ok(());
+        }
+    }
 
     // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
     if event == "pre-tool" {
