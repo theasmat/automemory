@@ -1,3 +1,4 @@
+pub mod bip39;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -5,6 +6,7 @@ pub mod docs;
 pub mod extraction;
 pub mod graph;
 pub mod guardrails;
+pub mod keychain;
 pub mod models;
 pub mod redaction;
 pub mod retrieval;

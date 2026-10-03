@@ -4,6 +4,7 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   ADMIN_SECRET: string;
   ENABLE_DEV_AUTH_BYPASS?: string;
+  VECTOR_INDEX?: any;
 }
 
 export type AppEnv = {
@@ -61,6 +62,7 @@ export interface BlindMemoryRecord {
   blind_scope: string; // "global" | "project"
   blind_type?: string;
   blind_tags?: string[];
+  embedding?: number[];
   confidence?: number;
   importance?: number;
   status?: string; // "active" | "archived"

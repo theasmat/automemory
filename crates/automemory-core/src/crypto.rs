@@ -40,6 +40,8 @@ pub struct BlindMemoryWire {
     pub blind_scope: String,
     pub blind_type: String,
     pub blind_tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
     pub confidence: f64,
     pub importance: f64,
     pub status: String,
@@ -137,22 +139,9 @@ impl BlindCrypto {
             }
         }
 
-        // 4. Local master.key in user home directory
-        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        let key_dir = home.join(".automemory");
-        let key_file = key_dir.join("master.key");
-
-        if key_file.exists() {
-            if let Ok(b64_str) = std::fs::read_to_string(&key_file) {
-                let trimmed = b64_str.trim();
-                if let Ok(bytes) = BASE64.decode(trimmed) {
-                    if bytes.len() == 32 {
-                        let mut key = [0u8; 32];
-                        key.copy_from_slice(&bytes);
-                        return Ok(key);
-                    }
-                }
-            }
+        // 4. Keychain or local master.key in user home directory
+        if let Some(key) = crate::keychain::get_master_key() {
+            return Ok(key);
         }
 
         // Generate a new 256-bit random master key and save it securely
@@ -160,15 +149,7 @@ impl BlindCrypto {
         use aes_gcm::aead::rand_core::RngCore;
         aes_gcm::aead::OsRng.fill_bytes(&mut raw_key);
 
-        let b64_key = BASE64.encode(raw_key);
-        let _ = std::fs::create_dir_all(&key_dir);
-        let _ = std::fs::write(&key_file, &b64_key);
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600));
-        }
+        let _ = crate::keychain::set_master_key(&raw_key);
 
         Ok(raw_key)
     }
@@ -257,6 +238,17 @@ impl BlindCrypto {
         memory: &Memory,
         project_slug: &str,
     ) -> Result<BlindMemoryWire> {
+        Self::encrypt_memory_with_embedding(master_key, index_key, memory, project_slug, None)
+    }
+
+    /// Encrypt a local Memory record with an optional client-computed embedding vector for blind ANN indexing.
+    pub fn encrypt_memory_with_embedding(
+        master_key: &[u8; 32],
+        index_key: &[u8; 32],
+        memory: &Memory,
+        project_slug: &str,
+        embedding: Option<Vec<f32>>,
+    ) -> Result<BlindMemoryWire> {
         let payload = BlindMemoryPayload {
             summary: memory.summary.clone(),
             content: memory.content.clone(),
@@ -285,6 +277,7 @@ impl BlindCrypto {
             blind_scope: memory.scope.to_string(),
             blind_type,
             blind_tags,
+            embedding,
             confidence: memory.confidence,
             importance: memory.importance,
             status: memory.status.to_string(),

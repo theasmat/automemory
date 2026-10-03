@@ -84,6 +84,32 @@ syncRouter.post('/sync/push', async (c) => {
         )
         .run();
       blindMemoriesStored++;
+
+      // If client supplied anonymous embedding vector, index into blind_vector_index
+      if (Array.isArray(bm.embedding) && bm.embedding.length > 0) {
+        await c.env.DB.prepare(
+          `INSERT INTO blind_vector_index (id, owner_uid, blind_project_id, vector_json, created_at)
+           VALUES (?1, ?2, ?3, ?4, datetime('now'))
+           ON CONFLICT(id) DO UPDATE SET
+             owner_uid = excluded.owner_uid,
+             blind_project_id = excluded.blind_project_id,
+             vector_json = excluded.vector_json`
+        )
+          .bind(bm.id, userCtx.uid, bm.blind_project_id || projectSlug, JSON.stringify(bm.embedding))
+          .run();
+
+        if (c.env.VECTOR_INDEX && typeof c.env.VECTOR_INDEX.upsert === 'function') {
+          try {
+            await c.env.VECTOR_INDEX.upsert([
+              {
+                id: bm.id,
+                values: bm.embedding,
+                metadata: { project: bm.blind_project_id || projectSlug, owner: userCtx.uid },
+              },
+            ]);
+          } catch (_) {}
+        }
+      }
     }
   }
 

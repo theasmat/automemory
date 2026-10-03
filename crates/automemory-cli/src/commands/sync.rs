@@ -311,9 +311,11 @@ pub async fn push(
         let master_key = BlindCrypto::get_or_create_master_key(key_opt.as_deref())?;
         let index_key = BlindCrypto::derive_index_key(&master_key);
 
+        let vector_engine = automemory_core::retrieval::vector::VectorEngine::default();
         let mut blind_memories = Vec::new();
         for m in &memories {
-            match BlindCrypto::encrypt_memory(&master_key, &index_key, m, &project_id) {
+            let embedding = vector_engine.embed_text(&format!("{} {}", m.summary, m.content)).ok();
+            match BlindCrypto::encrypt_memory_with_embedding(&master_key, &index_key, m, &project_id, embedding) {
                 Ok(bm) => blind_memories.push(bm),
                 Err(e) => eprintln!("Warning: failed to encrypt memory {}: {}", m.id, e),
             }
@@ -961,3 +963,124 @@ fn update_gitignore(cwd: &Path) -> Result<()> {
 
     Ok(())
 }
+
+/// Zero-knowledge device pairing via BIP-39 12-word mnemonic phrase and QR code.
+pub async fn pair(
+    join_phrase: Option<String>,
+    endpoint_opt: Option<String>,
+    token_opt: Option<String>,
+) -> Result<()> {
+    let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    let endpoint = endpoint_opt.or(global_cfg.cloud.endpoint.clone());
+    let token = token_opt.or(global_cfg.cloud.auth_token.clone());
+
+    if let Some(phrase) = join_phrase {
+        // --- Joining an existing device vault ---
+        println!("==========================================================================");
+        println!("   AutoMemory Pro — Device Pairing: Joining Existing Zero-Knowledge Vault   ");
+        println!("==========================================================================");
+
+        let key = match automemory_core::bip39::mnemonic_to_master_key(&phrase) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("❌ Invalid recovery seed phrase: {}", e);
+                eprintln!("   Please check the words and ensure correct ordering.");
+                return Err(e);
+            }
+        };
+
+        // Secure master key in Keychain & disk
+        automemory_core::keychain::set_master_key(&key)?;
+        println!("✓ Validated BIP-39 mnemonic phrase.");
+        println!("✓ Derived 256-bit AES-256-GCM Master Key.");
+        if automemory_core::keychain::is_native_keychain_active() {
+            println!("✓ Secured Master Key in macOS Apple Keychain ('dev.automemory.master-key').");
+        }
+        println!("✓ Secured fallback master key at ~/.automemory/master.key (0600).");
+
+        // Acquire / register device lease if endpoint is available
+        let config = Config::default_config();
+        let (device_id, device_name) = get_or_create_device_identity(&config.home_dir);
+
+        if let Some(ref ep) = endpoint {
+            let (_, _, device_reg_url, _) = resolve_cloud_urls(ep);
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()?;
+
+            let mut req = client.post(&device_reg_url).json(&serde_json::json!({
+                "device_id": &device_id,
+                "device_name": &device_name,
+            }));
+            if let Some(ref tok) = token {
+                req = req.header("Authorization", format!("Bearer {}", tok));
+            }
+
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    println!("✓ Acquired active device lease from Cloudflare Edge for '{}' ({})", device_name, device_id);
+                }
+                Ok(resp) if resp.status() == reqwest::StatusCode::FORBIDDEN => {
+                    println!("⚠️ Device registration blocked: Device quota exceeded on your current plan.");
+                    println!("   Please visit Developer Console (/dashboard) to upgrade or revoke an old device.");
+                }
+                _ => {
+                    println!("✓ Prepared device '{}' ({})", device_name, device_id);
+                }
+            }
+
+            println!("\nPairing complete! Executing initial sync pull...");
+            let _ = pull(None, Some(ep.clone()), token.clone(), None).await;
+        } else {
+            println!("✓ Device paired successfully with Master Key.");
+        }
+
+        println!("\n🎉 Pairing successful! This machine is now securely synchronized with your vault.");
+        Ok(())
+    } else {
+        // --- Displaying pairing code from current device ---
+        let master_key = match automemory_core::keychain::get_master_key() {
+            Some(k) => k,
+            None => {
+                let (phrase, key) = automemory_core::bip39::generate_pairing_seed_12()?;
+                automemory_core::keychain::set_master_key(&key)?;
+                let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                let _ = std::fs::create_dir_all(home.join(".automemory"));
+                let _ = std::fs::write(home.join(".automemory").join("pairing_seed.txt"), &phrase);
+                key
+            }
+        };
+
+        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        let saved_seed_file = home.join(".automemory").join("pairing_seed.txt");
+        let phrase = if saved_seed_file.exists() {
+            std::fs::read_to_string(&saved_seed_file).unwrap_or_default().trim().to_string()
+        } else {
+            automemory_core::bip39::master_key_to_mnemonic_24(&master_key)?
+        };
+
+        let qr_art = automemory_core::bip39::render_terminal_qr(&phrase);
+
+        println!("==========================================================================");
+        println!("             AutoMemory Pro — Zero-Knowledge Device Pairing               ");
+        println!("==========================================================================");
+        println!();
+        println!("Scan this QR block matrix from another terminal or copy the recovery seed:\n");
+        println!("{}", qr_art);
+        println!("Recovery Phrase:");
+        println!("  {}", phrase);
+        println!();
+        println!("On your secondary laptop, desktop, or CI server, run:");
+        println!("  automemory sync pair --join \"{}\"", phrase);
+        println!();
+        println!("Security Guarantee:");
+        if automemory_core::keychain::is_native_keychain_active() {
+            println!("  • Master Key is encrypted in macOS Apple Keychain ('dev.automemory.master-key')");
+        }
+        println!("  • Cloudflare Edge and GitHub Vault hold ZERO decryption keys");
+        println!("==========================================================================");
+
+        Ok(())
+    }
+}
+

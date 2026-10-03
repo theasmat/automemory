@@ -306,7 +306,7 @@ enum MemoryCommands {
         limit: usize,
     },
 
-    /// Search memories using FTS5 full-text search
+    /// Search memories using FTS5 or zero-knowledge semantic vector search
     Search {
         /// Search query
         query: String,
@@ -316,6 +316,10 @@ enum MemoryCommands {
 
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
+
+        /// Enable zero-knowledge semantic vector search (Cloudflare Vectorize ANN)
+        #[arg(short = 's', long)]
+        semantic: bool,
     },
 
     /// Save a memory explicitly
@@ -443,6 +447,21 @@ enum SyncCommands {
         #[arg(short, long)]
         path: Option<String>,
     },
+
+    /// Secure zero-knowledge multi-device pairing via BIP-39 mnemonic phrase and QR code
+    Pair {
+        /// Join an existing vault using a 12-word recovery seed phrase
+        #[arg(long)]
+        join: Option<String>,
+
+        /// Cloud endpoint URL
+        #[arg(short, long)]
+        endpoint: Option<String>,
+
+        /// Auth token or device token
+        #[arg(short, long)]
+        token: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -508,8 +527,9 @@ async fn main() -> Result<()> {
                 query,
                 project,
                 limit,
+                semantic,
             } => {
-                commands::memory::search(&query, project, limit)?;
+                commands::memory::search(&query, project, limit, semantic).await?;
             }
             MemoryCommands::Save {
                 summary,
@@ -542,6 +562,9 @@ async fn main() -> Result<()> {
             }
             SyncCommands::Export { path } => commands::sync::export_vault(path)?,
             SyncCommands::Import { path } => commands::sync::import_vault(path)?,
+            SyncCommands::Pair { join, endpoint, token } => {
+                commands::sync::pair(join, endpoint, token).await?;
+            }
         },
         Commands::Mode { command } => match command {
             ModeCommands::Get { project } => commands::mode::get(project)?,

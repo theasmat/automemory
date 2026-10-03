@@ -401,9 +401,70 @@ echo "$NEW_QUOTA" | grep -q '"plan_id":"plus"'
 echo "$NEW_QUOTA" | grep -q '"max_active_devices":5'
 assert_success "Upgrade simulation switched tier to Plus and adjusted device quotas"
 
+# 27. Blind Vector Indexing API
+log_test "Blind Vector Indexing API (Zero-Knowledge Coordinates)"
+VEC_INDEX_PAYLOAD='{
+  "blind_project_id": "blind-demo-project",
+  "items": [
+    {
+      "id": "blind_mem_001",
+      "vector": [0.12, 0.45, -0.22, 0.88, 0.05, -0.19, 0.33, 0.61]
+    }
+  ]
+}'
+VEC_INDEX_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d "$VEC_INDEX_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/vector/index")
+echo "$VEC_INDEX_RESP" | grep -q '"success":true'
+echo "$VEC_INDEX_RESP" | grep -q '"indexed_count":1'
+assert_success "Anonymous geometric vectors indexed in edge database"
+
+# 28. Zero-Knowledge Blind Semantic Vector Search
+log_test "Zero-Knowledge Blind Semantic Vector Search"
+# Query vector close to blind_mem_001 vector
+VEC_SEARCH_PAYLOAD='{
+  "blind_project_id": "blind-demo-project",
+  "vector": [0.11, 0.44, -0.21, 0.87, 0.04, -0.18, 0.32, 0.60],
+  "top_k": 3
+}'
+VEC_SEARCH_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d "$VEC_SEARCH_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/vector/search")
+echo "DEBUG VEC_SEARCH_RESP: $VEC_SEARCH_RESP"
+echo "$VEC_SEARCH_RESP" | grep -q '"success":true'
+echo "$VEC_SEARCH_RESP" | grep -q '"count":1'
+echo "$VEC_SEARCH_RESP" | grep -q '"id":"blind_mem_001"'
+echo "$VEC_SEARCH_RESP" | grep -q 'SGVsbG8gQmxpbmQgU2VydmVyIENpcGhlcnRleHQgQUVTLUdDTSAxMjM0'
+assert_success "Blind vector search matched target memory and returned encrypted ciphertext with high similarity"
+
+# 29. Semantic Vector Search Isolation Filter
+log_test "Vector Search Project Isolation (Filter Out Different Project)"
+VEC_ISOLATE_PAYLOAD='{
+  "blind_project_id": "other-nonexistent-project",
+  "vector": [0.11, 0.44, -0.21, 0.87, 0.04, -0.18, 0.32, 0.60],
+  "top_k": 3
+}'
+VEC_ISOLATE_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d "$VEC_ISOLATE_PAYLOAD" \
+    "$GATEWAY_URL/api/v1/vector/search")
+echo "$VEC_ISOLATE_RESP" | grep -q '"count":0'
+assert_success "Vector search correctly isolated results by project slug"
+
+# 30. CLI Device Pairing & Keychain Verification
+log_test "CLI Device Pairing Command (Phrase & QR Code)"
+PAIR_OUTPUT=$(cargo run -q --bin automemory -- sync pair 2>/dev/null)
+echo "$PAIR_OUTPUT" | grep -q "AutoMemory Pro — Zero-Knowledge Device Pairing"
+echo "$PAIR_OUTPUT" | grep -q "Recovery Phrase:"
+echo "$PAIR_OUTPUT" | grep -q "automemory sync pair --join"
+assert_success "CLI sync pair command rendered visual QR matrix and recovery phrase"
+
 echo "=========================================================================="
 echo "    Summary: $PASS_COUNT/$TOTAL_COUNT Tests Passed Successfully (100%)    "
 echo "=========================================================================="
+
 
 
 

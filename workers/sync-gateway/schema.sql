@@ -137,6 +137,16 @@ CREATE TABLE IF NOT EXISTS webhooks (
 
 CREATE INDEX IF NOT EXISTS idx_webhooks_owner ON webhooks(owner_uid);
 
+CREATE TABLE IF NOT EXISTS blind_vector_index (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    blind_project_id TEXT NOT NULL,
+    vector_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_blind_vector_owner ON blind_vector_index(owner_uid, blind_project_id);
+
 -- Seed default configurable pricing plans
 INSERT OR IGNORE INTO pricing_plans (plan_id, display_name, max_active_devices, max_team_members, max_storage_bytes, allowed_features, is_active, created_at, updated_at)
 VALUES 
