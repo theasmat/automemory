@@ -323,8 +323,87 @@ else
     exit 1
 fi
 
+# 19. Developer Web Console UI Serving
+log_test "Developer Web Console HTML Endpoint (/dashboard)"
+DASH_RESP=$(curl -s -L "$GATEWAY_URL/dashboard")
+echo "$DASH_RESP" | grep -q "AutoMemory Pro - Edge Control Console"
+echo "$DASH_RESP" | grep -q "Zero-Knowledge Blind Architecture Verified"
+echo "$DASH_RESP" | grep -q "Device Fleet Manager"
+assert_success "Web console HTML page served successfully with zero-knowledge guarantee"
+
+# 20. Dashboard Stats API
+log_test "Dashboard Metrics & Quotas Stats API"
+STATS_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/dashboard/stats")
+echo "DEBUG STATS_RESP: $STATS_RESP"
+echo "$STATS_RESP" | grep -q '"uid":"'"$ALICE_UID"'"'
+echo "$STATS_RESP" | grep -q '"blind_memories_count":1'
+echo "$STATS_RESP" | grep -q '"blind_skills_count":1'
+echo "$STATS_RESP" | grep -q '"total_projects":2'
+assert_success "Dashboard stats returned aggregated zero-knowledge metrics and active quotas"
+
+# 21. Blind Sync Timeline Feed
+log_test "Sync Audit Timeline Feed"
+TIMELINE_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/dashboard/timeline")
+echo "$TIMELINE_RESP" | grep -q '"project_slug":"blind-demo-project"'
+echo "$TIMELINE_RESP" | grep -q '"event_type":"sync_push"'
+echo "$TIMELINE_RESP" | grep -q '"blind_memories_count":1'
+assert_success "Sync timeline audit log recorded prior edge push event"
+
+# 22. Register Webhook
+log_test "Register Slack/Discord Webhook Endpoint"
+WEBHOOK_REG_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"url":"https://hooks.slack.com/services/T00/B00/test1234","secret":"sec_slack_alert_99"}' \
+    "$GATEWAY_URL/api/v1/dashboard/webhooks")
+echo "$WEBHOOK_REG_RESP" | grep -q '"success":true'
+echo "$WEBHOOK_REG_RESP" | grep -q 'https://hooks.slack.com/services/T00/B00/test1234'
+HOOK_ID=$(echo "$WEBHOOK_REG_RESP" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+assert_success "Webhook registered successfully with ID $HOOK_ID"
+
+# 23. List Webhooks
+log_test "List Active User Webhooks"
+WEBHOOK_LIST_RESP=$(curl -s -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/dashboard/webhooks")
+echo "$WEBHOOK_LIST_RESP" | grep -q "$HOOK_ID"
+assert_success "Configured webhook retrieved in active webhooks list"
+
+# 24. Test Webhook Ping Endpoint
+log_test "Webhook Dispatcher Test Ping API"
+TEST_PING_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"url":"http://127.0.0.1:8787/health"}' \
+    "$GATEWAY_URL/api/v1/dashboard/webhooks/test")
+echo "DEBUG TEST_PING_RESP: $TEST_PING_RESP"
+echo "$TEST_PING_RESP" | grep -q '"success":true'
+echo "$TEST_PING_RESP" | grep -q '"status":200'
+assert_success "Webhook test ping successfully reached local endpoint with measured latency"
+
+# 25. Delete Webhook
+log_test "Delete Webhook Endpoint"
+DEL_HOOK_RESP=$(curl -s -X DELETE -H "Authorization: Bearer $TEST_USER_A" \
+    "$GATEWAY_URL/api/v1/dashboard/webhooks/$HOOK_ID")
+echo "$DEL_HOOK_RESP" | grep -q '"success":true'
+assert_success "Webhook deleted cleanly"
+
+# 26. Dashboard Plan Upgrade Simulation
+log_test "Dashboard Plan Upgrade Simulation (Free -> Plus)"
+SIM_RESP=$(curl -s -X POST -H "Authorization: Bearer $TEST_USER_A" \
+    -H "Content-Type: application/json" \
+    -d '{"plan_id":"plus"}' \
+    "$GATEWAY_URL/api/v1/dashboard/upgrade-simulation")
+echo "$SIM_RESP" | grep -q '"new_plan":"plus"'
+
+# Verify quota increased to 5 devices
+NEW_QUOTA=$(curl -s -H "Authorization: Bearer $TEST_USER_A" "$GATEWAY_URL/api/v1/user/quota")
+echo "$NEW_QUOTA" | grep -q '"plan_id":"plus"'
+echo "$NEW_QUOTA" | grep -q '"max_active_devices":5'
+assert_success "Upgrade simulation switched tier to Plus and adjusted device quotas"
+
 echo "=========================================================================="
 echo "    Summary: $PASS_COUNT/$TOTAL_COUNT Tests Passed Successfully (100%)    "
 echo "=========================================================================="
+
 
 

@@ -223,6 +223,68 @@ syncRouter.post('/sync/push', async (c) => {
     }
   }
 
+  // 5. Record sync audit event
+  const eventId = `ev_${crypto.randomUUID()}`;
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO sync_events (
+        id, owner_uid, project_slug, device_id, device_name,
+        event_type, manifest_hash, blind_memories_count,
+        blind_skills_count, deltas_count, created_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'))`
+    )
+      .bind(
+        eventId,
+        userCtx.uid,
+        projectSlug,
+        body.device_id || null,
+        body.device_name || 'Agent Device',
+        'sync_push',
+        manifestHash,
+        blindMemoriesStored,
+        blindSkillsStored,
+        deltasStored
+      )
+      .run();
+  } catch (err) {
+    console.error('Failed to log sync_event:', err);
+  }
+
+  // 6. Asynchronously trigger active webhooks if configured
+  try {
+    const webhooks = await c.env.DB.prepare(
+      `SELECT url, secret, event_types FROM webhooks WHERE owner_uid = ?1 AND is_active = 1`
+    )
+      .bind(userCtx.uid)
+      .all<{ url: string; secret: string | null; event_types: string }>();
+
+    if (webhooks.results && webhooks.results.length > 0) {
+      const webhookPayload = JSON.stringify({
+        event: 'sync.push',
+        project_slug: projectSlug,
+        device_id: body.device_id,
+        manifest_hash: manifestHash,
+        blind_memories_count: blindMemoriesStored,
+        blind_skills_count: blindSkillsStored,
+        deltas_count: deltasStored,
+        timestamp: new Date().toISOString(),
+      });
+
+      for (const hook of webhooks.results) {
+        fetch(hook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(hook.secret ? { 'X-AutoMemory-Signature': hook.secret } : {}),
+          },
+          body: webhookPayload,
+        }).catch((e) => console.error('Webhook dispatch error:', e));
+      }
+    }
+  } catch (err) {
+    console.error('Failed to process webhooks:', err);
+  }
+
   return c.json({
     success: true,
     is_blind: !!(body.blind_memories || body.encrypted_deltas),

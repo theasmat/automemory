@@ -6,6 +6,7 @@ import { devicesRouter } from './routes/devices';
 import { syncRouter } from './routes/sync';
 import { adminRouter } from './routes/admin';
 import { billingRouter } from './routes/billing';
+import { dashboardRouter } from './routes/dashboard';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -21,8 +22,13 @@ app.use(
   })
 );
 
+// Root redirect to Developer Console
+app.get('/', (c) => c.redirect('/dashboard'));
+
 // Mount routes
 app.route('/', healthRouter);
+app.route('/', dashboardRouter);
+app.route('/api/v1', dashboardRouter);
 app.route('/api/v1', devicesRouter);
 app.route('/api/v1', syncRouter);
 app.route('/api/v1', adminRouter);

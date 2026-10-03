@@ -108,6 +108,35 @@ CREATE TABLE IF NOT EXISTS blind_skills (
 
 CREATE INDEX IF NOT EXISTS idx_blind_skills_proj ON blind_skills(owner_uid, blind_project_id);
 
+CREATE TABLE IF NOT EXISTS sync_events (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    project_slug TEXT NOT NULL,
+    device_id TEXT,
+    device_name TEXT,
+    event_type TEXT NOT NULL DEFAULT 'sync_push', -- sync_push, sync_pull, disaster_recovery
+    manifest_hash TEXT,
+    blind_memories_count INTEGER DEFAULT 0,
+    blind_skills_count INTEGER DEFAULT 0,
+    deltas_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_events_owner ON sync_events(owner_uid, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+    id TEXT PRIMARY KEY,
+    owner_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    secret TEXT,
+    event_types TEXT NOT NULL DEFAULT '["guardrail.review_proposal", "asan.memory_leak", "skill.promoted"]',
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhooks_owner ON webhooks(owner_uid);
+
 -- Seed default configurable pricing plans
 INSERT OR IGNORE INTO pricing_plans (plan_id, display_name, max_active_devices, max_team_members, max_storage_bytes, allowed_features, is_active, created_at, updated_at)
 VALUES 

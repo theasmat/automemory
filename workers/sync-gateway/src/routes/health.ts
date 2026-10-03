@@ -3,7 +3,7 @@ import type { Env } from '../types';
 
 export const healthRouter = new Hono<{ Bindings: Env }>();
 
-healthRouter.get('/health', (c) => {
+healthRouter.all('/health', (c) => {
   return c.json({
     status: 'ok',
     service: 'AutoMemory Pro Cloud Sync Gateway',
