@@ -193,13 +193,11 @@ impl Database {
         limit: usize,
     ) -> Result<Vec<(Memory, f64)>> {
         let conn = self.conn();
-        // Sanitize FTS query for special syntax chars
-        let sanitized = query
-            .replace('"', "")
-            .replace('*', "")
-            .replace('\'', "")
-            .trim()
-            .to_string();
+        // Sanitize FTS query for special syntax chars and punctuation
+        let sanitized: String = query
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' || c.is_whitespace() { c } else { ' ' })
+            .collect();
         let words: Vec<String> = sanitized
             .split_whitespace()
             .filter(|w| !w.is_empty())

@@ -106,7 +106,32 @@ pub async fn search(
                         }
                     }
                 }
+            } else {
+                println!("ℹ Edge endpoint unreachable; falling back to local zero-knowledge vector similarity.");
             }
+        }
+
+        // Local Zero-Knowledge Semantic Vector Search Fallback
+        let active_mems = db.list_memories(project.as_deref(), Some(automemory_core::models::MemoryStatus::Active), None, 1000)?;
+        let mut scored_mems = Vec::new();
+        for mem in active_mems {
+            let mem_vec = vector_engine.embed_text(&format!("{} {}", mem.summary, mem.content))?;
+            let sim = automemory_core::retrieval::vector::VectorEngine::cosine_similarity(&query_vector, &mem_vec);
+            if sim > 0.05 {
+                scored_mems.push((mem, sim));
+            }
+        }
+        scored_mems.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        if !scored_mems.is_empty() {
+            println!("Found {} semantic vector matches for '{}':", scored_mems.len().min(limit), query);
+            println!("{}", "-".repeat(90));
+            for (m, sim) in scored_mems.into_iter().take(limit) {
+                println!("[{}] {} (Semantic Similarity: {:.3})", m.memory_type, m.summary, sim);
+                println!("  ID: {}", m.id);
+                println!("  Content: {}", m.content);
+                println!();
+            }
+            return Ok(());
         }
     }
 

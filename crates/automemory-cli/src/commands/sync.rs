@@ -232,6 +232,8 @@ struct CloudPullResponse {
     blind_skills: Option<Vec<BlindSkillWire>>,
 }
 
+use uuid::Uuid;
+
 pub async fn push(
     project_opt: Option<String>,
     endpoint_opt: Option<String>,
@@ -250,6 +252,37 @@ pub async fn push(
     });
 
     let db = Database::open(&config.db_path)?;
+
+    // Auto-discover and track documents in workspace according to trackable_patterns
+    let target_dir = registered_proj.map(|p| PathBuf::from(&p.local_dir)).unwrap_or_else(|| cwd.clone());
+    let trackable_patterns = registered_proj
+        .map(|p| p.trackable_files.clone())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(automemory_core::config::default_trackable_files);
+
+    let mut project = match db.get_project_by_id(&project_id)? {
+        Some(p) => p,
+        None => match db.get_project_by_slug(&project_id)? {
+            Some(p) => p,
+            None => Project {
+                id: Uuid::now_v7().to_string(),
+                slug: project_id.clone(),
+                display_name: project_id.clone(),
+                document_config: Default::default(),
+                sync_config: Default::default(),
+                capture_policy: Default::default(),
+                context_budget: Default::default(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+        },
+    };
+    project.document_config.include_patterns = trackable_patterns;
+
+    // Scan the project workspace
+    let scanner = automemory_core::docs::DocumentScanner::new(std::sync::Arc::new(Database::open(&config.db_path)?));
+    let _ = scanner.scan_project(&project, &target_dir);
+
     let docs = db.list_documents(&project_id)?;
 
     // Resolve endpoint and auth token
@@ -477,7 +510,20 @@ pub async fn pull(
     let target_dir = registered_proj.map(|p| PathBuf::from(&p.local_dir)).unwrap_or_else(|| cwd.clone());
 
     if restore_enabled {
-        let proj_vault_docs = vault_path.join("projects").join(&project_id).join("docs");
+        let db_opt = Database::open(&config.db_path).ok();
+        let proj_slug = db_opt
+            .as_ref()
+            .and_then(|d| d.get_project_by_id(&project_id).ok().flatten())
+            .map(|p| p.slug)
+            .unwrap_or_else(|| project_id.clone());
+
+        let mut proj_vault_docs = vault_path.join("projects").join(&project_id).join("docs");
+        if !proj_vault_docs.exists() {
+            let alt = vault_path.join("projects").join(&proj_slug).join("docs");
+            if alt.exists() {
+                proj_vault_docs = alt;
+            }
+        }
         if proj_vault_docs.exists() {
             let mut restored_count = 0;
             if let Ok(entries) = glob::glob(&format!("{}/**/*", proj_vault_docs.display())) {
