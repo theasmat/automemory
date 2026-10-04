@@ -218,11 +218,11 @@ impl Database {
     }
 
     pub fn decide_proposal(&self, id: &str, approved: bool) -> Result<bool> {
+        let proposal = self.get_proposal_by_id(id)?;
         let conn = self.conn();
         let status = if approved { "approved" } else { "rejected" };
         let now_str = Utc::now().to_rfc3339();
 
-        let proposal = self.get_proposal_by_id(id)?;
         let rows = conn.execute(
             "UPDATE review_proposals SET status = ?1, decided_at = ?2 WHERE id = ?3",
             params![status, now_str, id],

@@ -105,6 +105,26 @@ export const api = {
     }
   },
 
+  async getProposalsSummary(projectId?: string | null): Promise<any> {
+    const url = projectId
+      ? `/api/proposals/summary?project_id=${encodeURIComponent(projectId)}`
+      : '/api/proposals/summary';
+    return (await request<any>(url)) || null;
+  },
+
+  async decideAllProposals(approved: boolean, proposalType?: string | null, projectId?: string | null): Promise<any> {
+    try {
+      const res = await fetch('/api/proposals/decide_all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved, proposal_type: proposalType, project_id: projectId }),
+      });
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   async getProjects(): Promise<Project[]> {
     return (await request<Project[]>('/api/projects')) || [];
   },

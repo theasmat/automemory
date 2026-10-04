@@ -10,34 +10,42 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         .to_string_lossy()
         .to_string();
 
+    let scope_label = if global { "GLOBAL" } else { "WORKSPACE" };
+    println!("Connecting AutoMemory [{}] for agent: '{}'...\n", scope_label, agent);
+
     match agent.to_lowercase().as_str() {
-        "agy" | "antigravity" => {
-            if global {
-                connect_agy_global(&home, &exe_path)?;
-            } else {
-                connect_agy_workspace(&cwd, &exe_path)?;
-            }
+        "agy" | "antigravity" | "gemini" => {
+            connect_agy(&home, &cwd, &exe_path, global)?;
         }
         "claude" | "claudecode" => {
-            connect_claude(&home, &cwd, &exe_path)?;
+            connect_claude(&home, &cwd, &exe_path, global)?;
         }
         "cursor" => {
             connect_cursor(&cwd, &home, &exe_path, global)?;
         }
         "windsurf" | "codeium" => {
-            connect_windsurf(&home, &exe_path)?;
+            connect_windsurf(&home, &cwd, &exe_path, global)?;
         }
-        "cline" | "roo" | "roocode" => {
-            connect_cline(&home, &exe_path)?;
+        "cline" => {
+            connect_cline(&home, &cwd, &exe_path, global)?;
+        }
+        "roo" | "roocode" | "roo-cline" => {
+            connect_roo(&home, &cwd, &exe_path, global)?;
+        }
+        "continue" | "vscode" => {
+            connect_continue(&home, &cwd, &exe_path, global)?;
+        }
+        "zed" => {
+            connect_zed(&home, &cwd, &exe_path, global)?;
         }
         "codex" | "openai" => {
-            connect_codex(&cwd, &exe_path)?;
+            connect_codex(&home, &cwd, &exe_path, global)?;
         }
-        "gemini" => {
-            connect_agy_global(&home, &exe_path)?;
+        "all" => {
+            connect_all(&home, &cwd, &exe_path, global)?;
         }
         other => {
-            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, windsurf, cline, codex, gemini", other);
+            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, windsurf, continue, cline, roo, zed, codex, all", other);
             return Ok(());
         }
     }
@@ -52,161 +60,14 @@ fn codebase_memory_config() -> serde_json::Value {
     })
 }
 
-fn connect_agy_workspace(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let agents_dir = workspace_root.join(".agents");
-    fs::create_dir_all(&agents_dir)?;
-
-    // 1. Workspace .agents/mcp_config.json
-    let mcp_config_path = agents_dir.join("mcp_config.json");
-    let mut mcp_val = if mcp_config_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&mcp_config_path)?).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    if mcp_val.get("mcpServers").is_none() {
-        mcp_val["mcpServers"] = serde_json::json!({});
-    }
-
-    // AutoMemory MCP
-    mcp_val["mcpServers"]["automemory"] = serde_json::json!({
+fn automemory_mcp_config(exe_path: &str) -> serde_json::Value {
+    serde_json::json!({
         "command": exe_path,
         "args": ["mcp"],
         "env": {
             "AUTOMEMORY_PROJECT_NAME": "auto"
         }
-    });
-
-    // Codebase Memory Companion MCP
-    mcp_val["mcpServers"]["codebase-memory"] = codebase_memory_config();
-
-    fs::write(&mcp_config_path, serde_json::to_string_pretty(&mcp_val)?)?;
-
-    // 2. Root .mcp.json
-    let root_mcp_path = workspace_root.join(".mcp.json");
-    fs::write(&root_mcp_path, serde_json::to_string_pretty(&mcp_val)?)?;
-
-    // 3. Workspace .agents/hooks.json
-    let hooks_path = agents_dir.join("hooks.json");
-    let hooks_val = serde_json::json!({
-        "automemory": {
-            "enabled": true,
-            "PreInvocation": [
-                {
-                    "type": "command",
-                    "command": format!("{} hook --agent agy --event boot --project auto", exe_path),
-                    "timeout": 5
-                }
-            ],
-            "PreToolUse": [
-                {
-                    "matcher": "*",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": format!("{} hook --agent agy --event pre-tool --project auto", exe_path),
-                            "timeout": 5
-                        }
-                    ]
-                }
-            ],
-            "PostToolUse": [
-                {
-                    "matcher": "*",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": format!("{} hook --agent agy --event post-tool --project auto", exe_path),
-                            "timeout": 5
-                        }
-                    ]
-                }
-            ],
-            "Stop": [
-                {
-                    "type": "command",
-                    "command": format!("{} hook --agent agy --event stop --project auto", exe_path),
-                    "timeout": 5
-                }
-            ]
-        }
-    });
-    fs::write(&hooks_path, serde_json::to_string_pretty(&hooks_val)?)?;
-
-    // 4. Workspace Plugin
-    let plugin_dir = agents_dir.join("plugins").join("automemory");
-    fs::create_dir_all(&plugin_dir)?;
-    fs::write(plugin_dir.join("plugin.json"), serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?)?;
-    fs::write(plugin_dir.join("mcp_config.json"), serde_json::to_string_pretty(&mcp_val)?)?;
-    fs::write(plugin_dir.join("hooks.json"), serde_json::to_string_pretty(&hooks_val)?)?;
-
-    println!("✓ Successfully connected Dual-Engine Suite to Antigravity workspace at {}", workspace_root.display());
-    println!("  🧠 Registered AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Registered Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
-    println!("  🪝 Registered lifecycle hooks in: .agents/hooks.json");
-    println!("  📦 Created workspace plugin in: .agents/plugins/automemory/");
-    Ok(())
-}
-
-fn connect_agy_global(home: &Path, exe_path: &str) -> Result<()> {
-    let gemini_config = home.join(".gemini").join("config");
-    fs::create_dir_all(&gemini_config)?;
-
-    let mcp_path = gemini_config.join("mcp_config.json");
-    let mut mcp_val = if mcp_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&mcp_path)?).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    if mcp_val.get("mcpServers").is_none() {
-        mcp_val["mcpServers"] = serde_json::json!({});
-    }
-    mcp_val["mcpServers"]["automemory"] = serde_json::json!({
-        "command": exe_path,
-        "args": ["mcp"],
-        "env": {
-            "AUTOMEMORY_PROJECT_NAME": "auto"
-        }
-    });
-    mcp_val["mcpServers"]["codebase-memory"] = codebase_memory_config();
-
-    fs::write(&mcp_path, serde_json::to_string_pretty(&mcp_val)?)?;
-
-    println!("✓ Successfully registered Dual-Engine Suite in global Antigravity config at {}", mcp_path.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
-    Ok(())
-}
-
-fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let claude_config = home.join(".claude.json");
-    let mut val = if claude_config.exists() {
-        serde_json::from_str(&fs::read_to_string(&claude_config)?).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    if val.get("mcpServers").is_none() {
-        val["mcpServers"] = serde_json::json!({});
-    }
-
-    val["mcpServers"]["automemory"] = serde_json::json!({
-        "command": exe_path,
-        "args": ["mcp"]
-    });
-    val["mcpServers"]["codebase-memory"] = codebase_memory_config();
-
-    fs::write(&claude_config, serde_json::to_string_pretty(&val)?)?;
-
-    // Also write to workspace .mcp.json
-    let ws_mcp = workspace_root.join(".mcp.json");
-    fs::write(&ws_mcp, serde_json::to_string_pretty(&val)?)?;
-
-    println!("✓ Successfully connected Dual-Engine Suite to Claude Code at {}", claude_config.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
-    Ok(())
+    })
 }
 
 fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
@@ -223,19 +84,128 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
         val["mcpServers"] = serde_json::json!({});
     }
 
-    val["mcpServers"]["automemory"] = serde_json::json!({
-        "command": exe_path,
-        "args": ["mcp"],
-        "env": {
-            "AUTOMEMORY_PROJECT_NAME": "auto"
-        }
-    });
+    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
     val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
     fs::write(target_file, serde_json::to_string_pretty(&val)?)?;
     Ok(())
 }
 
+// ── Antigravity / Gemini ────────────────────────────────────────────────────
+fn connect_agy(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    if global {
+        let gemini_config = home.join(".gemini").join("config");
+        fs::create_dir_all(&gemini_config)?;
+
+        let mcp_path = gemini_config.join("mcp_config.json");
+        merge_mcp_config(&mcp_path, exe_path)?;
+
+        println!("✓ [GLOBAL] Connected to Antigravity / Gemini at {}", mcp_path.display());
+    } else {
+        let agents_dir = workspace_root.join(".agents");
+        fs::create_dir_all(&agents_dir)?;
+
+        // 1. .agents/mcp_config.json
+        let mcp_config_path = agents_dir.join("mcp_config.json");
+        merge_mcp_config(&mcp_config_path, exe_path)?;
+
+        // 2. Root .mcp.json
+        let root_mcp_path = workspace_root.join(".mcp.json");
+        merge_mcp_config(&root_mcp_path, exe_path)?;
+
+        // 3. .agents/hooks.json
+        let hooks_path = agents_dir.join("hooks.json");
+        let hooks_val = serde_json::json!({
+            "automemory": {
+                "enabled": true,
+                "PreInvocation": [
+                    {
+                        "type": "command",
+                        "command": format!("{} hook --agent agy --event boot --project auto", exe_path),
+                        "timeout": 5
+                    }
+                ],
+                "PreToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": format!("{} hook --agent agy --event pre-tool --project auto", exe_path),
+                                "timeout": 5
+                            }
+                        ]
+                    }
+                ],
+                "PostToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": format!("{} hook --agent agy --event post-tool --project auto", exe_path),
+                                "timeout": 5
+                            }
+                        ]
+                    }
+                ],
+                "Stop": [
+                    {
+                        "type": "command",
+                        "command": format!("{} hook --agent agy --event stop --project auto", exe_path),
+                        "timeout": 5
+                    }
+                ]
+            }
+        });
+        fs::write(&hooks_path, serde_json::to_string_pretty(&hooks_val)?)?;
+
+        // 4. Plugin manifest
+        let plugin_dir = agents_dir.join("plugins").join("automemory");
+        fs::create_dir_all(&plugin_dir)?;
+        fs::write(plugin_dir.join("plugin.json"), serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?)?;
+        merge_mcp_config(&plugin_dir.join("mcp_config.json"), exe_path)?;
+        fs::write(plugin_dir.join("hooks.json"), serde_json::to_string_pretty(&hooks_val)?)?;
+
+        println!("✓ [WORKSPACE] Connected to Antigravity at {}", workspace_root.display());
+        println!("  🪝 Registered hooks in: .agents/hooks.json");
+        println!("  📦 Created plugin in:   .agents/plugins/automemory/");
+    }
+
+    Ok(())
+}
+
+// ── Claude Code & Claude Desktop ────────────────────────────────────────────
+fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    if global {
+        let claude_config = home.join(".claude.json");
+        merge_mcp_config(&claude_config, exe_path)?;
+
+        #[cfg(target_os = "macos")]
+        let desktop_config = home.join("Library/Application Support/Claude/claude_desktop_config.json");
+        #[cfg(target_os = "windows")]
+        let desktop_config = home.join("AppData/Roaming/Claude/claude_desktop_config.json");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let desktop_config = home.join(".config/Claude/claude_desktop_config.json");
+
+        if let Some(parent) = desktop_config.parent() {
+            if parent.exists() {
+                let _ = merge_mcp_config(&desktop_config, exe_path);
+                println!("✓ [GLOBAL] Connected to Claude Desktop at {}", desktop_config.display());
+            }
+        }
+
+        println!("✓ [GLOBAL] Connected to Claude Code at {}", claude_config.display());
+    } else {
+        let ws_mcp = workspace_root.join(".mcp.json");
+        merge_mcp_config(&ws_mcp, exe_path)?;
+        println!("✓ [WORKSPACE] Connected to Claude at {}", ws_mcp.display());
+    }
+
+    Ok(())
+}
+
+// ── Cursor ──────────────────────────────────────────────────────────────────
 fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bool) -> Result<()> {
     let target_path = if global {
         #[cfg(target_os = "macos")]
@@ -251,70 +221,200 @@ fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bo
 
     merge_mcp_config(&target_path, exe_path)?;
 
-    // Also create .cursorrules in workspace with AutoMemory context guidelines
+    // Create .cursorrules in workspace
     let cursorrules_path = workspace_root.join(".cursorrules");
-    let rules_content = r#"# AutoMemory & Codebase Memory Companion Rules
-- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`).
-- You have deep Tree-Sitter AST structural code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`, `search_graph`).
+    let rules_content = r#"# AutoMemory Persistent Intelligence Rules
+- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`, `memory.proposals.summary`, `memory.proposals.decide_all`).
+- You have deep AST code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`).
 - At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
-- Before modifying complex architectures, use `codebase-memory` to trace callers and call graphs.
+- Zero-SQL Rule: Never run raw sqlite3 queries on internal databases. Use the official MCP tools and CLI commands.
 "#;
     let _ = fs::write(&cursorrules_path, rules_content);
 
-    println!("✓ Successfully connected Dual-Engine Suite to Cursor at {}", target_path.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
-    println!("  📝 Created/updated .cursorrules for persistent memory & AST context");
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Cursor at {}", scope_tag, target_path.display());
+    println!("  📝 Created/updated .cursorrules guidelines");
     Ok(())
 }
 
-fn connect_windsurf(home: &Path, exe_path: &str) -> Result<()> {
-    let windsurf_config = home.join(".codeium").join("windsurf").join("mcp_config.json");
-    merge_mcp_config(&windsurf_config, exe_path)?;
+// ── Windsurf / Codeium Cascade ──────────────────────────────────────────────
+fn connect_windsurf(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".codeium").join("windsurf").join("mcp_config.json")
+    } else {
+        workspace_root.join(".windsurf").join("mcp.json")
+    };
 
-    println!("✓ Successfully connected Dual-Engine Suite to Windsurf at {}", windsurf_config.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Windsurf at {}", scope_tag, target_path.display());
     Ok(())
 }
 
-fn connect_cline(home: &Path, exe_path: &str) -> Result<()> {
-    // 1. Cline MCP settings
-    #[cfg(target_os = "macos")]
-    let cline_path = home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
-    #[cfg(target_os = "windows")]
-    let cline_path = home.join("AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let cline_path = home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+// ── Cline ───────────────────────────────────────────────────────────────────
+fn connect_cline(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        #[cfg(target_os = "macos")]
+        let p = home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+        #[cfg(target_os = "windows")]
+        let p = home.join("AppData/Roaming/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let p = home.join(".config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
+        p
+    } else {
+        workspace_root.join(".cline").join("mcp.json")
+    };
 
-    merge_mcp_config(&cline_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path)?;
 
-    // 2. Roo Code MCP settings (if folder exists or create it)
-    #[cfg(target_os = "macos")]
-    let roo_path = home.join("Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
-    #[cfg(target_os = "windows")]
-    let roo_path = home.join("AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let roo_path = home.join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Cline at {}", scope_tag, target_path.display());
+    Ok(())
+}
 
-    if let Some(parent) = roo_path.parent() {
-        if parent.exists() {
-            let _ = merge_mcp_config(&roo_path, exe_path);
+// ── Roo Code ────────────────────────────────────────────────────────────────
+fn connect_roo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        #[cfg(target_os = "macos")]
+        let p = home.join("Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+        #[cfg(target_os = "windows")]
+        let p = home.join("AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let p = home.join(".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
+        p
+    } else {
+        workspace_root.join(".roo").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Roo Code at {}", scope_tag, target_path.display());
+    Ok(())
+}
+
+// ── Continue.dev / VS Code ──────────────────────────────────────────────────
+fn connect_continue(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".continue").join("config.json")
+    } else {
+        workspace_root.join(".continue").join("config.json")
+    };
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut val = if target_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&target_path)?).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if val.get("experimental").is_none() {
+        val["experimental"] = serde_json::json!({});
+    }
+    if val["experimental"].get("modelContextProtocolServers").is_none() {
+        val["experimental"]["modelContextProtocolServers"] = serde_json::json!([]);
+    }
+
+    if let Some(servers) = val["experimental"]["modelContextProtocolServers"].as_array_mut() {
+        let has_automemory = servers.iter().any(|s| {
+            s.get("transport")
+                .and_then(|t| t.get("command"))
+                .and_then(|c| c.as_str())
+                .map(|cmd| cmd.contains("automemory"))
+                .unwrap_or(false)
+        });
+
+        if !has_automemory {
+            servers.push(serde_json::json!({
+                "transport": {
+                    "type": "stdio",
+                    "command": exe_path,
+                    "args": ["mcp"]
+                }
+            }));
         }
     }
 
-    println!("✓ Successfully connected Dual-Engine Suite to Cline / Roo Code at {}", cline_path.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Continue.dev at {}", scope_tag, target_path.display());
     Ok(())
 }
 
-fn connect_codex(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let codex_config = workspace_root.join(".codex").join("config.json");
-    merge_mcp_config(&codex_config, exe_path)?;
+// ── Zed Editor ──────────────────────────────────────────────────────────────
+fn connect_zed(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".config").join("zed").join("settings.json")
+    } else {
+        workspace_root.join(".zed").join("settings.json")
+    };
 
-    println!("✓ Successfully connected Dual-Engine Suite to Codex CLI at {}", codex_config.display());
-    println!("  🧠 AutoMemory (Agent Memory & Trajectory Distiller)");
-    println!("  🌳 Codebase Memory Companion (Tree-Sitter AST & Call Graph)");
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut val = if target_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&target_path)?).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if val.get("context_servers").is_none() {
+        val["context_servers"] = serde_json::json!({});
+    }
+
+    val["context_servers"]["automemory"] = serde_json::json!({
+        "command": {
+            "path": exe_path,
+            "args": ["mcp"]
+        }
+    });
+
+    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Zed editor at {}", scope_tag, target_path.display());
+    Ok(())
+}
+
+// ── OpenAI Codex CLI ────────────────────────────────────────────────────────
+fn connect_codex(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".codex").join("config.json")
+    } else {
+        workspace_root.join(".codex").join("config.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!("✓ {} Connected to Codex CLI at {}", scope_tag, target_path.display());
+    Ok(())
+}
+
+// ── Connect All Agents ──────────────────────────────────────────────────────
+fn connect_all(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    println!("========================================================");
+    println!("       AutoMemory Multi-Agent Universal Connector       ");
+    println!("========================================================");
+
+    let _ = connect_agy(home, workspace_root, exe_path, global);
+    let _ = connect_claude(home, workspace_root, exe_path, global);
+    let _ = connect_cursor(workspace_root, home, exe_path, global);
+    let _ = connect_windsurf(home, workspace_root, exe_path, global);
+    let _ = connect_continue(home, workspace_root, exe_path, global);
+    let _ = connect_cline(home, workspace_root, exe_path, global);
+    let _ = connect_roo(home, workspace_root, exe_path, global);
+    let _ = connect_zed(home, workspace_root, exe_path, global);
+    let _ = connect_codex(home, workspace_root, exe_path, global);
+
+    println!("========================================================");
+    println!("✓ All 9 coding agent hosts configured successfully!");
+    println!("========================================================");
     Ok(())
 }

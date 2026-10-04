@@ -1,0 +1,5 @@
+# AutoMemory Persistent Intelligence Rules
+- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`, `memory.proposals.summary`, `memory.proposals.decide_all`).
+- You have deep AST code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`).
+- At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
+- Zero-SQL Rule: Never run raw sqlite3 queries on internal databases. Use the official MCP tools and CLI commands.

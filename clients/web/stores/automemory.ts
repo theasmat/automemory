@@ -36,6 +36,7 @@ export const useAutoMemoryStore = defineStore('automemory', {
     traces: [] as SuccessTrace[],
     failures: [] as FailureRecord[],
     proposals: [] as Proposal[],
+    proposalsSummary: null as any,
     projects: [] as Project[],
     activeProject: null as string | null,
     currentMode: 'vibe' as 'vibe' | 'strict' | 'review',
@@ -203,7 +204,38 @@ export const useAutoMemoryStore = defineStore('automemory', {
           approved ? 'success' : 'warning'
         );
         this.fetchMemories();
+        this.fetchProposalsSummary();
       }
+    },
+
+    async fetchProposalsSummary() {
+      const summary = await api.getProposalsSummary(this.activeProject);
+      if (summary) {
+        this.proposalsSummary = summary;
+      }
+      return summary;
+    },
+
+    async decideAllProposals(approved: boolean, proposalType?: string | null) {
+      this.isLoading = true;
+      const res = await api.decideAllProposals(approved, proposalType, this.activeProject);
+      if (res && res.success) {
+        const action = approved ? 'Approved' : 'Rejected';
+        this.showLiveToast(
+          `${action} ${res.result.decided_count} proposals (${res.result.archived_memories_count} duplicates archived)`,
+          approved ? 'success' : 'info'
+        );
+        await Promise.allSettled([
+          this.fetchProposals(),
+          this.fetchProposalsSummary(),
+          this.fetchStats(),
+          this.fetchMemories(),
+        ]);
+      } else {
+        this.showLiveToast('Failed to execute bulk proposal decision', 'warning');
+      }
+      this.isLoading = false;
+      return res;
     },
 
     async fetchMode() {
