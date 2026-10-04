@@ -106,6 +106,52 @@ pub async fn api_proposals_decide(
     }
 }
 
+pub async fn api_proposals_summary(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    match state.db.get_proposals_summary(params.project_id.as_deref()) {
+        Ok(summary) => (StatusCode::OK, Json(json!(summary))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DecideAllProposalsPayload {
+    pub project_id: Option<String>,
+    pub proposal_type: Option<String>,
+    pub approved: bool,
+}
+
+pub async fn api_proposals_decide_all(
+    State(state): State<AppState>,
+    Json(payload): Json<DecideAllProposalsPayload>,
+) -> impl IntoResponse {
+    match state.db.decide_all_proposals(
+        payload.project_id.as_deref(),
+        payload.proposal_type.as_deref(),
+        payload.approved,
+    ) {
+        Ok(result) => {
+            let _ = state.broadcast_tx.send(json!({
+                "type": "proposals_decided_all",
+                "approved": payload.approved,
+                "decided_count": result.decided_count,
+                "archived_memories_count": result.archived_memories_count,
+                "timestamp": Utc::now().to_rfc3339(),
+            }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "result": result })))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
 pub async fn api_memory_archive(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
