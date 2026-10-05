@@ -117,12 +117,31 @@ jobs:
       - name: Display Downloaded Artifacts
         run: ls -la dist/
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release in Public Distribution Repo
         uses: softprops/action-gh-release@v2
         with:
+          repository: theasmat/automemory-bin
+          token: ${{ secrets.GH_PAT || github.token }}
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: AutoMemory ${{ inputs.tag || github.ref_name }}
           files: dist/*
           generate_release_notes: true
           draft: false
           prerelease: false
+
+      - name: Sync Installer Scripts to Distribution Repo
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone https://x-access-token:${GH_TOKEN}@github.com/theasmat/automemory-bin.git dist_repo
+          cp install.sh dist_repo/install.sh
+          cp install.ps1 dist_repo/install.ps1
+          cd dist_repo
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "chore: sync installers for ${{ inputs.tag || github.ref_name }}"
+            git push origin master
+            git push origin master:main || true
+          fi
