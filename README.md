@@ -20,12 +20,12 @@
 
 ### macOS & Linux
 ```bash
-curl -fsSL https://raw.githubusercontent.com/theasmat/automemory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 ```powershell
-irm https://raw.githubusercontent.com/theasmat/automemory/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.ps1 | iex
 ```
 
 ### Via Cargo

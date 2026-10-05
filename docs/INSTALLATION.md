@@ -9,13 +9,13 @@ AutoMemory is distributed as a single standalone executable with no external run
 ### macOS & Linux (Bash / Zsh)
 Run the automated universal installer in your terminal:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/theasmat/automemory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 Open PowerShell as your current user and run:
 ```powershell
-irm https://raw.githubusercontent.com/theasmat/automemory/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.ps1 | iex
 ```
 
 The installer detects your operating system and CPU architecture, installs the release binary into your user bin path (`~/.cargo/bin` or `%USERPROFILE%\.cargo\bin`), verifies installation health via `automemory doctor`, and offers to configure all 20 AI coding agents globally.

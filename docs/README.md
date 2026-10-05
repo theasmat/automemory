@@ -24,10 +24,10 @@ Welcome to the official technical documentation for **AutoMemory** — the local
 
 ```bash
 # 1. Install (macOS / Linux):
-curl -fsSL https://raw.githubusercontent.com/theasmat/automemory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.sh | bash
 
 # Or Install (Windows PowerShell):
-irm https://raw.githubusercontent.com/theasmat/automemory/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.ps1 | iex
 
 # 2. Connect all 20 agents globally:
 automemory connect all -g
