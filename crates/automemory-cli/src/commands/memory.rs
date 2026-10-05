@@ -16,7 +16,10 @@ pub fn list(project: Option<String>, limit: usize) -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<38} {:<12} {:<8} {:<10} {:<40}", "ID", "TYPE", "SCOPE", "CONFIDENCE", "SUMMARY");
+    println!(
+        "{:<38} {:<12} {:<8} {:<10} {:<40}",
+        "ID", "TYPE", "SCOPE", "CONFIDENCE", "SUMMARY"
+    );
     println!("{}", "-".repeat(110));
     for m in memories {
         println!(
@@ -47,7 +50,10 @@ pub async fn search(
 
         if let Some(ref endpoint) = global_cfg.cloud.endpoint {
             let search_url = format!("{}/api/v1/vector/search", endpoint.trim_end_matches('/'));
-            println!("🔍 Querying Edge Vector Index (Zero-Knowledge): {}", search_url);
+            println!(
+                "🔍 Querying Edge Vector Index (Zero-Knowledge): {}",
+                search_url
+            );
 
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -68,14 +74,24 @@ pub async fn search(
                     if let Ok(body) = resp.json::<serde_json::Value>().await {
                         if let Some(matches) = body.get("matches").and_then(|m| m.as_array()) {
                             if !matches.is_empty() {
-                                let master_key = automemory_core::crypto::BlindCrypto::get_or_create_master_key(None)?;
-                                println!("Found {} semantic vector matches for '{}':", matches.len(), query);
+                                let master_key =
+                                    automemory_core::crypto::BlindCrypto::get_or_create_master_key(
+                                        None,
+                                    )?;
+                                println!(
+                                    "Found {} semantic vector matches for '{}':",
+                                    matches.len(),
+                                    query
+                                );
                                 println!("{}", "-".repeat(90));
 
                                 for m_val in matches {
-                                    let wire_res: Result<automemory_core::crypto::BlindMemoryWire, _> =
-                                        serde_json::from_value(m_val.clone());
-                                    let score = m_val.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                                    let wire_res: Result<
+                                        automemory_core::crypto::BlindMemoryWire,
+                                        _,
+                                    > = serde_json::from_value(m_val.clone());
+                                    let score =
+                                        m_val.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
                                     if let Ok(wire) = wire_res {
                                         match automemory_core::crypto::BlindCrypto::decrypt_memory(
                                             &master_key,
@@ -112,21 +128,36 @@ pub async fn search(
         }
 
         // Local Zero-Knowledge Semantic Vector Search Fallback
-        let active_mems = db.list_memories(project.as_deref(), Some(automemory_core::models::MemoryStatus::Active), None, 1000)?;
+        let active_mems = db.list_memories(
+            project.as_deref(),
+            Some(automemory_core::models::MemoryStatus::Active),
+            None,
+            1000,
+        )?;
         let mut scored_mems = Vec::new();
         for mem in active_mems {
             let mem_vec = vector_engine.embed_text(&format!("{} {}", mem.summary, mem.content))?;
-            let sim = automemory_core::retrieval::vector::VectorEngine::cosine_similarity(&query_vector, &mem_vec);
+            let sim = automemory_core::retrieval::vector::VectorEngine::cosine_similarity(
+                &query_vector,
+                &mem_vec,
+            );
             if sim > 0.05 {
                 scored_mems.push((mem, sim));
             }
         }
         scored_mems.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         if !scored_mems.is_empty() {
-            println!("Found {} semantic vector matches for '{}':", scored_mems.len().min(limit), query);
+            println!(
+                "Found {} semantic vector matches for '{}':",
+                scored_mems.len().min(limit),
+                query
+            );
             println!("{}", "-".repeat(90));
             for (m, sim) in scored_mems.into_iter().take(limit) {
-                println!("[{}] {} (Semantic Similarity: {:.3})", m.memory_type, m.summary, sim);
+                println!(
+                    "[{}] {} (Semantic Similarity: {:.3})",
+                    m.memory_type, m.summary, sim
+                );
                 println!("  ID: {}", m.id);
                 println!("  Content: {}", m.content);
                 println!();
@@ -196,7 +227,10 @@ pub fn save(
     };
 
     db.save_memory(&mem)?;
-    println!("✓ Saved memory [{}]: '{}' (ID: {})", parsed_type, summary, mem.id);
+    println!(
+        "✓ Saved memory [{}]: '{}' (ID: {})",
+        parsed_type, summary, mem.id
+    );
     Ok(())
 }
 

@@ -39,4 +39,3 @@ pub struct ProposalsSummary {
     pub total: usize,
     pub by_type: Vec<ProposalSummaryItem>,
 }
-

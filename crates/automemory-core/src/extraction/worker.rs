@@ -46,7 +46,10 @@ impl ExtractionWorker {
                 }
             }
             if let Err(e) = self.db.mark_event_processed(&event.event_id) {
-                warn!("Failed to mark event {} as processed: {}", event.event_id, e);
+                warn!(
+                    "Failed to mark event {} as processed: {}",
+                    event.event_id, e
+                );
             }
         }
 
@@ -63,7 +66,11 @@ impl ExtractionWorker {
             if let Err(e) = self.db.save_skill(skill) {
                 warn!("Failed to persist promoted skill {}: {}", skill.name, e);
             } else {
-                info!("Promoted procedural skill: {} (from {} traces)", skill.name, skill.source_trace_ids.len());
+                info!(
+                    "Promoted procedural skill: {} (from {} traces)",
+                    skill.name,
+                    skill.source_trace_ids.len()
+                );
             }
         }
         Ok(promoted)

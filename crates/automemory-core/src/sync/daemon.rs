@@ -41,11 +41,15 @@ impl AutoSyncDaemon {
         vault.export_to_vault()?;
 
         if GitSync::is_git_repo(&self.vault_root) {
-            let committed = GitSync::commit_all(&self.vault_root, "AutoMemory: automated vault sync")?;
+            let committed =
+                GitSync::commit_all(&self.vault_root, "AutoMemory: automated vault sync")?;
             if committed {
                 info!("Committed vault updates to local git");
                 if let Err(e) = GitSync::push(&self.vault_root, None, None) {
-                    warn!("Git push failed (might be offline or remote not configured): {}", e);
+                    warn!(
+                        "Git push failed (might be offline or remote not configured): {}",
+                        e
+                    );
                 }
             }
         }

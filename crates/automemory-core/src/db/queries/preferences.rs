@@ -33,7 +33,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_preference(&self, key: &str, project_id: Option<&str>) -> Result<Option<Preference>> {
+    pub fn get_preference(
+        &self,
+        key: &str,
+        project_id: Option<&str>,
+    ) -> Result<Option<Preference>> {
         let conn = self.conn();
         // Project preference overrides global preference
         let mut stmt = conn.prepare(
@@ -60,7 +64,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, key, value, scope, project_id, locked, source, created_at, updated_at FROM preferences WHERE 1=1".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (scope = 'global' OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (scope = 'global' OR project_id = '{}')",
+                pid
+            ));
         }
         sql.push_str(" ORDER BY scope ASC, key ASC");
 
@@ -73,7 +80,12 @@ impl Database {
         Ok(list)
     }
 
-    pub fn lock_preference(&self, key: &str, project_id: Option<&str>, locked: bool) -> Result<bool> {
+    pub fn lock_preference(
+        &self,
+        key: &str,
+        project_id: Option<&str>,
+        locked: bool,
+    ) -> Result<bool> {
         let conn = self.conn();
         let rows = if let Some(pid) = project_id {
             conn.execute(

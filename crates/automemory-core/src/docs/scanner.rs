@@ -22,7 +22,11 @@ impl DocumentScanner {
     }
 
     /// Scan all tracked documents for a given project.
-    pub fn scan_project(&self, project: &Project, root_path: &Path) -> Result<Vec<TrackedDocument>> {
+    pub fn scan_project(
+        &self,
+        project: &Project,
+        root_path: &Path,
+    ) -> Result<Vec<TrackedDocument>> {
         if !root_path.exists() || !root_path.is_dir() {
             return Ok(Vec::new());
         }
@@ -67,7 +71,12 @@ impl DocumentScanner {
     }
 
     /// Process a single file: read, hash, check secrets, and record revision if changed.
-    pub fn process_file(&self, project: &Project, root_path: &Path, file_path: &Path) -> Result<TrackedDocument> {
+    pub fn process_file(
+        &self,
+        project: &Project,
+        root_path: &Path,
+        file_path: &Path,
+    ) -> Result<TrackedDocument> {
         let rel_path = file_path
             .strip_prefix(root_path)
             .unwrap_or(file_path)
@@ -76,7 +85,9 @@ impl DocumentScanner {
 
         // Exclude check
         for exc in &project.document_config.exclude_patterns {
-            if rel_path.contains(exc) || (rel_path.starts_with('.') && !rel_path.starts_with(".cursor")) {
+            if rel_path.contains(exc)
+                || (rel_path.starts_with('.') && !rel_path.starts_with(".cursor"))
+            {
                 // skip excluded files
             }
         }
@@ -110,13 +121,25 @@ impl DocumentScanner {
         let lower_path = rel_path.to_lowercase();
         let category = if lower_path.contains("/prd/") || lower_path.contains("prd") {
             "prd"
-        } else if lower_path.contains("/adr/") || lower_path.contains("adr") || lower_path.contains("architect") {
+        } else if lower_path.contains("/adr/")
+            || lower_path.contains("adr")
+            || lower_path.contains("architect")
+        {
             "adr"
-        } else if lower_path.contains("/rules/") || lower_path.contains("business") || lower_path.contains("invariant") {
+        } else if lower_path.contains("/rules/")
+            || lower_path.contains("business")
+            || lower_path.contains("invariant")
+        {
             "business-rules"
-        } else if lower_path.contains("/api/") || lower_path.contains("spec") || lower_path.contains("rfc") {
+        } else if lower_path.contains("/api/")
+            || lower_path.contains("spec")
+            || lower_path.contains("rfc")
+        {
             "api"
-        } else if lower_path.contains("plan") || lower_path.contains("roadmap") || lower_path.contains("todo") {
+        } else if lower_path.contains("plan")
+            || lower_path.contains("roadmap")
+            || lower_path.contains("todo")
+        {
             "plan"
         } else {
             "general"
@@ -145,7 +168,10 @@ impl DocumentScanner {
                 d
             }
             None => {
-                info!("Tracking new document: {} in project {}", rel_path, project.slug);
+                info!(
+                    "Tracking new document: {} in project {}",
+                    rel_path, project.slug
+                );
                 let new_id = Uuid::new_v4().to_string();
                 let new_doc = TrackedDocument {
                     id: new_id,
@@ -184,7 +210,10 @@ impl DocumentScanner {
             let _ = fs::write(target_dir.join(fname), &content);
             let compiler = DocCompiler::new(&self.db);
             let _ = compiler.compile_project_docs(&project.id, &context_root);
-            info!("✓ Auto-compiled L0/L1 context overview at {:?}", context_root.join(".overview.md"));
+            info!(
+                "✓ Auto-compiled L0/L1 context overview at {:?}",
+                context_root.join(".overview.md")
+            );
         }
 
         Ok(doc)

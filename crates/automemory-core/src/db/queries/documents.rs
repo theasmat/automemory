@@ -5,7 +5,11 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 
 impl Database {
-    pub fn track_document(&self, doc: &TrackedDocument, initial_content: Option<&str>) -> Result<()> {
+    pub fn track_document(
+        &self,
+        doc: &TrackedDocument,
+        initial_content: Option<&str>,
+    ) -> Result<()> {
         let conn = self.conn();
         let actual_id: String = conn.query_row(
             r#"
@@ -81,7 +85,10 @@ impl Database {
         self.list_all_tracked_documents(Some(project_id))
     }
 
-    pub fn list_all_tracked_documents(&self, project_id: Option<&str>) -> Result<Vec<TrackedDocument>> {
+    pub fn list_all_tracked_documents(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<TrackedDocument>> {
         let conn = self.conn();
         let query = match project_id {
             Some(_) => "SELECT id, project_id, relative_path, category, title, content_hash, remote_synced_hash, summary, l0_abstract, l1_overview, last_scanned_at, is_deleted FROM tracked_documents WHERE (project_id = ?1 OR project_id IN (SELECT slug FROM projects WHERE id = ?1) OR project_id IN (SELECT id FROM projects WHERE slug = ?1)) AND is_deleted = 0 ORDER BY relative_path ASC",
@@ -124,7 +131,11 @@ impl Database {
         Ok(list)
     }
 
-    pub fn get_document_by_path(&self, project_id: &str, rel_path: &str) -> Result<Option<TrackedDocument>> {
+    pub fn get_document_by_path(
+        &self,
+        project_id: &str,
+        rel_path: &str,
+    ) -> Result<Option<TrackedDocument>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, project_id, relative_path, category, title, content_hash, remote_synced_hash, summary, l0_abstract, l1_overview, last_scanned_at, is_deleted FROM tracked_documents WHERE project_id = ?1 AND relative_path = ?2",
@@ -156,7 +167,12 @@ impl Database {
         }
     }
 
-    pub fn update_document_l0_l1(&self, doc_id: &str, l0: Option<&str>, l1: Option<&str>) -> Result<()> {
+    pub fn update_document_l0_l1(
+        &self,
+        doc_id: &str,
+        l0: Option<&str>,
+        l1: Option<&str>,
+    ) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             "UPDATE tracked_documents SET l0_abstract = ?1, l1_overview = ?2, last_scanned_at = ?3 WHERE id = ?4",
@@ -199,7 +215,12 @@ impl Database {
         }
     }
 
-    pub fn record_document_revision(&self, document_id: &str, content: &str, hash: &str) -> Result<DocumentRevision> {
+    pub fn record_document_revision(
+        &self,
+        document_id: &str,
+        content: &str,
+        hash: &str,
+    ) -> Result<DocumentRevision> {
         let conn = self.conn();
         let next_rev: i32 = conn.query_row(
             "SELECT COALESCE(MAX(revision_num), 0) + 1 FROM document_revisions WHERE document_id = ?1",

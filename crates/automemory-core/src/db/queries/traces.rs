@@ -60,7 +60,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, title, category, status, preconditions, steps, reproducibility_score, caveats, source_task_id, evidence_event_ids, created_at, updated_at FROM success_traces WHERE 1=1".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid
+            ));
         }
         sql.push_str(" ORDER BY reproducibility_score DESC, updated_at DESC LIMIT ?1");
 

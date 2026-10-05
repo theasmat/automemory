@@ -16,7 +16,10 @@ pub async fn api_stats(State(state): State<AppState>) -> impl IntoResponse {
     let (active_mem, archived_mem) = state.db.count_memories(None).unwrap_or((0, 0));
     let (mem_tokens, event_tokens) = state.db.get_token_stats(None).unwrap_or((0, 0));
     let traces = state.db.list_traces(None, 1000).unwrap_or_default();
-    let failures = state.db.list_failures(None, Some("unresolved"), 1000).unwrap_or_default();
+    let failures = state
+        .db
+        .list_failures(None, Some("unresolved"), 1000)
+        .unwrap_or_default();
     let projects = state.db.list_projects().unwrap_or_default();
 
     Json(json!({
@@ -78,7 +81,9 @@ pub async fn api_graph(
     }))
 }
 
-pub async fn api_stream(State(state): State<AppState>) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
+pub async fn api_stream(
+    State(state): State<AppState>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let stream = async_stream::stream! {
         let mut interval = tokio::time::interval(Duration::from_millis(2500));
         loop {

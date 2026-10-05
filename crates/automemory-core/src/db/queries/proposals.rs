@@ -76,11 +76,17 @@ impl Database {
             sql.push_str(" AND status = 'pending'");
         }
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid.replace('\'', "''")));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid.replace('\'', "''")
+            ));
         }
         if let Some(pt) = proposal_type {
             if pt != "all" {
-                sql.push_str(&format!(" AND proposal_type = '{}'", pt.replace('\'', "''")));
+                sql.push_str(&format!(
+                    " AND proposal_type = '{}'",
+                    pt.replace('\'', "''")
+                ));
             }
         }
         sql.push_str(" ORDER BY created_at DESC");
@@ -101,18 +107,25 @@ impl Database {
         Ok(list)
     }
 
-    pub fn get_proposals_summary(&self, project_id: Option<&str>) -> Result<crate::models::ProposalsSummary> {
+    pub fn get_proposals_summary(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<crate::models::ProposalsSummary> {
         let conn = self.conn();
         let mut sql = "SELECT proposal_type, status, COUNT(*) FROM review_proposals".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" WHERE (project_id IS NULL OR project_id = '{}')", pid.replace('\'', "''")));
+            sql.push_str(&format!(
+                " WHERE (project_id IS NULL OR project_id = '{}')",
+                pid.replace('\'', "''")
+            ));
         }
         sql.push_str(" GROUP BY proposal_type, status");
 
         let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query([])?;
 
-        let mut type_map: std::collections::HashMap<String, (usize, usize, usize)> = std::collections::HashMap::new();
+        let mut type_map: std::collections::HashMap<String, (usize, usize, usize)> =
+            std::collections::HashMap::new();
         let mut total_pending = 0;
         let mut total_approved = 0;
         let mut total_rejected = 0;
@@ -182,7 +195,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE status = 'pending' AND target_id = ?1 AND description = ?2".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid.replace('\'', "''")));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid.replace('\'', "''")
+            ));
         }
         sql.push_str(" ORDER BY created_at DESC LIMIT 1");
 
@@ -204,7 +220,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, proposal_type, target_id, description, suggested_action, status, created_at, decided_at FROM review_proposals WHERE status = 'approved' AND target_id = ?1 AND description = ?2".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid.replace('\'', "''")));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid.replace('\'', "''")
+            ));
         }
         sql.push_str(" ORDER BY decided_at DESC LIMIT 1");
 
@@ -254,11 +273,17 @@ impl Database {
 
         let mut where_clause = "WHERE status = 'pending'".to_string();
         if let Some(pid) = project_id {
-            where_clause.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid.replace('\'', "''")));
+            where_clause.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid.replace('\'', "''")
+            ));
         }
         if let Some(pt) = proposal_type {
             if pt != "all" {
-                where_clause.push_str(&format!(" AND proposal_type = '{}'", pt.replace('\'', "''")));
+                where_clause.push_str(&format!(
+                    " AND proposal_type = '{}'",
+                    pt.replace('\'', "''")
+                ));
             }
         }
 

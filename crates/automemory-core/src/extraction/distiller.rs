@@ -35,7 +35,11 @@ impl<'a> TrajectoryDistiller<'a> {
     }
 
     /// Distills a slice of events into a coherent SuccessTrace and Memory.
-    pub fn distill_events(&self, events: &[NormalizedEvent], default_session_id: Option<&str>) -> Result<DistillationReport> {
+    pub fn distill_events(
+        &self,
+        events: &[NormalizedEvent],
+        default_session_id: Option<&str>,
+    ) -> Result<DistillationReport> {
         let total_raw_events = events.len();
         let session_id = events
             .first()
@@ -56,7 +60,10 @@ impl<'a> TrajectoryDistiller<'a> {
         }
 
         let project_id = events.first().and_then(|e| e.project.id.clone());
-        let adapter_id = events.first().map(|e| e.agent.adapter_id.clone()).unwrap_or_else(|| "agent".to_string());
+        let adapter_id = events
+            .first()
+            .map(|e| e.agent.adapter_id.clone())
+            .unwrap_or_else(|| "agent".to_string());
 
         // 1. Extract Task Goal / Intent
         let mut task_title = String::new();
@@ -69,7 +76,12 @@ impl<'a> TrajectoryDistiller<'a> {
             }
             if let Some(ref tool) = ev.tool {
                 if let Some(ref input) = tool.input {
-                    if let Some(goal) = input.get("Task").or_else(|| input.get("task")).or_else(|| input.get("Instruction")).and_then(|v| v.as_str()) {
+                    if let Some(goal) = input
+                        .get("Task")
+                        .or_else(|| input.get("task"))
+                        .or_else(|| input.get("Instruction"))
+                        .and_then(|v| v.as_str())
+                    {
                         task_title = goal.to_string();
                         break;
                     }
@@ -86,8 +98,13 @@ impl<'a> TrajectoryDistiller<'a> {
 
         for (idx, ev) in events.iter().enumerate() {
             if let Some(ref tool) = ev.tool {
-                let is_read = tool.category == "file_read" || tool.name.contains("view") || tool.name.contains("read");
-                let is_edit = tool.category == "file_write" || tool.category == "edit" || tool.name.contains("write") || tool.name.contains("replace");
+                let is_read = tool.category == "file_read"
+                    || tool.name.contains("view")
+                    || tool.name.contains("read");
+                let is_edit = tool.category == "file_write"
+                    || tool.category == "edit"
+                    || tool.name.contains("write")
+                    || tool.name.contains("replace");
 
                 if is_read {
                     last_read_idx = Some(idx);
@@ -113,10 +130,17 @@ impl<'a> TrajectoryDistiller<'a> {
             evidence_ids.push(ev.event_id.clone());
 
             if let Some(ref tool) = ev.tool {
-                let is_failed = tool.status == "failed" || tool.exit_code.unwrap_or(0) != 0 || ev.event_type == "tool.failed";
+                let is_failed = tool.status == "failed"
+                    || tool.exit_code.unwrap_or(0) != 0
+                    || ev.event_type == "tool.failed";
 
                 if is_failed {
-                    let err_msg = tool.output.as_ref().and_then(|o| o.as_str()).unwrap_or("Non-zero exit or tool failure").to_string();
+                    let err_msg = tool
+                        .output
+                        .as_ref()
+                        .and_then(|o| o.as_str())
+                        .unwrap_or("Non-zero exit or tool failure")
+                        .to_string();
                     last_error = Some((tool.name.clone(), err_msg));
                     failed_tools.push(tool.name.clone());
                 } else {
@@ -125,11 +149,17 @@ impl<'a> TrajectoryDistiller<'a> {
                         let failure_rec = FailureRecord {
                             id: Uuid::now_v7().to_string(),
                             project_id: project_id.clone(),
-                            task_title: format!("Error in `{}` resolved by `{}`", err_tool, tool.name),
+                            task_title: format!(
+                                "Error in `{}` resolved by `{}`",
+                                err_tool, tool.name
+                            ),
                             category: Some(tool.category.clone()),
                             failed_tool: Some(err_tool),
                             error_message: err_msg,
-                            root_cause_hypothesis: Some("Encountered compilation or test failure during workflow".to_string()),
+                            root_cause_hypothesis: Some(
+                                "Encountered compilation or test failure during workflow"
+                                    .to_string(),
+                            ),
                             fix_applied: Some(format!("Applied fix via `{}`", tool.name)),
                             verification_result: Some("Verification step succeeded".to_string()),
                             status: "resolved".to_string(),
@@ -142,15 +172,29 @@ impl<'a> TrajectoryDistiller<'a> {
                     }
 
                     // Extract modified and inspected files
-                    if tool.category == "file_write" || tool.name.contains("write") || tool.name.contains("replace") {
+                    if tool.category == "file_write"
+                        || tool.name.contains("write")
+                        || tool.name.contains("replace")
+                    {
                         if let Some(ref input) = tool.input {
-                            if let Some(f) = input.get("TargetFile").or_else(|| input.get("AbsolutePath")).and_then(|v| v.as_str()) {
+                            if let Some(f) = input
+                                .get("TargetFile")
+                                .or_else(|| input.get("AbsolutePath"))
+                                .and_then(|v| v.as_str())
+                            {
                                 files_modified.insert(f.to_string());
                             }
                         }
-                    } else if tool.category == "file_read" || tool.name.contains("view") || tool.name.contains("grep") {
+                    } else if tool.category == "file_read"
+                        || tool.name.contains("view")
+                        || tool.name.contains("grep")
+                    {
                         if let Some(ref input) = tool.input {
-                            if let Some(f) = input.get("AbsolutePath").or_else(|| input.get("SearchPath")).and_then(|v| v.as_str()) {
+                            if let Some(f) = input
+                                .get("AbsolutePath")
+                                .or_else(|| input.get("SearchPath"))
+                                .and_then(|v| v.as_str())
+                            {
                                 files_inspected.insert(f.to_string());
                             }
                         }
@@ -158,8 +202,13 @@ impl<'a> TrajectoryDistiller<'a> {
 
                     // Evidence Anchor / Modification / Verification Step Ingestion
                     let is_evidence_anchor = evidence_anchor_indices.contains(&idx);
-                    let is_modification = tool.category == "file_write" || tool.category == "edit" || tool.name.contains("write") || tool.name.contains("replace");
-                    let is_verification = tool.category == "command" || tool.name.contains("command") || tool.name.contains("test");
+                    let is_modification = tool.category == "file_write"
+                        || tool.category == "edit"
+                        || tool.name.contains("write")
+                        || tool.name.contains("replace");
+                    let is_verification = tool.category == "command"
+                        || tool.name.contains("command")
+                        || tool.name.contains("test");
 
                     let cmd_opt = tool.input.as_ref().and_then(|i| {
                         i.get("CommandLine")
@@ -169,7 +218,10 @@ impl<'a> TrajectoryDistiller<'a> {
 
                     let is_redundant_cmd = if let Some(cmd) = cmd_opt {
                         let base_cmd = cmd.split_whitespace().next().unwrap_or(cmd);
-                        if (base_cmd == "git" && cmd.contains("status")) || (base_cmd == "ls") || (base_cmd == "pwd") {
+                        if (base_cmd == "git" && cmd.contains("status"))
+                            || (base_cmd == "ls")
+                            || (base_cmd == "pwd")
+                        {
                             true
                         } else {
                             key_steps.iter().any(|s| s.command.as_deref() == Some(cmd))
@@ -178,13 +230,21 @@ impl<'a> TrajectoryDistiller<'a> {
                         false
                     };
 
-                    let should_include = (is_evidence_anchor || is_modification || is_verification || key_steps.is_empty())
+                    let should_include = (is_evidence_anchor
+                        || is_modification
+                        || is_verification
+                        || key_steps.is_empty())
                         && !is_redundant_cmd
                         && key_steps.len() < 10;
 
                     if should_include {
                         let action_desc = if is_evidence_anchor {
-                            let path = tool.input.as_ref().and_then(|i| i.get("AbsolutePath").or_else(|| i.get("TargetFile"))).and_then(|v| v.as_str()).unwrap_or("file");
+                            let path = tool
+                                .input
+                                .as_ref()
+                                .and_then(|i| i.get("AbsolutePath").or_else(|| i.get("TargetFile")))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("file");
                             format!("Inspected key evidence in `{}`", path)
                         } else if is_modification {
                             format!("Modified codebase files ({})", files_modified.len().max(1))
@@ -200,7 +260,11 @@ impl<'a> TrajectoryDistiller<'a> {
                             action: action_desc,
                             tool: tool.name.clone(),
                             command: cmd_opt.map(|s| s.to_string()),
-                            verification: if is_verification { Some("Completed without error".to_string()) } else { None },
+                            verification: if is_verification {
+                                Some("Completed without error".to_string())
+                            } else {
+                                None
+                            },
                         });
                     }
                 }
@@ -229,7 +293,14 @@ impl<'a> TrajectoryDistiller<'a> {
             preconditions: vec!["Workspace repository initialized".to_string()],
             steps: key_steps,
             reproducibility_score,
-            caveats: if failed_tools.is_empty() { Vec::new() } else { vec![format!("Encountered and resolved errors in: {}", failed_tools.join(", "))] },
+            caveats: if failed_tools.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!(
+                    "Encountered and resolved errors in: {}",
+                    failed_tools.join(", ")
+                )]
+            },
             source_task_id: Some(session_id.to_string()),
             evidence_event_ids: evidence_ids.clone(),
             created_at: Utc::now(),
@@ -249,7 +320,11 @@ impl<'a> TrajectoryDistiller<'a> {
         let modified_files_str = if files_modified.is_empty() {
             "workspace context".to_string()
         } else {
-            files_modified.into_iter().take(5).collect::<Vec<_>>().join(", ")
+            files_modified
+                .into_iter()
+                .take(5)
+                .collect::<Vec<_>>()
+                .join(", ")
         };
 
         let summary = format!("Execution outcome for: {}", task_title);
@@ -260,7 +335,11 @@ impl<'a> TrajectoryDistiller<'a> {
 
         let synthesized_memory = Memory {
             id: Uuid::now_v7().to_string(),
-            scope: if project_id.is_some() { MemoryScope::Project } else { MemoryScope::Global },
+            scope: if project_id.is_some() {
+                MemoryScope::Project
+            } else {
+                MemoryScope::Global
+            },
             project_id: project_id.clone(),
             memory_type: mem_type,
             content,
@@ -323,7 +402,11 @@ mod tests {
 
             let ev = NormalizedEvent {
                 event_id: format!("ev-{}", i),
-                event_type: if is_error { "tool.failed".to_string() } else { "tool.completed".to_string() },
+                event_type: if is_error {
+                    "tool.failed".to_string()
+                } else {
+                    "tool.completed".to_string()
+                },
                 timestamp: Utc::now(),
                 agent: AgentInfo {
                     adapter_id: "antigravity".to_string(),
@@ -339,10 +422,20 @@ mod tests {
                 },
                 tool: Some(ToolInfo {
                     name: tool_name.to_string(),
-                    category: if tool_name.contains("file") { "file_read".to_string() } else { "command".to_string() },
-                    input: Some(serde_json::json!({ "CommandLine": "cargo test", "AbsolutePath": "/src/lib.rs" })),
+                    category: if tool_name.contains("file") {
+                        "file_read".to_string()
+                    } else {
+                        "command".to_string()
+                    },
+                    input: Some(
+                        serde_json::json!({ "CommandLine": "cargo test", "AbsolutePath": "/src/lib.rs" }),
+                    ),
                     input_hash: None,
-                    output: Some(serde_json::json!(if is_error { "assertion failed at line 42" } else { "test result: ok" })),
+                    output: Some(serde_json::json!(if is_error {
+                        "assertion failed at line 42"
+                    } else {
+                        "test result: ok"
+                    })),
                     output_hash: None,
                     status: status.to_string(),
                     exit_code: if is_error { Some(1) } else { Some(0) },
@@ -356,12 +449,21 @@ mod tests {
             db.append_event(&ev).expect("failed to record test event");
         }
 
-        let report = distiller.distill_session(session_id).expect("distillation failed");
+        let report = distiller
+            .distill_session(session_id)
+            .expect("distillation failed");
         assert_eq!(report.total_raw_events, 15);
-        assert!(report.pruned_events > 0, "Should have pruned redundant events");
+        assert!(
+            report.pruned_events > 0,
+            "Should have pruned redundant events"
+        );
         assert!(report.synthesized_trace.is_some());
         assert!(report.synthesized_memory.is_some());
-        assert_eq!(report.resolved_failures.len(), 1, "Should have resolved the single failed tool event");
+        assert_eq!(
+            report.resolved_failures.len(),
+            1,
+            "Should have resolved the single failed tool event"
+        );
 
         let trace = report.synthesized_trace.unwrap();
         assert_eq!(trace.category, "bugfix");

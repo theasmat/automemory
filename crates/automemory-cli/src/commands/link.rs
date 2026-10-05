@@ -14,10 +14,17 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
         None => infer_project_id(&cwd),
     };
 
-    println!("Linking project '{}' to OpenViking-style single-source context...", project_id);
+    println!(
+        "Linking project '{}' to OpenViking-style single-source context...",
+        project_id
+    );
 
     // 2. Canonical context directory
-    let context_root = config.home_dir.join("context").join("projects").join(&project_id);
+    let context_root = config
+        .home_dir
+        .join("context")
+        .join("projects")
+        .join(&project_id);
     let memories_dir = context_root.join("memories");
     let skills_dir = context_root.join("skills");
     let docs_dir = context_root.join("docs");
@@ -32,7 +39,10 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
     // Seed L0 and L1 summaries if absent
     let abstract_file = context_root.join(".abstract.md");
     if !abstract_file.exists() {
-        let abstract_content = format!("# Project: {}\nCanonical context store and single source of truth for {}.\n", project_id, project_id);
+        let abstract_content = format!(
+            "# Project: {}\nCanonical context store and single source of truth for {}.\n",
+            project_id, project_id
+        );
         fs::write(&abstract_file, abstract_content)?;
     }
 
@@ -56,7 +66,11 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
     if let Ok(db) = Database::open(&config.db_path) {
         if let Ok(mems) = db.list_memories(Some(&project_id), None, None, 100) {
             for m in mems {
-                let filename = format!("{}-{}.md", sanitize_filename(&m.memory_type.to_string()), sanitize_filename(&m.summary));
+                let filename = format!(
+                    "{}-{}.md",
+                    sanitize_filename(&m.memory_type.to_string()),
+                    sanitize_filename(&m.summary)
+                );
                 let filepath = memories_dir.join(filename);
                 let content = format!(
                     "---\nid: \"{}\"\ntype: \"{}\"\nconfidence: {}\ntags: {:?}\nupdated_at: \"{}\"\n---\n\n# {}\n\n{}\n",
@@ -70,9 +84,13 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
             for s in skills {
                 let filename = format!("skill-{}.md", sanitize_filename(&s.name));
                 let filepath = skills_dir.join(filename);
-                let steps_md = s.steps.iter().enumerate().map(|(i, step)| {
-                    format!("{}. {}\n", i + 1, step)
-                }).collect::<Vec<_>>().join("\n");
+                let steps_md = s
+                    .steps
+                    .iter()
+                    .enumerate()
+                    .map(|(i, step)| format!("{}. {}\n", i + 1, step))
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
                 let content = format!(
                     "---\nid: \"{}\"\nname: \"{}\"\nsuccess_count: {}\n---\n\n# {}\n\n{}\n\n### Executable Procedure\n\n{}\n",
@@ -92,8 +110,14 @@ pub fn execute(project_id_arg: Option<String>) -> Result<()> {
 
     println!("✓ Successfully linked OpenViking-style single source of truth!");
     println!("  📁 Canonical Storage: {}", context_root.display());
-    println!("  🔗 Local Symlink:     {} -> {}", symlink_path.display(), context_root.display());
-    println!("  📄 Tiered Context:    L0 (.abstract.md), L1 (.overview.md), L2 (memories/ & docs/)");
+    println!(
+        "  🔗 Local Symlink:     {} -> {}",
+        symlink_path.display(),
+        context_root.display()
+    );
+    println!(
+        "  📄 Tiered Context:    L0 (.abstract.md), L1 (.overview.md), L2 (memories/ & docs/)"
+    );
     println!("  🛡️  Git Protection:    .context and .automemory verified in .gitignore");
 
     Ok(())
@@ -130,14 +154,22 @@ fn create_or_update_symlink(target: &Path, link_path: &Path) -> Result<()> {
 
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(target, link_path)
-            .with_context(|| format!("Failed to create symlink from {:?} to {:?}", link_path, target))?;
+        std::os::unix::fs::symlink(target, link_path).with_context(|| {
+            format!(
+                "Failed to create symlink from {:?} to {:?}",
+                link_path, target
+            )
+        })?;
     }
 
     #[cfg(windows)]
     {
-        std::os::windows::fs::symlink_dir(target, link_path)
-            .with_context(|| format!("Failed to create directory junction from {:?} to {:?}", link_path, target))?;
+        std::os::windows::fs::symlink_dir(target, link_path).with_context(|| {
+            format!(
+                "Failed to create directory junction from {:?} to {:?}",
+                link_path, target
+            )
+        })?;
     }
 
     Ok(())
@@ -177,7 +209,13 @@ fn update_gitignore(cwd: &Path) -> Result<()> {
 
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_lowercase()

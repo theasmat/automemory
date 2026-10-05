@@ -52,10 +52,7 @@ impl<'a> GuardrailEvaluator<'a> {
                 }
             }
         }
-        Self {
-            db,
-            rules,
-        }
+        Self { db, rules }
     }
 
     /// Evaluates a pre-action tool call against AST shell tokenizer checks,
@@ -77,8 +74,12 @@ impl<'a> GuardrailEvaluator<'a> {
                 severity: GuardrailSeverity::Critical,
                 risk_score: 1.0,
                 title: "CRITICAL STOP: Destructive Root/Home Deletion".to_string(),
-                risk_summary: "Detected recursive deletion targeting system root '/' or user home directory.".to_string(),
-                mitigation_hint: Some("Specify explicit project relative paths instead of root or home.".to_string()),
+                risk_summary:
+                    "Detected recursive deletion targeting system root '/' or user home directory."
+                        .to_string(),
+                mitigation_hint: Some(
+                    "Specify explicit project relative paths instead of root or home.".to_string(),
+                ),
                 rule_matched: Some("rule_rm_root_ast".to_string()),
                 matched_failure_id: None,
                 requires_confirmation: true,
@@ -91,8 +92,13 @@ impl<'a> GuardrailEvaluator<'a> {
                 severity: GuardrailSeverity::Critical,
                 risk_score: 1.0,
                 title: "CRITICAL STOP: Force Push to Protected Branch".to_string(),
-                risk_summary: "Attempting destructive git force push to production branch (main/master/prod).".to_string(),
-                mitigation_hint: Some("Use standard git push or rebase safely without overwriting remote history.".to_string()),
+                risk_summary:
+                    "Attempting destructive git force push to production branch (main/master/prod)."
+                        .to_string(),
+                mitigation_hint: Some(
+                    "Use standard git push or rebase safely without overwriting remote history."
+                        .to_string(),
+                ),
                 rule_matched: Some("rule_git_force_push_prod_ast".to_string()),
                 matched_failure_id: None,
                 requires_confirmation: true,
@@ -105,8 +111,11 @@ impl<'a> GuardrailEvaluator<'a> {
                 severity: GuardrailSeverity::Critical,
                 risk_score: 1.0,
                 title: "CRITICAL STOP: Raw Disk Write or Format".to_string(),
-                risk_summary: "Detected raw block device overwrite or direct mkfs disk formatting.".to_string(),
-                mitigation_hint: Some("Direct block device modifications are strictly prohibited.".to_string()),
+                risk_summary: "Detected raw block device overwrite or direct mkfs disk formatting."
+                    .to_string(),
+                mitigation_hint: Some(
+                    "Direct block device modifications are strictly prohibited.".to_string(),
+                ),
                 rule_matched: Some("rule_raw_disk_format_ast".to_string()),
                 matched_failure_id: None,
                 requires_confirmation: true,
@@ -119,8 +128,11 @@ impl<'a> GuardrailEvaluator<'a> {
                 severity: GuardrailSeverity::Critical,
                 risk_score: 1.0,
                 title: "CRITICAL STOP: Raw Database Drop or Truncate".to_string(),
-                risk_summary: "Detected raw unescaped DROP DATABASE or TRUNCATE TABLE query.".to_string(),
-                mitigation_hint: Some("Use reversible versioned migrations instead of raw drops.".to_string()),
+                risk_summary: "Detected raw unescaped DROP DATABASE or TRUNCATE TABLE query."
+                    .to_string(),
+                mitigation_hint: Some(
+                    "Use reversible versioned migrations instead of raw drops.".to_string(),
+                ),
                 rule_matched: Some("rule_raw_db_drop_ast".to_string()),
                 matched_failure_id: None,
                 requires_confirmation: true,
@@ -133,8 +145,12 @@ impl<'a> GuardrailEvaluator<'a> {
                 severity: GuardrailSeverity::Critical,
                 risk_score: 1.0,
                 title: "CRITICAL STOP: Plaintext Secret in Command".to_string(),
-                risk_summary: "Plaintext API secret or access token detected directly in command arguments.".to_string(),
-                mitigation_hint: Some("Pass credentials via environment variables instead of hardcoding.".to_string()),
+                risk_summary:
+                    "Plaintext API secret or access token detected directly in command arguments."
+                        .to_string(),
+                mitigation_hint: Some(
+                    "Pass credentials via environment variables instead of hardcoding.".to_string(),
+                ),
                 rule_matched: Some("rule_plain_secret_cli_ast".to_string()),
                 matched_failure_id: None,
                 requires_confirmation: true,
@@ -147,7 +163,9 @@ impl<'a> GuardrailEvaluator<'a> {
                 "rule_db_migration_ast",
                 "High-Risk: Database Schema Migration",
                 "Database schema migration command detected.",
-                Some("Verify backup and ensure schema changes are backwards compatible.".to_string()),
+                Some(
+                    "Verify backup and ensure schema changes are backwards compatible.".to_string(),
+                ),
                 &command_str,
                 project_id,
                 mode,
@@ -161,7 +179,9 @@ impl<'a> GuardrailEvaluator<'a> {
                 "rule_cloud_infra_delete_ast",
                 "High-Risk: Cloud Infrastructure Teardown",
                 "Destructive cloud/container teardown detected.",
-                Some("Verify target cluster and namespace before destroying resources.".to_string()),
+                Some(
+                    "Verify target cluster and namespace before destroying resources.".to_string(),
+                ),
                 &command_str,
                 project_id,
                 mode,
@@ -221,7 +241,11 @@ impl<'a> GuardrailEvaluator<'a> {
         if let Some(db) = self.db {
             if let Ok(failures) = db.list_failures(project_id, Some("unresolved"), 20) {
                 for f in failures {
-                    if self.matches_failure_signature(&command_str, &f.error_message, f.failed_tool.as_deref()) {
+                    if self.matches_failure_signature(
+                        &command_str,
+                        &f.error_message,
+                        f.failed_tool.as_deref(),
+                    ) {
                         return self.handle_high_risk(
                             "known_failure_match",
                             &format!("Known Gotcha Alert: {}", f.task_title),
@@ -257,11 +281,12 @@ impl<'a> GuardrailEvaluator<'a> {
     }
 
     fn extract_command_string(&self, tool_name: &str, args: &Value) -> String {
-        let effective_args = if let Some(sub_args) = args.get("args").or_else(|| args.get("toolArgs")) {
-            sub_args
-        } else {
-            args
-        };
+        let effective_args =
+            if let Some(sub_args) = args.get("args").or_else(|| args.get("toolArgs")) {
+                sub_args
+            } else {
+                args
+            };
 
         if let Some(cmd) = effective_args.get("CommandLine").and_then(|v| v.as_str()) {
             return cmd.to_string();
@@ -290,7 +315,12 @@ impl<'a> GuardrailEvaluator<'a> {
         parts.join(" ")
     }
 
-    fn matches_failure_signature(&self, command_str: &str, error_msg: &str, failed_tool: Option<&str>) -> bool {
+    fn matches_failure_signature(
+        &self,
+        command_str: &str,
+        error_msg: &str,
+        failed_tool: Option<&str>,
+    ) -> bool {
         if let Some(tool) = failed_tool {
             if !command_str.contains(tool) {
                 return false;
@@ -332,13 +362,17 @@ impl<'a> GuardrailEvaluator<'a> {
             AutopilotMode::Review => {
                 let desc = format!("Command requires operator review: {}", command_str);
                 if let Some(db) = self.db {
-                    if let Ok(Some(_approved)) = db.find_approved_proposal(project_id, rule_id, &desc) {
+                    if let Ok(Some(_approved)) =
+                        db.find_approved_proposal(project_id, rule_id, &desc)
+                    {
                         return GuardrailDecision {
                             action: GuardrailAction::Allow,
                             severity: GuardrailSeverity::Info,
                             risk_score: 0.0,
                             title: format!("Approved: {}", title),
-                            risk_summary: "Action was previously reviewed and approved by operator.".to_string(),
+                            risk_summary:
+                                "Action was previously reviewed and approved by operator."
+                                    .to_string(),
                             mitigation_hint: None,
                             rule_matched: Some(rule_id.to_string()),
                             matched_failure_id,
@@ -386,7 +420,10 @@ impl<'a> GuardrailEvaluator<'a> {
                         severity: GuardrailSeverity::Warning,
                         risk_score,
                         title: format!("Review Required: {}", title),
-                        risk_summary: format!("{} (Review mode active; queued for review)", risk_summary),
+                        risk_summary: format!(
+                            "{} (Review mode active; queued for review)",
+                            risk_summary
+                        ),
                         mitigation_hint,
                         rule_matched: Some(rule_id.to_string()),
                         matched_failure_id,
@@ -468,7 +505,12 @@ mod tests {
         let args = serde_json::json!({ "CommandLine": "npx prisma migrate reset --force" });
 
         // 1. In Review mode: initial run must block and create a pending proposal
-        let review_decision = evaluator.evaluate("run_command", &args, Some("proj-test"), AutopilotMode::Review);
+        let review_decision = evaluator.evaluate(
+            "run_command",
+            &args,
+            Some("proj-test"),
+            AutopilotMode::Review,
+        );
         assert_eq!(review_decision.action, GuardrailAction::Block);
         assert!(review_decision.requires_confirmation);
         assert!(review_decision.risk_summary.contains("Proposal ID:"));
@@ -485,7 +527,12 @@ mod tests {
         assert!(decided);
 
         // 4. In Review mode: subsequent run now succeeds with Allow
-        let approved_decision = evaluator.evaluate("run_command", &args, Some("proj-test"), AutopilotMode::Review);
+        let approved_decision = evaluator.evaluate(
+            "run_command",
+            &args,
+            Some("proj-test"),
+            AutopilotMode::Review,
+        );
         assert_eq!(approved_decision.action, GuardrailAction::Allow);
         assert_eq!(approved_decision.risk_score, 0.0);
     }

@@ -14,10 +14,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
 }
 
@@ -124,7 +121,10 @@ fn rpc_stats(state: &AppState) -> Value {
     let (active_mem, archived_mem) = state.db.count_memories(None).unwrap_or((0, 0));
     let (mem_tokens, event_tokens) = state.db.get_token_stats(None).unwrap_or((0, 0));
     let traces = state.db.list_traces(None, 1000).unwrap_or_default();
-    let failures = state.db.list_failures(None, Some("unresolved"), 1000).unwrap_or_default();
+    let failures = state
+        .db
+        .list_failures(None, Some("unresolved"), 1000)
+        .unwrap_or_default();
     let projects = state.db.list_projects().unwrap_or_default();
     let proposals = state.db.list_pending_proposals(None).unwrap_or_default();
     json!({
@@ -153,10 +153,16 @@ fn rpc_memories(params: &Value, state: &AppState) -> Value {
     let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
     let mut memories = if let Some(q) = query {
-        let results = state.db.search_memories_fts(q, project_id, limit).unwrap_or_default();
+        let results = state
+            .db
+            .search_memories_fts(q, project_id, limit)
+            .unwrap_or_default();
         results.into_iter().map(|(m, _)| m).collect::<Vec<_>>()
     } else {
-        state.db.list_memories(project_id, Some(MemoryStatus::Active), None, limit).unwrap_or_default()
+        state
+            .db
+            .list_memories(project_id, Some(MemoryStatus::Active), None, limit)
+            .unwrap_or_default()
     };
 
     if let Some(scope) = scope_filter {
@@ -173,27 +179,39 @@ fn rpc_memories(params: &Value, state: &AppState) -> Value {
 fn rpc_sessions(params: &Value, state: &AppState) -> Value {
     let project_id = params.get("project_id").and_then(|v| v.as_str());
     let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-    let sessions = state.db.list_sessions(project_id, limit).unwrap_or_default();
+    let sessions = state
+        .db
+        .list_sessions(project_id, limit)
+        .unwrap_or_default();
     json!(sessions)
 }
 
 fn rpc_session_events(params: &Value, state: &AppState) -> Value {
-    let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let session_id = params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let events = state.db.get_session_events(session_id).unwrap_or_default();
     json!(events)
 }
 
 async fn rpc_distill_session(params: &Value, state: &AppState) -> Value {
-    let session_id = params.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let session_id = params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let distiller = TrajectoryDistiller::new(&state.db);
     match distiller.distill_session(session_id) {
         Ok(report) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "session_distilled",
-                "session_id": session_id,
-                "report": report,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "session_distilled",
+                    "session_id": session_id,
+                    "report": report,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             json!({ "success": true, "report": report })
         }
         Err(e) => json!({ "success": false, "error": e.to_string() }),
@@ -211,7 +229,10 @@ fn rpc_failures(params: &Value, state: &AppState) -> Value {
     let project_id = params.get("project_id").and_then(|v| v.as_str());
     let status = params.get("status").and_then(|v| v.as_str());
     let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-    let failures = state.db.list_failures(project_id, status, limit).unwrap_or_default();
+    let failures = state
+        .db
+        .list_failures(project_id, status, limit)
+        .unwrap_or_default();
     json!(failures)
 }
 
@@ -241,21 +262,30 @@ fn rpc_docs(params: &Value, state: &AppState) -> Value {
 
 fn rpc_proposals(params: &Value, state: &AppState) -> Value {
     let project_id = params.get("project_id").and_then(|v| v.as_str());
-    let proposals = state.db.list_pending_proposals(project_id).unwrap_or_default();
+    let proposals = state
+        .db
+        .list_pending_proposals(project_id)
+        .unwrap_or_default();
     json!(proposals)
 }
 
 fn rpc_decide_proposal(params: &Value, state: &AppState) -> Value {
     let id = params.get("id").and_then(|v| v.as_str()).unwrap_or("");
-    let approved = params.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+    let approved = params
+        .get("approved")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     match state.db.decide_proposal(id, approved) {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "proposal_decided",
-                "id": id,
-                "approved": approved,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "proposal_decided",
+                    "id": id,
+                    "approved": approved,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             json!({ "success": true, "id": id, "approved": approved })
         }
         Ok(false) => json!({ "error": "Proposal not found" }),
@@ -265,11 +295,23 @@ fn rpc_decide_proposal(params: &Value, state: &AppState) -> Value {
 
 fn rpc_graph(params: &Value, state: &AppState) -> Value {
     let project_id = params.get("project_id").and_then(|v| v.as_str());
-    let limit_entities = params.get("limit_entities").and_then(|v| v.as_u64()).unwrap_or(400) as usize;
-    let limit_edges = params.get("limit_edges").and_then(|v| v.as_u64()).unwrap_or(800) as usize;
+    let limit_entities = params
+        .get("limit_entities")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(400) as usize;
+    let limit_edges = params
+        .get("limit_edges")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(800) as usize;
 
-    let entities = state.db.list_all_graph_entities(project_id, limit_entities).unwrap_or_default();
-    let edges = state.db.list_all_graph_edges(limit_edges).unwrap_or_default();
+    let entities = state
+        .db
+        .list_all_graph_entities(project_id, limit_entities)
+        .unwrap_or_default();
+    let edges = state
+        .db
+        .list_all_graph_edges(limit_edges)
+        .unwrap_or_default();
     json!({
         "entities": entities,
         "edges": edges,
@@ -306,9 +348,14 @@ fn rpc_constitution(params: &Value, state: &AppState) -> Value {
 fn rpc_assemble_context(params: &Value, state: &AppState) -> Value {
     let project_id = params.get("project_id").and_then(|v| v.as_str());
     let query = params.get("q").and_then(|v| v.as_str());
-    let budget = params.get("token_budget").and_then(|v| v.as_u64()).unwrap_or(3000) as usize;
+    let budget = params
+        .get("token_budget")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3000) as usize;
 
     let engine = RetrievalEngine::new(&state.db);
-    let ctx = engine.assemble_context(project_id, query, budget).unwrap_or_default();
+    let ctx = engine
+        .assemble_context(project_id, query, budget)
+        .unwrap_or_default();
     json!({ "context": ctx })
 }

@@ -59,20 +59,35 @@ fn test_benchmark_ingestion_and_fts5_retrieval_speed() {
         db.save_memory(&mem).expect("save_memory failed");
     }
     let mem_ingest_duration = start_mem_ingest.elapsed();
-    println!("⏱ [Benchmark] 500 Memories saved & FTS5 indexed in: {:?}", mem_ingest_duration);
-    assert!(mem_ingest_duration.as_millis() < 2500, "500 memory saves should complete under 2500ms");
+    println!(
+        "⏱ [Benchmark] 500 Memories saved & FTS5 indexed in: {:?}",
+        mem_ingest_duration
+    );
+    assert!(
+        mem_ingest_duration.as_millis() < 2500,
+        "500 memory saves should complete under 2500ms"
+    );
 
     // 2. FTS5 BM25 Sub-Millisecond Search Benchmark
     let start_query = Instant::now();
     let search_iterations = 200;
     for _ in 0..search_iterations {
-        let results = db.search_memories_fts("PostgreSQL timeout cluster", Some(project_id), 5).expect("fts query failed");
+        let results = db
+            .search_memories_fts("PostgreSQL timeout cluster", Some(project_id), 5)
+            .expect("fts query failed");
         assert!(!results.is_empty());
     }
     let query_duration = start_query.elapsed();
     let avg_query_us = query_duration.as_micros() / search_iterations;
-    println!("⏱ [Benchmark] 200 FTS5 BM25 searches completed in: {:?} (Avg: {} µs/query)", query_duration, avg_query_us);
-    assert!(avg_query_us < 20000, "Average SQLite FTS5 search query in debug mode must be fast (was {} µs)", avg_query_us);
+    println!(
+        "⏱ [Benchmark] 200 FTS5 BM25 searches completed in: {:?} (Avg: {} µs/query)",
+        query_duration, avg_query_us
+    );
+    assert!(
+        avg_query_us < 20000,
+        "Average SQLite FTS5 search query in debug mode must be fast (was {} µs)",
+        avg_query_us
+    );
 
     // 3. Stress Ingest 1,000 Raw Tool Events
     let start_event_ingest = Instant::now();
@@ -94,13 +109,23 @@ fn test_benchmark_ingestion_and_fts5_retrieval_speed() {
                 source_git_remote: None,
             },
             tool: Some(ToolInfo {
-                name: if i % 3 == 0 { "run_command".to_string() } else if i % 3 == 1 { "replace_file_content".to_string() } else { "view_file".to_string() },
+                name: if i % 3 == 0 {
+                    "run_command".to_string()
+                } else if i % 3 == 1 {
+                    "replace_file_content".to_string()
+                } else {
+                    "view_file".to_string()
+                },
                 category: "code".to_string(),
                 input: Some(json!({ "path": format!("src/module_{}.rs", i % 20), "line": i })),
                 input_hash: Some(format!("hash_{}", i)),
                 output: Some(json!({ "stdout": "Compilation succeeded with 0 warnings" })),
                 output_hash: Some(format!("out_hash_{}", i)),
-                status: if i % 25 == 0 { "error".to_string() } else { "success".to_string() },
+                status: if i % 25 == 0 {
+                    "error".to_string()
+                } else {
+                    "success".to_string()
+                },
                 exit_code: if i % 25 == 0 { Some(1) } else { Some(0) },
                 duration_ms: Some((i % 100) as u64 + 10),
             }),
@@ -112,8 +137,14 @@ fn test_benchmark_ingestion_and_fts5_retrieval_speed() {
         db.append_event(&ev).expect("append_event failed");
     }
     let event_ingest_duration = start_event_ingest.elapsed();
-    println!("⏱ [Benchmark] 1,000 Tool Events appended to ledger in: {:?}", event_ingest_duration);
-    assert!(event_ingest_duration.as_millis() < 3000, "1,000 event appends must complete under 3000ms");
+    println!(
+        "⏱ [Benchmark] 1,000 Tool Events appended to ledger in: {:?}",
+        event_ingest_duration
+    );
+    assert!(
+        event_ingest_duration.as_millis() < 3000,
+        "1,000 event appends must complete under 3000ms"
+    );
 }
 
 #[test]
@@ -128,17 +159,42 @@ fn test_trajectory_distillation_100_event_noise_pruning() {
         let (tool_name, status, is_error, output_msg) = if i < 30 {
             ("view_file", "success", false, "file content lines 1-100")
         } else if i < 50 {
-            ("list_dir", "success", false, "directory listing [a.rs, b.rs, c.rs]")
+            (
+                "list_dir",
+                "success",
+                false,
+                "directory listing [a.rs, b.rs, c.rs]",
+            )
         } else if i < 60 {
             ("grep_search", "success", false, "3 matches found")
         } else if i < 65 {
-            ("run_command", "error", true, "error[E0382]: use of moved value: `buffer`")
+            (
+                "run_command",
+                "error",
+                true,
+                "error[E0382]: use of moved value: `buffer`",
+            )
         } else if i < 70 {
-            ("replace_file_content", "success", false, "replaced buffer clone with Arc::clone")
+            (
+                "replace_file_content",
+                "success",
+                false,
+                "replaced buffer clone with Arc::clone",
+            )
         } else if i < 80 {
-            ("run_command", "success", false, "test result: ok. 15 passed; 0 failed")
+            (
+                "run_command",
+                "success",
+                false,
+                "test result: ok. 15 passed; 0 failed",
+            )
         } else {
-            ("run_command", "success", false, "On branch main, working tree clean")
+            (
+                "run_command",
+                "success",
+                false,
+                "On branch main, working tree clean",
+            )
         };
 
         let ev = NormalizedEvent {
@@ -159,7 +215,14 @@ fn test_trajectory_distillation_100_event_noise_pruning() {
             },
             tool: Some(ToolInfo {
                 name: tool_name.to_string(),
-                category: if tool_name == "view_file" || tool_name == "list_dir" || tool_name == "grep_search" { "read".to_string() } else { "exec".to_string() },
+                category: if tool_name == "view_file"
+                    || tool_name == "list_dir"
+                    || tool_name == "grep_search"
+                {
+                    "read".to_string()
+                } else {
+                    "exec".to_string()
+                },
                 input: Some(json!({ "command": format!("cargo test buffer --step-{}", i) })),
                 input_hash: None,
                 output: Some(json!(output_msg)),
@@ -178,24 +241,45 @@ fn test_trajectory_distillation_100_event_noise_pruning() {
 
     // Execute Trajectory Distillation
     let start_distill = Instant::now();
-    let report = distiller.distill_session(session_id).expect("distill_session failed");
+    let report = distiller
+        .distill_session(session_id)
+        .expect("distill_session failed");
     let distill_time = start_distill.elapsed();
 
-    println!("⏱ [Distillation] 100 raw events distilled in: {:?}", distill_time);
-    println!("📊 Distillation Report: Total={}, Pruned={}, Ratio={:.1}%",
+    println!(
+        "⏱ [Distillation] 100 raw events distilled in: {:?}",
+        distill_time
+    );
+    println!(
+        "📊 Distillation Report: Total={}, Pruned={}, Ratio={:.1}%",
         report.total_raw_events,
         report.pruned_events,
         (report.pruned_events as f64 / report.total_raw_events as f64) * 100.0
     );
 
     assert_eq!(report.total_raw_events, 100);
-    assert!(report.pruned_events >= 75, "Distillation must prune at least 75% redundant reads/scans");
-    assert!(report.synthesized_trace.is_some(), "Must produce a synthesized golden trace");
-    assert!(report.synthesized_memory.is_some(), "Must produce a high-signal crystallized memory");
-    assert!(!report.resolved_failures.is_empty(), "Must identify and resolve the error events");
+    assert!(
+        report.pruned_events >= 75,
+        "Distillation must prune at least 75% redundant reads/scans"
+    );
+    assert!(
+        report.synthesized_trace.is_some(),
+        "Must produce a synthesized golden trace"
+    );
+    assert!(
+        report.synthesized_memory.is_some(),
+        "Must produce a high-signal crystallized memory"
+    );
+    assert!(
+        !report.resolved_failures.is_empty(),
+        "Must identify and resolve the error events"
+    );
 
     let trace = report.synthesized_trace.unwrap();
-    assert!(!trace.steps.is_empty() && trace.steps.len() <= 10, "Golden trace must be concise (<=10 steps)");
+    assert!(
+        !trace.steps.is_empty() && trace.steps.len() <= 10,
+        "Golden trace must be concise (<=10 steps)"
+    );
 }
 
 #[test]
@@ -257,7 +341,8 @@ fn test_strict_project_isolation_and_global_preference_resolution() {
         scope: MemoryScope::Global,
         project_id: None,
         memory_type: MemoryType::Preference,
-        content: "Always format code with standard 4-space indentation and deny unsafe blocks.".to_string(),
+        content: "Always format code with standard 4-space indentation and deny unsafe blocks."
+            .to_string(),
         summary: "Global rule: 4 spaces, no unsafe".to_string(),
         confidence: 0.99,
         importance: 1.0,
@@ -275,19 +360,33 @@ fn test_strict_project_isolation_and_global_preference_resolution() {
     db.save_memory(&global_mem).expect("save global_mem failed");
 
     // 4. Verify Project Isolation in FTS5 Search
-    let results_a = db.search_memories_fts("gRPC telemetry port", Some(proj_a), 5).unwrap();
+    let results_a = db
+        .search_memories_fts("gRPC telemetry port", Some(proj_a), 5)
+        .unwrap();
     assert_eq!(results_a.len(), 1);
     assert_eq!(results_a[0].0.id, "mem-alpha-01");
 
     // Beta query for gRPC should return 0 (no leakage from Alpha)
-    let results_b_leak_check = db.search_memories_fts("gRPC telemetry port", Some(proj_b), 5).unwrap();
-    assert_eq!(results_b_leak_check.len(), 0, "Project Beta must not see Project Alpha's memories");
+    let results_b_leak_check = db
+        .search_memories_fts("gRPC telemetry port", Some(proj_b), 5)
+        .unwrap();
+    assert_eq!(
+        results_b_leak_check.len(),
+        0,
+        "Project Beta must not see Project Alpha's memories"
+    );
 
     // 5. Verify Context Assembly incorporates project + global preferences
     let engine = RetrievalEngine::new(&db);
     let ctx_a = engine.assemble_context(Some(proj_a), None, 2000).unwrap();
-    assert!(ctx_a.contains("Alpha uses gRPC port 50051"), "Context A must contain Alpha memory");
-    assert!(!ctx_a.contains("Beta uses REST port 8080"), "Context A must NOT contain Beta memory");
+    assert!(
+        ctx_a.contains("Alpha uses gRPC port 50051"),
+        "Context A must contain Alpha memory"
+    );
+    assert!(
+        !ctx_a.contains("Beta uses REST port 8080"),
+        "Context A must NOT contain Beta memory"
+    );
 }
 
 #[test]
@@ -304,20 +403,24 @@ fn test_ast_knowledge_graph_multi_hop_impact_analysis() {
         ("f-server", "crates/server/src/main.rs", "file"),
     ];
 
-    let entities: Vec<GraphEntity> = files.into_iter().map(|(id, path, etype)| GraphEntity {
-        id: id.to_string(),
-        project_id: Some(project_id.to_string()),
-        entity_type: etype.to_string(),
-        name: path.split('/').last().unwrap().to_string(),
-        path: path.to_string(),
-        line_start: Some(1),
-        line_end: Some(100),
-        metadata: json!({}),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    }).collect();
+    let entities: Vec<GraphEntity> = files
+        .into_iter()
+        .map(|(id, path, etype)| GraphEntity {
+            id: id.to_string(),
+            project_id: Some(project_id.to_string()),
+            entity_type: etype.to_string(),
+            name: path.split('/').last().unwrap().to_string(),
+            path: path.to_string(),
+            line_start: Some(1),
+            line_end: Some(100),
+            metadata: json!({}),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+        .collect();
 
-    db.batch_insert_graph_entities(&entities).expect("batch_insert_graph_entities failed");
+    db.batch_insert_graph_entities(&entities)
+        .expect("batch_insert_graph_entities failed");
 
     // 2. Create Dependency Edges: f-server -> f-router -> f-handler -> f-auth
     let edges_raw = vec![
@@ -326,31 +429,49 @@ fn test_ast_knowledge_graph_multi_hop_impact_analysis() {
         ("f-handler", "f-auth", "imports"),
     ];
 
-    let edges: Vec<GraphEdge> = edges_raw.into_iter().map(|(source, target, rel)| GraphEdge {
-        source_id: source.to_string(),
-        target_id: target.to_string(),
-        relation_type: rel.to_string(),
-        confidence: 1.0,
-        created_at: Utc::now(),
-    }).collect();
+    let edges: Vec<GraphEdge> = edges_raw
+        .into_iter()
+        .map(|(source, target, rel)| GraphEdge {
+            source_id: source.to_string(),
+            target_id: target.to_string(),
+            relation_type: rel.to_string(),
+            confidence: 1.0,
+            created_at: Utc::now(),
+        })
+        .collect();
 
-    db.batch_insert_graph_edges(&edges).expect("batch_insert_graph_edges failed");
+    db.batch_insert_graph_edges(&edges)
+        .expect("batch_insert_graph_edges failed");
 
     // 3. Perform 3-Hop Blast Radius Impact Analysis when `crates/auth/src/token.rs` is modified
-    let report = builder.trace_impact(Some(project_id), "crates/auth/src/token.rs", 3)
+    let report = builder
+        .trace_impact(Some(project_id), "crates/auth/src/token.rs", 3)
         .expect("trace_impact failed")
         .expect("report expected");
 
-    println!("🌳 [AST Graph] Blast radius for token.rs: {} affected files", report.affected_files.len());
+    println!(
+        "🌳 [AST Graph] Blast radius for token.rs: {} affected files",
+        report.affected_files.len()
+    );
     for f in &report.affected_files {
         println!("   -> Impacted: {}", f);
     }
 
     assert_eq!(report.target_entity.id, "f-auth");
-    assert!(report.affected_files.contains(&"crates/api/src/auth_handler.rs".to_string()));
-    assert!(report.affected_files.contains(&"crates/api/src/router.rs".to_string()));
-    assert!(report.affected_files.contains(&"crates/server/src/main.rs".to_string()));
-    assert_eq!(report.affected_files.len(), 3, "Should trace all 3 dependent ancestors up the graph");
+    assert!(report
+        .affected_files
+        .contains(&"crates/api/src/auth_handler.rs".to_string()));
+    assert!(report
+        .affected_files
+        .contains(&"crates/api/src/router.rs".to_string()));
+    assert!(report
+        .affected_files
+        .contains(&"crates/server/src/main.rs".to_string()));
+    assert_eq!(
+        report.affected_files.len(),
+        3,
+        "Should trace all 3 dependent ancestors up the graph"
+    );
 }
 
 #[test]
@@ -360,7 +481,17 @@ fn test_security_scrubbing_and_sensitive_redaction() {
 
     println!("🔒 Redacted prompt: {}", redacted);
     assert!(!redacted.contains("sk-proj-"), "Must strip OpenAI keys");
-    assert!(!redacted.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"), "Must strip JWT tokens");
-    assert!(!redacted.contains("ghp_1234567890abcdef"), "Must strip GitHub tokens");
-    assert!(redacted.contains("[REDACTED_API_KEY]") || redacted.contains("[REDACTED_SECRET]") || redacted.contains("[REDACTED_JWT]"));
+    assert!(
+        !redacted.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
+        "Must strip JWT tokens"
+    );
+    assert!(
+        !redacted.contains("ghp_1234567890abcdef"),
+        "Must strip GitHub tokens"
+    );
+    assert!(
+        redacted.contains("[REDACTED_API_KEY]")
+            || redacted.contains("[REDACTED_SECRET]")
+            || redacted.contains("[REDACTED_JWT]")
+    );
 }

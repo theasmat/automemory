@@ -38,11 +38,17 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_custom_guardrail_rules(&self, project_id: Option<&str>) -> Result<Vec<CustomGuardrailRule>> {
+    pub fn list_custom_guardrail_rules(
+        &self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<CustomGuardrailRule>> {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, name, category, pattern, is_critical, action, description, mitigation_hint, enabled, created_at FROM custom_guardrail_rules WHERE 1=1".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid
+            ));
         }
         sql.push_str(" ORDER BY created_at DESC");
 
@@ -70,7 +76,10 @@ impl Database {
 
     pub fn delete_custom_guardrail_rule(&self, id: &str) -> Result<bool> {
         let conn = self.conn();
-        let rows = conn.execute("DELETE FROM custom_guardrail_rules WHERE id = ?1", params![id])?;
+        let rows = conn.execute(
+            "DELETE FROM custom_guardrail_rules WHERE id = ?1",
+            params![id],
+        )?;
         Ok(rows > 0)
     }
 

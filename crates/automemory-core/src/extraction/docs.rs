@@ -85,7 +85,8 @@ impl<'a> DocCompiler<'a> {
         fs::create_dir_all(&docs_dir)?;
 
         let mut project_l1_sections = Vec::new();
-        let mut category_map: std::collections::HashMap<String, Vec<(String, String)>> = std::collections::HashMap::new();
+        let mut category_map: std::collections::HashMap<String, Vec<(String, String)>> =
+            std::collections::HashMap::new();
 
         for doc in &docs {
             let file_path = context_root.join(&doc.relative_path);
@@ -93,7 +94,9 @@ impl<'a> DocCompiler<'a> {
                 fs::read_to_string(&file_path).unwrap_or_default()
             } else {
                 let cat_path = context_root.join("docs").join(&doc.category).join(
-                    Path::new(&doc.relative_path).file_name().unwrap_or_default()
+                    Path::new(&doc.relative_path)
+                        .file_name()
+                        .unwrap_or_default(),
                 );
                 if cat_path.exists() {
                     fs::read_to_string(&cat_path).unwrap_or_default()
@@ -130,8 +133,24 @@ impl<'a> DocCompiler<'a> {
             let cat_dir = docs_dir.join(category);
             fs::create_dir_all(&cat_dir)?;
 
-            let cat_abstract = format!("# Category: {}\n{}\n", category, items.iter().map(|(l0, _)| format!("- {}", l0)).collect::<Vec<_>>().join("\n"));
-            let cat_overview = format!("# {} Overview\n\n{}\n", category.to_uppercase(), items.iter().map(|(_, l1)| l1.as_str()).collect::<Vec<_>>().join("\n---\n\n"));
+            let cat_abstract = format!(
+                "# Category: {}\n{}\n",
+                category,
+                items
+                    .iter()
+                    .map(|(l0, _)| format!("- {}", l0))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            let cat_overview = format!(
+                "# {} Overview\n\n{}\n",
+                category.to_uppercase(),
+                items
+                    .iter()
+                    .map(|(_, l1)| l1.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n---\n\n")
+            );
 
             let _ = fs::write(cat_dir.join(".abstract.md"), cat_abstract);
             let _ = fs::write(cat_dir.join(".overview.md"), cat_overview);
@@ -155,8 +174,9 @@ impl<'a> DocCompiler<'a> {
         root_overview.push_str(&project_l1_sections.join("\n"));
         root_overview.push('\n');
 
-        fs::write(&root_overview_path, root_overview)
-            .with_context(|| format!("Failed to write root overview at {:?}", root_overview_path))?;
+        fs::write(&root_overview_path, root_overview).with_context(|| {
+            format!("Failed to write root overview at {:?}", root_overview_path)
+        })?;
 
         Ok(docs.len())
     }

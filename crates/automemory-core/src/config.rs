@@ -177,8 +177,8 @@ impl GlobalConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self)
-            .context("Failed to serialize global config to TOML")?;
+        let content =
+            toml::to_string_pretty(self).context("Failed to serialize global config to TOML")?;
         fs::write(&path, content)
             .with_context(|| format!("Failed to write global config to {:?}", path))?;
         Ok(())
@@ -188,7 +188,10 @@ impl GlobalConfig {
         let cwd_canon = cwd.canonicalize().ok().unwrap_or_else(|| cwd.to_path_buf());
         for p in &self.projects {
             let p_dir = Path::new(&p.local_dir);
-            let p_canon = p_dir.canonicalize().ok().unwrap_or_else(|| p_dir.to_path_buf());
+            let p_canon = p_dir
+                .canonicalize()
+                .ok()
+                .unwrap_or_else(|| p_dir.to_path_buf());
             if cwd_canon == p_canon || cwd_canon.starts_with(&p_canon) {
                 return Some(p);
             }
@@ -205,7 +208,11 @@ impl GlobalConfig {
         let normalized = p.canonicalize().ok().unwrap_or_else(|| p.to_path_buf());
         entry.local_dir = normalized.to_string_lossy().to_string();
 
-        if let Some(pos) = self.projects.iter().position(|p| p.name == entry.name || p.local_dir == entry.local_dir) {
+        if let Some(pos) = self
+            .projects
+            .iter()
+            .position(|p| p.name == entry.name || p.local_dir == entry.local_dir)
+        {
             self.projects[pos] = entry;
         } else {
             self.projects.push(entry);
@@ -215,7 +222,8 @@ impl GlobalConfig {
 
     pub fn remove_project(&mut self, name_or_path: &str) -> Result<bool> {
         let orig_len = self.projects.len();
-        self.projects.retain(|p| p.name != name_or_path && p.local_dir != name_or_path);
+        self.projects
+            .retain(|p| p.name != name_or_path && p.local_dir != name_or_path);
         if self.projects.len() != orig_len {
             self.save()?;
             Ok(true)

@@ -1,5 +1,7 @@
 use crate::db::Database;
-use crate::models::{Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, MemoryVersion};
+use crate::models::{
+    Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, MemoryVersion,
+};
 use crate::retrieval::VectorEngine;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -196,7 +198,13 @@ impl Database {
         // Sanitize FTS query for special syntax chars, hyphens, and punctuation
         let sanitized: String = query
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' || c.is_whitespace() { c } else { ' ' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c.is_whitespace() {
+                    c
+                } else {
+                    ' '
+                }
+            })
             .collect();
         let words: Vec<String> = sanitized
             .split_whitespace()
@@ -218,7 +226,8 @@ impl Database {
             FROM memories_fts fts
             JOIN memories m ON fts.id = m.id
             WHERE memories_fts MATCH ?1 AND m.status = 'active'
-        "#.to_string();
+        "#
+        .to_string();
 
         if let Some(pid) = project_id {
             sql.push_str(&format!(
@@ -302,7 +311,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn save_memory_embedding(&self, memory_id: &str, embedding: &[f32], model: &str) -> Result<()> {
+    pub fn save_memory_embedding(
+        &self,
+        memory_id: &str,
+        embedding: &[f32],
+        model: &str,
+    ) -> Result<()> {
         let conn = self.conn();
         let blob = VectorEngine::to_blob(embedding);
         conn.execute(
@@ -328,7 +342,8 @@ impl Database {
 
     pub fn get_memory_embedding(&self, memory_id: &str) -> Result<Option<Vec<f32>>> {
         let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT embedding FROM memory_embeddings WHERE memory_id = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT embedding FROM memory_embeddings WHERE memory_id = ?1")?;
         let mut rows = stmt.query(params![memory_id])?;
         if let Some(row) = rows.next()? {
             let blob: Vec<u8> = row.get(0)?;
@@ -353,10 +368,14 @@ impl Database {
             FROM memories m
             JOIN memory_embeddings e ON m.id = e.memory_id
             WHERE m.status = 'active'
-        "#.to_string();
+        "#
+        .to_string();
 
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (m.scope = 'global' OR m.project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (m.scope = 'global' OR m.project_id = '{}')",
+                pid
+            ));
         }
 
         let mut stmt = conn.prepare(&sql)?;
@@ -398,7 +417,8 @@ impl Database {
         let scope = MemoryScope::from_str(&scope_str).unwrap_or(MemoryScope::Project);
         let memory_type = MemoryType::from_str(&type_str).unwrap_or(MemoryType::Fact);
         let status = MemoryStatus::from_str(&status_str).unwrap_or(MemoryStatus::Active);
-        let source_kind = MemorySourceKind::from_str(&source_str).unwrap_or(MemorySourceKind::Agent);
+        let source_kind =
+            MemorySourceKind::from_str(&source_str).unwrap_or(MemorySourceKind::Agent);
 
         let created_at = DateTime::parse_from_rfc3339(&created_at_str)
             .map(|dt| dt.with_timezone(&Utc))

@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
-use automemory_core::config::{default_trackable_files, Config, GlobalConfig, ProjectRegistryEntry};
+use automemory_core::config::{
+    default_trackable_files, Config, GlobalConfig, ProjectRegistryEntry,
+};
 use automemory_core::db::Database;
 use automemory_core::models::*;
 use chrono::Utc;
@@ -13,7 +15,10 @@ pub fn list() -> Result<()> {
 
     println!("==========================================================================");
     println!("             AutoMemory — Central Project Registry                        ");
-    println!("           Global Config: {}                                              ", GlobalConfig::config_path().display());
+    println!(
+        "           Global Config: {}                                              ",
+        GlobalConfig::config_path().display()
+    );
     println!("==========================================================================\n");
 
     if let Some(ref remote) = global_cfg.vault.remote_url {
@@ -21,8 +26,19 @@ pub fn list() -> Result<()> {
     } else {
         println!("  🌐 Global GitHub Vault: Local Vault (No remote git URL set)");
     }
-    println!("  📁 Local Vault Store:   {}", global_cfg.vault.local_vault_dir.as_deref().unwrap_or(&config.vault_dir).display());
-    println!("  ⚙️  Default Autopilot:  {}", global_cfg.defaults.autopilot_mode.to_uppercase());
+    println!(
+        "  📁 Local Vault Store:   {}",
+        global_cfg
+            .vault
+            .local_vault_dir
+            .as_deref()
+            .unwrap_or(&config.vault_dir)
+            .display()
+    );
+    println!(
+        "  ⚙️  Default Autopilot:  {}",
+        global_cfg.defaults.autopilot_mode.to_uppercase()
+    );
     println!();
 
     if global_cfg.projects.is_empty() {
@@ -31,7 +47,10 @@ pub fn list() -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<20} {:<45} {:<12}", "PROJECT NAME", "LOCAL DIRECTORY", "AUTO-RESTORE");
+    println!(
+        "{:<20} {:<45} {:<12}",
+        "PROJECT NAME", "LOCAL DIRECTORY", "AUTO-RESTORE"
+    );
     println!("{}", "-".repeat(80));
 
     for p in &global_cfg.projects {
@@ -41,7 +60,11 @@ pub fn list() -> Result<()> {
             "{:<20} {:<45} {:<12}",
             p.name,
             format!("{} {}", p.local_dir, status_mark),
-            if p.restore_to_workspace { "Enabled" } else { "Disabled" }
+            if p.restore_to_workspace {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
         );
         if let Some(ref repo) = p.vault_repo {
             println!("   ↳ Dedicated Vault: {}", repo);
@@ -119,10 +142,19 @@ pub fn register(
         let _ = db.add_project_path(&proj.id, &local_dir, true);
     }
 
-    println!("✓ Successfully registered project '{}' in global config!", name);
+    println!(
+        "✓ Successfully registered project '{}' in global config!",
+        name
+    );
     println!("  📁 Local Directory: {}", local_dir);
-    println!("  📄 Trackable Files: {} patterns configured", default_trackable_files().len());
-    println!("  🌐 Global Config:   {}", GlobalConfig::config_path().display());
+    println!(
+        "  📄 Trackable Files: {} patterns configured",
+        default_trackable_files().len()
+    );
+    println!(
+        "  🌐 Global Config:   {}",
+        GlobalConfig::config_path().display()
+    );
     println!("  🛡️  Zero Footprint:  No .automemory folder created in workspace.");
 
     Ok(())
@@ -134,7 +166,10 @@ pub fn remove(name_or_path: &str) -> Result<()> {
     if removed {
         println!("✓ Removed project '{}' from global registry.", name_or_path);
     } else {
-        println!("⚠ Project '{}' was not found in global registry.", name_or_path);
+        println!(
+            "⚠ Project '{}' was not found in global registry.",
+            name_or_path
+        );
     }
     Ok(())
 }

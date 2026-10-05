@@ -14,7 +14,11 @@ pub struct EventHeuristics;
 impl EventHeuristics {
     pub fn evaluate(event: &NormalizedEvent) -> ExtractionOutcome {
         // 1. Check for tool failure
-        if event.event_type == "tool.failed" || (event.tool.as_ref().map_or(false, |t| t.status == "failed" || t.exit_code.unwrap_or(0) != 0)) {
+        if event.event_type == "tool.failed"
+            || (event.tool.as_ref().map_or(false, |t| {
+                t.status == "failed" || t.exit_code.unwrap_or(0) != 0
+            }))
+        {
             if let Some(ref tool) = event.tool {
                 let error_text = tool
                     .output
@@ -44,7 +48,11 @@ impl EventHeuristics {
 
         // 2. Check for tool modifying critical project files (config, architecture, rules)
         if let Some(ref tool) = event.tool {
-            if tool.category == "file_write" || tool.category == "edit" || tool.name.contains("write") || tool.name.contains("replace") {
+            if tool.category == "file_write"
+                || tool.category == "edit"
+                || tool.name.contains("write")
+                || tool.name.contains("replace")
+            {
                 let file_path = tool
                     .input
                     .as_ref()
@@ -70,7 +78,10 @@ impl EventHeuristics {
                         .and_then(|f| f.to_str())
                         .unwrap_or(file_path);
 
-                    let summary = format!("Modified key project configuration or specification: {}", filename);
+                    let summary = format!(
+                        "Modified key project configuration or specification: {}",
+                        filename
+                    );
                     let content = format!(
                         "Agent updated configuration file `{}` in session `{}`.",
                         file_path, event.session_id
@@ -78,7 +89,11 @@ impl EventHeuristics {
 
                     let memory = Memory {
                         id: Uuid::now_v7().to_string(),
-                        scope: if event.project.id.is_some() { MemoryScope::Project } else { MemoryScope::Global },
+                        scope: if event.project.id.is_some() {
+                            MemoryScope::Project
+                        } else {
+                            MemoryScope::Global
+                        },
                         project_id: event.project.id.clone(),
                         memory_type: MemoryType::Fact,
                         content,

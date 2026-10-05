@@ -522,7 +522,10 @@ impl ToolRegistry {
             "memory.context" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let task_query = arguments.get("task_query").and_then(|v| v.as_str());
-                let max_tokens = arguments.get("max_tokens").and_then(|v| v.as_u64()).unwrap_or(2000) as usize;
+                let max_tokens = arguments
+                    .get("max_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(2000) as usize;
 
                 let engine = RetrievalEngine::new(&self.db);
                 match engine.assemble_context(project_id, task_query, max_tokens) {
@@ -545,7 +548,9 @@ impl ToolRegistry {
                 let engine = RetrievalEngine::new(&self.db);
                 match engine.generate_constitution(project_id) {
                     Ok(const_doc) => ToolCallResult::text(const_doc),
-                    Err(e) => ToolCallResult::error(format!("Constitution generation failed: {}", e)),
+                    Err(e) => {
+                        ToolCallResult::error(format!("Constitution generation failed: {}", e))
+                    }
                 }
             }
 
@@ -573,7 +578,10 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing required parameter: query"),
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10) as usize;
 
                 let engine = RetrievalEngine::new(&self.db);
                 match engine.search(query, project_id, limit) {
@@ -584,9 +592,18 @@ impl ToolRegistry {
 
             "memory.list" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let status = arguments.get("status").and_then(|v| v.as_str()).and_then(|s| MemoryStatus::from_str(s).ok());
-                let mem_type = arguments.get("type").and_then(|v| v.as_str()).and_then(|s| MemoryType::from_str(s).ok());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                let status = arguments
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| MemoryStatus::from_str(s).ok());
+                let mem_type = arguments
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| MemoryType::from_str(s).ok());
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
 
                 match self.db.list_memories(project_id, status, mem_type, limit) {
                     Ok(mems) => ToolCallResult::json(&mems),
@@ -598,7 +615,10 @@ impl ToolRegistry {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let (active, archived) = self.db.count_memories(project_id).unwrap_or((0, 0));
                 let prop_summary = self.db.get_proposals_summary(project_id).ok();
-                let failures = self.db.list_failures(project_id, None, 1000).unwrap_or_default();
+                let failures = self
+                    .db
+                    .list_failures(project_id, None, 1000)
+                    .unwrap_or_default();
                 let traces = self.db.list_traces(project_id, 1000).unwrap_or_default();
                 ToolCallResult::json(&json!({
                     "active_memories": active,
@@ -612,7 +632,10 @@ impl ToolRegistry {
 
             "trace.list" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
                 match self.db.list_traces(project_id, limit) {
                     Ok(traces) => ToolCallResult::json(&traces),
                     Err(e) => ToolCallResult::error(format!("List traces error: {}", e)),
@@ -634,7 +657,10 @@ impl ToolRegistry {
             "failure.list" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let status = arguments.get("status").and_then(|v| v.as_str());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
                 match self.db.list_failures(project_id, status, limit) {
                     Ok(fls) => ToolCallResult::json(&fls),
                     Err(e) => ToolCallResult::error(format!("List failures error: {}", e)),
@@ -663,7 +689,11 @@ impl ToolRegistry {
                     Some(id) => id,
                     None => return ToolCallResult::error("Missing parameter: id"),
                 };
-                match self.db.get_project_by_id(id).or_else(|_| self.db.get_project_by_slug(id)) {
+                match self
+                    .db
+                    .get_project_by_id(id)
+                    .or_else(|_| self.db.get_project_by_slug(id))
+                {
                     Ok(Some(proj)) => {
                         let paths = self.db.get_project_paths(&proj.id).unwrap_or_default();
                         ToolCallResult::json(&json!({
@@ -745,12 +775,22 @@ impl ToolRegistry {
                     .and_then(|v| v.as_str())
                     .and_then(|s| MemoryScope::from_str(s).ok())
                     .unwrap_or(MemoryScope::Project);
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
-                let confidence = arguments.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.9);
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let confidence = arguments
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.9);
                 let tags = arguments
                     .get("tags")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let mem = Memory {
@@ -796,7 +836,9 @@ impl ToolRegistry {
                         mem.updated_at = Utc::now();
                         let reason = arguments.get("reason").and_then(|v| v.as_str());
                         match self.db.update_memory(&mem, reason, &[]) {
-                            Ok(_) => ToolCallResult::json(&json!({ "updated": true, "id": mem.id })),
+                            Ok(_) => {
+                                ToolCallResult::json(&json!({ "updated": true, "id": mem.id }))
+                            }
                             Err(e) => ToolCallResult::error(format!("Update failed: {}", e)),
                         }
                     }
@@ -842,7 +884,10 @@ impl ToolRegistry {
                     Some(s) => serde_json::from_value(s.clone()).unwrap_or_default(),
                     None => return ToolCallResult::error("Missing parameter: steps"),
                 };
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 let preconditions: Vec<String> = arguments
                     .get("preconditions")
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -851,7 +896,10 @@ impl ToolRegistry {
                     .get("caveats")
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .unwrap_or_default();
-                let reproducibility_score = arguments.get("reproducibility_score").and_then(|v| v.as_f64()).unwrap_or(0.9);
+                let reproducibility_score = arguments
+                    .get("reproducibility_score")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.9);
 
                 let trace = SuccessTrace {
                     id: Uuid::now_v7().to_string(),
@@ -884,11 +932,26 @@ impl ToolRegistry {
                     Some(e) => redact_text(e),
                     None => return ToolCallResult::error("Missing parameter: error_message"),
                 };
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
-                let failed_tool = arguments.get("failed_tool").and_then(|v| v.as_str()).map(String::from);
-                let root_cause_hypothesis = arguments.get("root_cause_hypothesis").and_then(|v| v.as_str()).map(String::from);
-                let fix_applied = arguments.get("fix_applied").and_then(|v| v.as_str()).map(String::from);
-                let verification_result = arguments.get("verification_result").and_then(|v| v.as_str()).map(String::from);
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let failed_tool = arguments
+                    .get("failed_tool")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let root_cause_hypothesis = arguments
+                    .get("root_cause_hypothesis")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let fix_applied = arguments
+                    .get("fix_applied")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let verification_result = arguments
+                    .get("verification_result")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
                 let failure = FailureRecord {
                     id: Uuid::now_v7().to_string(),
@@ -921,7 +984,10 @@ impl ToolRegistry {
                     Some(f) => f,
                     None => return ToolCallResult::error("Missing parameter: fix_applied"),
                 };
-                let verification = match arguments.get("verification_result").and_then(|v| v.as_str()) {
+                let verification = match arguments
+                    .get("verification_result")
+                    .and_then(|v| v.as_str())
+                {
                     Some(v) => v,
                     None => return ToolCallResult::error("Missing parameter: verification_result"),
                 };
@@ -947,7 +1013,10 @@ impl ToolRegistry {
                     .and_then(|v| v.as_str())
                     .and_then(|s| MemoryScope::from_str(s).ok())
                     .unwrap_or(MemoryScope::Global);
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
                 let pref = Preference {
                     id: Uuid::now_v7().to_string(),
@@ -973,7 +1042,10 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing parameter: key"),
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let locked = arguments.get("locked").and_then(|v| v.as_bool()).unwrap_or(true);
+                let locked = arguments
+                    .get("locked")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
 
                 match self.db.lock_preference(key, project_id, locked) {
                     Ok(true) => ToolCallResult::json(&json!({ "locked": locked, "key": key })),
@@ -1025,9 +1097,18 @@ impl ToolRegistry {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let status = arguments.get("status").and_then(|v| v.as_str());
                 let proposal_type = arguments.get("proposal_type").and_then(|v| v.as_str());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
-                let offset = arguments.get("offset").and_then(|v| v.as_u64()).map(|v| v as usize);
-                match self.db.list_proposals(project_id, status, proposal_type, limit, offset) {
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let offset = arguments
+                    .get("offset")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                match self
+                    .db
+                    .list_proposals(project_id, status, proposal_type, limit, offset)
+                {
                     Ok(props) => ToolCallResult::json(&props),
                     Err(e) => ToolCallResult::error(format!("Failed to list proposals: {}", e)),
                 }
@@ -1037,7 +1118,9 @@ impl ToolRegistry {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 match self.db.get_proposals_summary(project_id) {
                     Ok(summary) => ToolCallResult::json(&summary),
-                    Err(e) => ToolCallResult::error(format!("Failed to get proposals summary: {}", e)),
+                    Err(e) => {
+                        ToolCallResult::error(format!("Failed to get proposals summary: {}", e))
+                    }
                 }
             }
 
@@ -1051,7 +1134,9 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing parameter: approved"),
                 };
                 match self.db.decide_proposal(id, approved) {
-                    Ok(true) => ToolCallResult::json(&json!({ "decided": true, "id": id, "approved": approved })),
+                    Ok(true) => ToolCallResult::json(
+                        &json!({ "decided": true, "id": id, "approved": approved }),
+                    ),
                     Ok(false) => ToolCallResult::error("Proposal not found"),
                     Err(e) => ToolCallResult::error(format!("Decide proposal error: {}", e)),
                 }
@@ -1064,7 +1149,10 @@ impl ToolRegistry {
                     Some(a) => a,
                     None => return ToolCallResult::error("Missing parameter: approved"),
                 };
-                match self.db.decide_all_proposals(project_id, proposal_type, approved) {
+                match self
+                    .db
+                    .decide_all_proposals(project_id, proposal_type, approved)
+                {
                     Ok(batch) => ToolCallResult::json(&batch),
                     Err(e) => ToolCallResult::error(format!("Decide all proposals error: {}", e)),
                 }
@@ -1109,9 +1197,18 @@ impl ToolRegistry {
                 let entity_type = arguments.get("entity_type").and_then(|v| v.as_str());
                 let name_pattern = arguments.get("name_pattern").and_then(|v| v.as_str());
                 let path_prefix = arguments.get("path_prefix").and_then(|v| v.as_str());
-                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
 
-                match self.db.query_graph_entities(project_id, entity_type, name_pattern, path_prefix, limit) {
+                match self.db.query_graph_entities(
+                    project_id,
+                    entity_type,
+                    name_pattern,
+                    path_prefix,
+                    limit,
+                ) {
                     Ok(entities) => ToolCallResult::json(&entities),
                     Err(e) => ToolCallResult::error(format!("Graph query failed: {}", e)),
                 }
@@ -1123,8 +1220,14 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing parameter: entity_id"),
                 };
 
-                let outgoing = self.db.get_outgoing_graph_edges(entity_id).unwrap_or_default();
-                let incoming = self.db.get_incoming_graph_edges(entity_id).unwrap_or_default();
+                let outgoing = self
+                    .db
+                    .get_outgoing_graph_edges(entity_id)
+                    .unwrap_or_default();
+                let incoming = self
+                    .db
+                    .get_incoming_graph_edges(entity_id)
+                    .unwrap_or_default();
 
                 ToolCallResult::json(&json!({
                     "entity_id": entity_id,
@@ -1144,7 +1247,10 @@ impl ToolRegistry {
                 let builder = GraphBuilder::new(&self.db);
                 match builder.trace_impact(project_id, target, depth) {
                     Ok(Some(report)) => ToolCallResult::json(&report),
-                    Ok(None) => ToolCallResult::error(format!("Target symbol or file '{}' not found in graph", target)),
+                    Ok(None) => ToolCallResult::error(format!(
+                        "Target symbol or file '{}' not found in graph",
+                        target
+                    )),
                     Err(e) => ToolCallResult::error(format!("Impact analysis failed: {}", e)),
                 }
             }

@@ -1,12 +1,6 @@
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::server::McpServer;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use std::sync::Arc;
 
 pub fn mcp_router(server: Arc<McpServer>) -> Router {

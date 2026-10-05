@@ -142,7 +142,12 @@ impl Database {
         Ok(list)
     }
 
-    pub fn add_project_path(&self, project_id: &str, local_path: &str, is_primary: bool) -> Result<()> {
+    pub fn add_project_path(
+        &self,
+        project_id: &str,
+        local_path: &str,
+        is_primary: bool,
+    ) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             r#"
@@ -150,7 +155,12 @@ impl Database {
             VALUES (?1, ?2, ?3, ?4)
             ON CONFLICT(project_id, local_path) DO UPDATE SET is_primary = excluded.is_primary
             "#,
-            params![project_id, local_path, if is_primary { 1 } else { 0 }, Utc::now().to_rfc3339()],
+            params![
+                project_id,
+                local_path,
+                if is_primary { 1 } else { 0 },
+                Utc::now().to_rfc3339()
+            ],
         )?;
         Ok(())
     }

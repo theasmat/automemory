@@ -74,7 +74,10 @@ pub fn execute() -> Result<()> {
                 println!("  Active memories: {}, Archived: {}", active, archived);
             }
             if let Ok(unprocessed) = db.get_unprocessed_events(100) {
-                println!("  Pending event queue: {} unprocessed events", unprocessed.len());
+                println!(
+                    "  Pending event queue: {} unprocessed events",
+                    unprocessed.len()
+                );
             }
         }
         Err(e) => {

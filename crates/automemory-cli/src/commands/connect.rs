@@ -11,7 +11,10 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         .to_string();
 
     let scope_label = if global { "GLOBAL" } else { "WORKSPACE" };
-    println!("Connecting AutoMemory [{}] for agent: '{}'...\n", scope_label, agent);
+    println!(
+        "Connecting AutoMemory [{}] for agent: '{}'...\n",
+        scope_label, agent
+    );
 
     match agent.to_lowercase().as_str() {
         "agy" | "antigravity" | "gemini" => {
@@ -75,7 +78,8 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let mut val = if target_file.exists() {
-        serde_json::from_str(&fs::read_to_string(target_file)?).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::from_str(&fs::read_to_string(target_file)?)
+            .unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
@@ -100,7 +104,10 @@ fn connect_agy(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
         let mcp_path = gemini_config.join("mcp_config.json");
         merge_mcp_config(&mcp_path, exe_path)?;
 
-        println!("✓ [GLOBAL] Connected to Antigravity / Gemini at {}", mcp_path.display());
+        println!(
+            "✓ [GLOBAL] Connected to Antigravity / Gemini at {}",
+            mcp_path.display()
+        );
     } else {
         let agents_dir = workspace_root.join(".agents");
         fs::create_dir_all(&agents_dir)?;
@@ -163,11 +170,20 @@ fn connect_agy(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
         // 4. Plugin manifest
         let plugin_dir = agents_dir.join("plugins").join("automemory");
         fs::create_dir_all(&plugin_dir)?;
-        fs::write(plugin_dir.join("plugin.json"), serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?)?;
+        fs::write(
+            plugin_dir.join("plugin.json"),
+            serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?,
+        )?;
         merge_mcp_config(&plugin_dir.join("mcp_config.json"), exe_path)?;
-        fs::write(plugin_dir.join("hooks.json"), serde_json::to_string_pretty(&hooks_val)?)?;
+        fs::write(
+            plugin_dir.join("hooks.json"),
+            serde_json::to_string_pretty(&hooks_val)?,
+        )?;
 
-        println!("✓ [WORKSPACE] Connected to Antigravity at {}", workspace_root.display());
+        println!(
+            "✓ [WORKSPACE] Connected to Antigravity at {}",
+            workspace_root.display()
+        );
         println!("  🪝 Registered hooks in: .agents/hooks.json");
         println!("  📦 Created plugin in:   .agents/plugins/automemory/");
     }
@@ -182,7 +198,8 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str, global: bo
         merge_mcp_config(&claude_config, exe_path)?;
 
         #[cfg(target_os = "macos")]
-        let desktop_config = home.join("Library/Application Support/Claude/claude_desktop_config.json");
+        let desktop_config =
+            home.join("Library/Application Support/Claude/claude_desktop_config.json");
         #[cfg(target_os = "windows")]
         let desktop_config = home.join("AppData/Roaming/Claude/claude_desktop_config.json");
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -191,11 +208,17 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str, global: bo
         if let Some(parent) = desktop_config.parent() {
             if parent.exists() {
                 let _ = merge_mcp_config(&desktop_config, exe_path);
-                println!("✓ [GLOBAL] Connected to Claude Desktop at {}", desktop_config.display());
+                println!(
+                    "✓ [GLOBAL] Connected to Claude Desktop at {}",
+                    desktop_config.display()
+                );
             }
         }
 
-        println!("✓ [GLOBAL] Connected to Claude Code at {}", claude_config.display());
+        println!(
+            "✓ [GLOBAL] Connected to Claude Code at {}",
+            claude_config.display()
+        );
     } else {
         let ws_mcp = workspace_root.join(".mcp.json");
         merge_mcp_config(&ws_mcp, exe_path)?;
@@ -232,15 +255,26 @@ fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bo
     let _ = fs::write(&cursorrules_path, rules_content);
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Cursor at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Cursor at {}",
+        scope_tag,
+        target_path.display()
+    );
     println!("  📝 Created/updated .cursorrules guidelines");
     Ok(())
 }
 
 // ── Windsurf / Codeium Cascade ──────────────────────────────────────────────
-fn connect_windsurf(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+fn connect_windsurf(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
-        home.join(".codeium").join("windsurf").join("mcp_config.json")
+        home.join(".codeium")
+            .join("windsurf")
+            .join("mcp_config.json")
     } else {
         workspace_root.join(".windsurf").join("mcp.json")
     };
@@ -248,7 +282,11 @@ fn connect_windsurf(home: &Path, workspace_root: &Path, exe_path: &str, global: 
     merge_mcp_config(&target_path, exe_path)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Windsurf at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Windsurf at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 
@@ -269,7 +307,11 @@ fn connect_cline(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
     merge_mcp_config(&target_path, exe_path)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Cline at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Cline at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 
@@ -290,12 +332,21 @@ fn connect_roo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
     merge_mcp_config(&target_path, exe_path)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Roo Code at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Roo Code at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 
 // ── Continue.dev / VS Code ──────────────────────────────────────────────────
-fn connect_continue(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+fn connect_continue(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".continue").join("config.json")
     } else {
@@ -307,7 +358,8 @@ fn connect_continue(home: &Path, workspace_root: &Path, exe_path: &str, global: 
     }
 
     let mut val = if target_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&target_path)?).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::from_str(&fs::read_to_string(&target_path)?)
+            .unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
@@ -315,7 +367,10 @@ fn connect_continue(home: &Path, workspace_root: &Path, exe_path: &str, global: 
     if val.get("experimental").is_none() {
         val["experimental"] = serde_json::json!({});
     }
-    if val["experimental"].get("modelContextProtocolServers").is_none() {
+    if val["experimental"]
+        .get("modelContextProtocolServers")
+        .is_none()
+    {
         val["experimental"]["modelContextProtocolServers"] = serde_json::json!([]);
     }
 
@@ -342,7 +397,11 @@ fn connect_continue(home: &Path, workspace_root: &Path, exe_path: &str, global: 
     fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Continue.dev at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Continue.dev at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 
@@ -359,7 +418,8 @@ fn connect_zed(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
     }
 
     let mut val = if target_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&target_path)?).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::from_str(&fs::read_to_string(&target_path)?)
+            .unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
@@ -378,7 +438,11 @@ fn connect_zed(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
     fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Zed editor at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Zed editor at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 
@@ -393,7 +457,11 @@ fn connect_codex(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
     merge_mcp_config(&target_path, exe_path)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!("✓ {} Connected to Codex CLI at {}", scope_tag, target_path.display());
+    println!(
+        "✓ {} Connected to Codex CLI at {}",
+        scope_tag,
+        target_path.display()
+    );
     Ok(())
 }
 

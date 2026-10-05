@@ -6,7 +6,9 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::db::Database;
-use crate::models::{Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, NormalizedEvent};
+use crate::models::{
+    Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, NormalizedEvent,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LlmProviderConfig {
@@ -73,7 +75,11 @@ impl LlmExtractor {
         let mut events_summary = String::new();
         for ev in events {
             if let Some(tool) = &ev.tool {
-                let status_icon = if tool.status == "success" { "✓" } else { "✗" };
+                let status_icon = if tool.status == "success" {
+                    "✓"
+                } else {
+                    "✗"
+                };
                 events_summary.push_str(&format!(
                     "- [{}] {} ({})",
                     status_icon, tool.name, tool.category
@@ -119,7 +125,11 @@ If nothing durable was learned, respond with []"#;
                 let json_res: serde_json::Value = res.json().await?;
                 json_res["response"].as_str().unwrap_or("[]").to_string()
             }
-            LlmProviderConfig::OpenAi { endpoint, api_key, model } => {
+            LlmProviderConfig::OpenAi {
+                endpoint,
+                api_key,
+                model,
+            } => {
                 let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
                 let body = serde_json::json!({
                     "model": model,
@@ -163,7 +173,10 @@ If nothing durable was learned, respond with []"#;
                     .send()
                     .await?;
                 let json_res: serde_json::Value = res.json().await?;
-                json_res["content"][0]["text"].as_str().unwrap_or("[]").to_string()
+                json_res["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("[]")
+                    .to_string()
             }
         };
 
@@ -260,7 +273,11 @@ or
                 let json_res: serde_json::Value = res.json().await?;
                 json_res["response"].as_str().unwrap_or("{}").to_string()
             }
-            LlmProviderConfig::OpenAi { endpoint, api_key, model } => {
+            LlmProviderConfig::OpenAi {
+                endpoint,
+                api_key,
+                model,
+            } => {
                 let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
                 let body = serde_json::json!({
                     "model": model,
@@ -270,13 +287,18 @@ or
                     ],
                     "temperature": 0.0
                 });
-                let res = self.client.post(&url)
+                let res = self
+                    .client
+                    .post(&url)
                     .header("Authorization", format!("Bearer {}", api_key))
                     .json(&body)
                     .send()
                     .await?;
                 let json_res: serde_json::Value = res.json().await?;
-                json_res["choices"][0]["message"]["content"].as_str().unwrap_or("{}").to_string()
+                json_res["choices"][0]["message"]["content"]
+                    .as_str()
+                    .unwrap_or("{}")
+                    .to_string()
             }
             LlmProviderConfig::Anthropic { api_key, model } => {
                 let url = "https://api.anthropic.com/v1/messages";
@@ -286,14 +308,19 @@ or
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}]
                 });
-                let res = self.client.post(url)
+                let res = self
+                    .client
+                    .post(url)
                     .header("x-api-key", api_key)
                     .header("anthropic-version", "2023-06-01")
                     .json(&body)
                     .send()
                     .await?;
                 let json_res: serde_json::Value = res.json().await?;
-                json_res["content"][0]["text"].as_str().unwrap_or("{}").to_string()
+                json_res["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("{}")
+                    .to_string()
             }
         };
 
@@ -310,13 +337,18 @@ or
                         return serde_json::from_str(&response_text[s..=e]);
                     }
                 }
-                Ok(ContradictionRes { contradicts: false, explanation: None })
+                Ok(ContradictionRes {
+                    contradicts: false,
+                    explanation: None,
+                })
             })
             .ok();
 
         if let Some(res) = parsed {
             if res.contradicts {
-                return Ok(Some(res.explanation.unwrap_or_else(|| "Contradictory architectural statements".to_string())));
+                return Ok(Some(res.explanation.unwrap_or_else(|| {
+                    "Contradictory architectural statements".to_string()
+                })));
             }
         }
         Ok(None)

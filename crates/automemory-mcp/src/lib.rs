@@ -41,7 +41,10 @@ mod tests {
             params: None,
         };
         let list_resp = server.handle_request(list_req).expect("response expected");
-        let tools = list_resp.result.unwrap()["tools"].as_array().unwrap().clone();
+        let tools = list_resp.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .clone();
         assert!(!tools.is_empty());
 
         // Verify key tools exist

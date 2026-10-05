@@ -12,7 +12,11 @@ pub fn list(project: Option<String>) -> Result<()> {
 
     println!("=== AutoMemory Built-in Rules ===");
     for r in GuardrailRule::default_rules() {
-        let crit = if r.is_critical { "CRITICAL" } else { "HIGH-RISK" };
+        let crit = if r.is_critical {
+            "CRITICAL"
+        } else {
+            "HIGH-RISK"
+        };
         println!("  • [{}] {} (Pattern: `{}`)", crit, r.name, r.pattern);
     }
 
@@ -23,7 +27,11 @@ pub fn list(project: Option<String>) -> Result<()> {
     } else {
         for cr in custom_rules {
             let status = if cr.enabled { "ENABLED" } else { "DISABLED" };
-            let crit = if cr.is_critical { "CRITICAL" } else { "STANDARD" };
+            let crit = if cr.is_critical {
+                "CRITICAL"
+            } else {
+                "STANDARD"
+            };
             let scope = cr.project_id.as_deref().unwrap_or("global");
             println!(
                 "  • [{}] [{}] [{}] ID: {}\n    Name: {}\n    Pattern: `{}`\n    Description: {}\n    Scope: {}",
@@ -68,7 +76,10 @@ pub fn add(
 
     db.save_custom_guardrail_rule(&custom_rule)?;
 
-    println!("✓ Custom guardrail rule '{}' successfully registered!", name);
+    println!(
+        "✓ Custom guardrail rule '{}' successfully registered!",
+        name
+    );
     println!("  ID:       {}", rule_id);
     println!("  Pattern:  `{}`", pattern);
     println!("  Critical: {}", critical);

@@ -132,9 +132,15 @@ mod tests {
     #[test]
     fn test_vector_embedding_and_similarity() {
         let engine = VectorEngine::default();
-        let e1 = engine.embed_text("Rust memory management and ownership rules").unwrap();
-        let e2 = engine.embed_text("Rust memory ownership and borrow checker").unwrap();
-        let e3 = engine.embed_text("Cooking Italian pasta with tomato sauce").unwrap();
+        let e1 = engine
+            .embed_text("Rust memory management and ownership rules")
+            .unwrap();
+        let e2 = engine
+            .embed_text("Rust memory ownership and borrow checker")
+            .unwrap();
+        let e3 = engine
+            .embed_text("Cooking Italian pasta with tomato sauce")
+            .unwrap();
 
         assert_eq!(e1.len(), EMBEDDING_DIM);
         assert_eq!(e2.len(), EMBEDDING_DIM);
@@ -143,7 +149,12 @@ mod tests {
         let sim_close = VectorEngine::cosine_similarity(&e1, &e2);
         let sim_far = VectorEngine::cosine_similarity(&e1, &e3);
 
-        assert!(sim_close > sim_far, "Similar concepts must score higher (sim_close={}, sim_far={})", sim_close, sim_far);
+        assert!(
+            sim_close > sim_far,
+            "Similar concepts must score higher (sim_close={}, sim_far={})",
+            sim_close,
+            sim_far
+        );
 
         // Serialization roundtrip
         let blob = VectorEngine::to_blob(&e1);

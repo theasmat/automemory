@@ -27,8 +27,7 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
     let path = db_path.map(PathBuf::from).unwrap_or(config.db_path);
 
     let db = Arc::new(
-        Database::open(&path)
-            .with_context(|| format!("Failed to open database at {:?}", path))?,
+        Database::open(&path).with_context(|| format!("Failed to open database at {:?}", path))?,
     );
 
     let (broadcast_tx, _) = tokio::sync::broadcast::channel::<String>(256);
@@ -93,7 +92,9 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
                 let events = pulse_db.list_recent_events(10).unwrap_or_default();
                 let proposals = pulse_db.list_pending_proposals(None).unwrap_or_default();
                 let traces = pulse_db.list_traces(None, 1000).unwrap_or_default();
-                let failures = pulse_db.list_failures(None, Some("unresolved"), 1000).unwrap_or_default();
+                let failures = pulse_db
+                    .list_failures(None, Some("unresolved"), 1000)
+                    .unwrap_or_default();
 
                 let pulse = json!({
                     "type": "pulse",
@@ -139,9 +140,18 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
     println!("┌────────────────────────────────────────────────────────┐");
     println!("│                AutoMemory Daemon Active                │");
     println!("├────────────────────────────────────────────────────────┤");
-    println!("│  Dashboard Web UI: http://127.0.0.1:{:<5}              │", port);
-    println!("│  WebSocket Engine: ws://127.0.0.1:{:<5}/ws             │", port);
-    println!("│  MCP HTTP Gateway: http://127.0.0.1:{:<5}/mcp          │", port);
+    println!(
+        "│  Dashboard Web UI: http://127.0.0.1:{:<5}              │",
+        port
+    );
+    println!(
+        "│  WebSocket Engine: ws://127.0.0.1:{:<5}/ws             │",
+        port
+    );
+    println!(
+        "│  MCP HTTP Gateway: http://127.0.0.1:{:<5}/mcp          │",
+        port
+    );
     println!("│  SQLite Database:  {:<35} │", path.to_string_lossy());
     println!("└────────────────────────────────────────────────────────┘");
 

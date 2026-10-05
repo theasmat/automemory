@@ -12,7 +12,14 @@ pub fn get_master_key() -> Option<[u8; 32]> {
     #[cfg(target_os = "macos")]
     {
         if let Ok(output) = std::process::Command::new("/usr/bin/security")
-            .args(&["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
+            .args(&[
+                "find-generic-password",
+                "-s",
+                KEYCHAIN_SERVICE,
+                "-a",
+                KEYCHAIN_ACCOUNT,
+                "-w",
+            ])
             .output()
         {
             if output.status.success() {
@@ -56,9 +63,12 @@ pub fn set_master_key(key: &[u8; 32]) -> Result<()> {
         let _ = std::process::Command::new("/usr/bin/security")
             .args(&[
                 "add-generic-password",
-                "-s", KEYCHAIN_SERVICE,
-                "-a", KEYCHAIN_ACCOUNT,
-                "-w", &b64,
+                "-s",
+                KEYCHAIN_SERVICE,
+                "-a",
+                KEYCHAIN_ACCOUNT,
+                "-w",
+                &b64,
                 "-U",
             ])
             .output();

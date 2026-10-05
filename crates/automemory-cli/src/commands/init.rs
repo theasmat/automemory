@@ -49,7 +49,9 @@ const AGY_HOOKS_TEMPLATE: &str = r#"{
 
 pub fn execute(agent: Option<String>) -> Result<()> {
     let config = Config::default_config();
-    config.ensure_dirs().context("Failed to create configuration directories")?;
+    config
+        .ensure_dirs()
+        .context("Failed to create configuration directories")?;
 
     let agent_name = agent.unwrap_or_else(|| "agy".to_string());
     let hook_file = config.hooks_dir.join(format!("{}.json", agent_name));

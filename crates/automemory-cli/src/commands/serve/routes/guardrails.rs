@@ -46,10 +46,18 @@ pub async fn api_set_mode(
 ) -> impl IntoResponse {
     let mode = match AutopilotMode::from_str(&payload.mode) {
         Ok(m) => m,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"error": e.to_string()}))),
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": e.to_string()})),
+            )
+        }
     };
 
-    let slug = payload.project.clone().unwrap_or_else(|| "default".to_string());
+    let slug = payload
+        .project
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
 
     if let Ok(Some(mut project)) = state.db.get_project_by_slug(&slug) {
         project.capture_policy.mode = mode;
@@ -73,14 +81,20 @@ pub async fn api_set_mode(
         let _ = state.db.save_project(&new_project);
     }
 
-    let _ = state.broadcast_tx.send(json!({
-        "type": "mode_updated",
-        "mode": payload.mode,
-        "project": slug,
-        "timestamp": Utc::now().to_rfc3339(),
-    }).to_string());
+    let _ = state.broadcast_tx.send(
+        json!({
+            "type": "mode_updated",
+            "mode": payload.mode,
+            "project": slug,
+            "timestamp": Utc::now().to_rfc3339(),
+        })
+        .to_string(),
+    );
 
-    (StatusCode::OK, Json(json!({ "success": true, "mode": payload.mode, "project": slug })))
+    (
+        StatusCode::OK,
+        Json(json!({ "success": true, "mode": payload.mode, "project": slug })),
+    )
 }
 
 pub async fn api_guardrails_rules(
@@ -105,7 +119,10 @@ pub async fn api_guardrails_rules(
         }));
     }
 
-    if let Ok(customs) = state.db.list_custom_guardrail_rules(params.project_id.as_deref()) {
+    if let Ok(customs) = state
+        .db
+        .list_custom_guardrail_rules(params.project_id.as_deref())
+    {
         for c in customs {
             result.push(json!({
                 "id": c.id,
@@ -144,7 +161,10 @@ pub async fn api_guardrail_rule_add(
     Json(payload): Json<CreateRulePayload>,
 ) -> impl IntoResponse {
     if let Err(e) = regex::Regex::new(&payload.pattern) {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("Invalid regex pattern: {}", e) })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": format!("Invalid regex pattern: {}", e) })),
+        );
     }
 
     let rule = CustomGuardrailRule {
@@ -163,15 +183,24 @@ pub async fn api_guardrail_rule_add(
 
     match state.db.save_custom_guardrail_rule(&rule) {
         Ok(()) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "guardrail_rule_added",
-                "id": rule.id,
-                "name": rule.name,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
-            (StatusCode::CREATED, Json(json!({ "success": true, "rule": rule })))
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "guardrail_rule_added",
+                    "id": rule.id,
+                    "name": rule.name,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
+            (
+                StatusCode::CREATED,
+                Json(json!({ "success": true, "rule": rule })),
+            )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }
 
@@ -181,15 +210,24 @@ pub async fn api_guardrail_rule_delete(
 ) -> impl IntoResponse {
     match state.db.delete_custom_guardrail_rule(&id) {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "guardrail_rule_deleted",
-                "id": id,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "guardrail_rule_deleted",
+                    "id": id,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             (StatusCode::OK, Json(json!({ "success": true, "id": id })))
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Rule not found" }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Rule not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }
 
@@ -205,16 +243,28 @@ pub async fn api_guardrail_rule_toggle(
 ) -> impl IntoResponse {
     match state.db.toggle_custom_guardrail_rule(&id, payload.enabled) {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "guardrail_rule_toggled",
-                "id": id,
-                "enabled": payload.enabled,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
-            (StatusCode::OK, Json(json!({ "success": true, "id": id, "enabled": payload.enabled })))
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "guardrail_rule_toggled",
+                    "id": id,
+                    "enabled": payload.enabled,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
+            (
+                StatusCode::OK,
+                Json(json!({ "success": true, "id": id, "enabled": payload.enabled })),
+            )
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Rule not found" }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Rule not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }
 

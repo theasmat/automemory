@@ -58,7 +58,11 @@ impl Database {
         }
     }
 
-    pub fn list_skills(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<ProceduralSkill>> {
+    pub fn list_skills(
+        &self,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ProceduralSkill>> {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, name, description, trigger_patterns, preconditions, steps, caveats, success_count, failure_count, source_trace_ids, created_at, updated_at FROM procedural_skills WHERE 1=1".to_string();
         if let Some(pid) = project_id {

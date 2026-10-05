@@ -14,7 +14,10 @@ pub struct WorkflowDeviationDetector;
 
 impl WorkflowDeviationDetector {
     /// Compares the currently executed events against a golden SuccessTrace to identify skipped safety steps.
-    pub fn evaluate(current_events: &[NormalizedEvent], golden_trace: &SuccessTrace) -> DeviationReport {
+    pub fn evaluate(
+        current_events: &[NormalizedEvent],
+        golden_trace: &SuccessTrace,
+    ) -> DeviationReport {
         if golden_trace.steps.is_empty() {
             return DeviationReport {
                 has_significant_deviation: false,
@@ -32,7 +35,11 @@ impl WorkflowDeviationDetector {
             if let Some(ref tool) = ev.tool {
                 executed_tools.insert(tool.name.to_lowercase());
                 if let Some(ref input) = tool.input {
-                    if let Some(cmd) = input.get("CommandLine").or_else(|| input.get("command")).and_then(|v| v.as_str()) {
+                    if let Some(cmd) = input
+                        .get("CommandLine")
+                        .or_else(|| input.get("command"))
+                        .and_then(|v| v.as_str())
+                    {
                         executed_commands.insert(cmd.to_lowercase());
                     }
                 }
@@ -51,10 +58,17 @@ impl WorkflowDeviationDetector {
 
             if is_safety_step {
                 let tool_found = executed_tools.contains(&tool_lower);
-                let cmd_found = step.command.as_ref().map(|c| executed_commands.contains(&c.to_lowercase())).unwrap_or(false);
+                let cmd_found = step
+                    .command
+                    .as_ref()
+                    .map(|c| executed_commands.contains(&c.to_lowercase()))
+                    .unwrap_or(false);
 
                 if !tool_found && !cmd_found {
-                    missing_safety_steps.push(format!("Missing safety step: {} (`{}`)", step.action, step.tool));
+                    missing_safety_steps.push(format!(
+                        "Missing safety step: {} (`{}`)",
+                        step.action, step.tool
+                    ));
                 }
             }
         }
@@ -123,32 +137,38 @@ mod tests {
         };
 
         // Current session only ran deploy, skipped cargo test
-        let current_events = vec![
-            NormalizedEvent {
-                event_id: "e1".to_string(),
-                event_type: "tool.completed".to_string(),
-                timestamp: Utc::now(),
-                agent: AgentInfo { adapter_id: "agy".to_string(), agent_instance_id: None },
-                session_id: "s1".to_string(),
-                task_id: None,
-                project: ProjectRef { id: Some("p1".to_string()), slug: None, root_path: "".to_string(), source_git_remote: None },
-                tool: Some(ToolInfo {
-                    name: "deploy".to_string(),
-                    category: "command".to_string(),
-                    input: Some(serde_json::json!({ "command": "deploy prod" })),
-                    input_hash: None,
-                    output: None,
-                    output_hash: None,
-                    status: "success".to_string(),
-                    exit_code: Some(0),
-                    duration_ms: None,
-                }),
-                artifacts: vec![],
-                sensitivity: "public".to_string(),
-                schema_version: 1,
-                raw_payload: None,
-            }
-        ];
+        let current_events = vec![NormalizedEvent {
+            event_id: "e1".to_string(),
+            event_type: "tool.completed".to_string(),
+            timestamp: Utc::now(),
+            agent: AgentInfo {
+                adapter_id: "agy".to_string(),
+                agent_instance_id: None,
+            },
+            session_id: "s1".to_string(),
+            task_id: None,
+            project: ProjectRef {
+                id: Some("p1".to_string()),
+                slug: None,
+                root_path: "".to_string(),
+                source_git_remote: None,
+            },
+            tool: Some(ToolInfo {
+                name: "deploy".to_string(),
+                category: "command".to_string(),
+                input: Some(serde_json::json!({ "command": "deploy prod" })),
+                input_hash: None,
+                output: None,
+                output_hash: None,
+                status: "success".to_string(),
+                exit_code: Some(0),
+                duration_ms: None,
+            }),
+            artifacts: vec![],
+            sensitivity: "public".to_string(),
+            schema_version: 1,
+            raw_payload: None,
+        }];
 
         let report = WorkflowDeviationDetector::evaluate(&current_events, &golden_trace);
         assert!(report.has_significant_deviation);

@@ -53,7 +53,10 @@ impl std::str::FromStr for AutopilotMode {
             "vibe" => Ok(Self::Vibe),
             "strict" => Ok(Self::Strict),
             "review" => Ok(Self::Review),
-            other => anyhow::bail!("Unknown autopilot mode '{}'. Supported: vibe, strict, review", other),
+            other => anyhow::bail!(
+                "Unknown autopilot mode '{}'. Supported: vibe, strict, review",
+                other
+            ),
         }
     }
 }

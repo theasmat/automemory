@@ -35,7 +35,9 @@ impl<'a> VaultManager<'a> {
         // 2. Export Global Memories
         let global_mem_dir = global_dir.join("memories");
         fs::create_dir_all(&global_mem_dir)?;
-        let global_active = self.db.list_memories(None, Some(MemoryStatus::Active), None, 10000)?;
+        let global_active = self
+            .db
+            .list_memories(None, Some(MemoryStatus::Active), None, 10000)?;
         let mut g_active_file = File::create(global_mem_dir.join("active.jsonl"))?;
         for m in &global_active {
             if m.project_id.is_none() || m.scope == MemoryScope::Global {
@@ -43,7 +45,9 @@ impl<'a> VaultManager<'a> {
             }
         }
 
-        let global_archived = self.db.list_memories(None, Some(MemoryStatus::Archived), None, 10000)?;
+        let global_archived =
+            self.db
+                .list_memories(None, Some(MemoryStatus::Archived), None, 10000)?;
         let mut g_archived_file = File::create(global_mem_dir.join("archived.jsonl"))?;
         for m in &global_archived {
             if m.project_id.is_none() || m.scope == MemoryScope::Global {
@@ -83,28 +87,26 @@ impl<'a> VaultManager<'a> {
             serde_json::to_writer_pretty(&mut p_file, &proj)?;
 
             // Memories active.jsonl & archived.jsonl
-            let active_memories = self.db.list_memories(
-                Some(&proj.id),
-                Some(MemoryStatus::Active),
-                None,
-                10000,
-            )?;
+            let active_memories =
+                self.db
+                    .list_memories(Some(&proj.id), Some(MemoryStatus::Active), None, 10000)?;
             let mut active_file = File::create(mem_dir.join("active.jsonl"))?;
             for m in active_memories {
-                if m.project_id.as_deref() == Some(&proj.id) || m.project_id.as_deref() == Some(&proj.slug) {
+                if m.project_id.as_deref() == Some(&proj.id)
+                    || m.project_id.as_deref() == Some(&proj.slug)
+                {
                     writeln!(active_file, "{}", serde_json::to_string(&m)?)?;
                 }
             }
 
-            let archived_memories = self.db.list_memories(
-                Some(&proj.id),
-                Some(MemoryStatus::Archived),
-                None,
-                10000,
-            )?;
+            let archived_memories =
+                self.db
+                    .list_memories(Some(&proj.id), Some(MemoryStatus::Archived), None, 10000)?;
             let mut archived_file = File::create(mem_dir.join("archived.jsonl"))?;
             for m in archived_memories {
-                if m.project_id.as_deref() == Some(&proj.id) || m.project_id.as_deref() == Some(&proj.slug) {
+                if m.project_id.as_deref() == Some(&proj.id)
+                    || m.project_id.as_deref() == Some(&proj.slug)
+                {
                     writeln!(archived_file, "{}", serde_json::to_string(&m)?)?;
                 }
             }
@@ -113,7 +115,9 @@ impl<'a> VaultManager<'a> {
             let proj_skills = self.db.list_skills(Some(&proj.id), 10000)?;
             let mut p_skills_file = File::create(skills_dir.join("skills.jsonl"))?;
             for s in proj_skills {
-                if s.project_id.as_deref() == Some(&proj.id) || s.project_id.as_deref() == Some(&proj.slug) {
+                if s.project_id.as_deref() == Some(&proj.id)
+                    || s.project_id.as_deref() == Some(&proj.slug)
+                {
                     writeln!(p_skills_file, "{}", serde_json::to_string(&s)?)?;
                 }
             }

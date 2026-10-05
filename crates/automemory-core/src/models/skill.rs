@@ -29,7 +29,10 @@ impl ProceduralSkill {
         let mut out = String::new();
         out.push_str("---\n");
         out.push_str(&format!("name: {}\n", slug));
-        out.push_str(&format!("description: \"{}\"\n", self.description.replace('"', "\\\"")));
+        out.push_str(&format!(
+            "description: \"{}\"\n",
+            self.description.replace('"', "\\\"")
+        ));
         out.push_str("version: 1.0.0\n");
         if !self.trigger_patterns.is_empty() {
             out.push_str("triggers:\n");

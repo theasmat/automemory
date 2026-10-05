@@ -84,7 +84,10 @@ pub fn redact_json(value: &serde_json::Value) -> serde_json::Value {
                     || lower_k.contains("apikey")
                     || lower_k.contains("auth")
                 {
-                    new_obj.insert(k.clone(), serde_json::Value::String("[REDACTED_FIELD]".to_string()));
+                    new_obj.insert(
+                        k.clone(),
+                        serde_json::Value::String("[REDACTED_FIELD]".to_string()),
+                    );
                 } else {
                     new_obj.insert(k.clone(), redact_json(v));
                 }

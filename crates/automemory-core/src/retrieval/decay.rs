@@ -67,10 +67,8 @@ impl MemoryDecayScorer {
         // Access boost: 1 + alpha * ln(1 + count)
         let usage_boost = 1.0 + self.config.access_boost_weight * (1.0 + access_count as f64).ln();
 
-        let mut effective = (importance.clamp(0.0, 1.0))
-            * (confidence.clamp(0.1, 1.0))
-            * time_decay
-            * usage_boost;
+        let mut effective =
+            (importance.clamp(0.0, 1.0)) * (confidence.clamp(0.1, 1.0)) * time_decay * usage_boost;
 
         if is_contradicted {
             effective *= 1.0 - self.config.stale_penalty;
@@ -88,13 +86,25 @@ impl MemoryDecayScorer {
     }
 
     /// Scans memory content against known current codebase context to detect architectural contradictions.
-    pub fn detect_contradiction(&self, memory_content: &str, current_context: &[&str]) -> (bool, Option<String>) {
+    pub fn detect_contradiction(
+        &self,
+        memory_content: &str,
+        current_context: &[&str],
+    ) -> (bool, Option<String>) {
         let content_lower = memory_content.to_lowercase();
 
         // 1. Framework version contradiction patterns
         let version_checks = [
             ("vue 2", &["vue 3", "vue: ^3", "\"vue\": \"^3"][..]),
-            ("react 17", &["react 18", "react 19", "\"react\": \"^18", "\"react\": \"^19"][..]),
+            (
+                "react 17",
+                &[
+                    "react 18",
+                    "react 19",
+                    "\"react\": \"^18",
+                    "\"react\": \"^19",
+                ][..],
+            ),
             ("react 18", &["react 19", "\"react\": \"^19"][..]),
             ("nuxt 2", &["nuxt 3", "\"nuxt\": \"^3"][..]),
             ("webpack", &["vite", "turbopack", "\"vite\": "][..]),
@@ -143,7 +153,14 @@ mod tests {
     fn test_aged_and_contradicted_memory() {
         let scorer = MemoryDecayScorer::default();
         let past = Utc::now() - Duration::days(60); // 4+ half-lives
-        let eval = scorer.evaluate(0.8, 0.9, past, 0, true, Some("Contradicts active stack".to_string()));
+        let eval = scorer.evaluate(
+            0.8,
+            0.9,
+            past,
+            0,
+            true,
+            Some("Contradicts active stack".to_string()),
+        );
 
         assert!(eval.effective_score < 0.1);
         assert!(eval.is_stale);

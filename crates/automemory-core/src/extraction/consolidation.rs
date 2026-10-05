@@ -28,7 +28,9 @@ impl ConsolidationWorker {
 
     /// Run a consolidation pass over project or global memories.
     pub fn consolidate(&self, project_id: Option<&str>) -> Result<ConsolidationReport> {
-        let memories = self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 1000)?;
+        let memories = self
+            .db
+            .list_memories(project_id, Some(MemoryStatus::Active), None, 1000)?;
         let total = memories.len();
 
         let mut duplicates_merged = 0;
@@ -101,7 +103,11 @@ impl ConsolidationWorker {
                     // Penalize the older memory's confidence by 0.25x
                     let mut penalized = older.clone();
                     penalized.confidence = (penalized.confidence * 0.25).clamp(0.05, 1.0);
-                    let _ = self.db.update_memory(&penalized, Some("Contradiction penalty applied"), &[]);
+                    let _ = self.db.update_memory(
+                        &penalized,
+                        Some("Contradiction penalty applied"),
+                        &[],
+                    );
 
                     proposals_created += 1;
                     contradictions_resolved += 1;
@@ -214,7 +220,8 @@ pub fn detect_heuristic_contradiction(m1: &Memory, m2: &Memory) -> Option<String
                 && m2_matches.iter().any(|b| !m1_matches.contains(b));
             if conflict {
                 let share_domain = m1.tags.iter().any(|t| m2.tags.contains(t))
-                    || (m1.memory_type == MemoryType::Decision && m2.memory_type == MemoryType::Decision);
+                    || (m1.memory_type == MemoryType::Decision
+                        && m2.memory_type == MemoryType::Decision);
                 if share_domain {
                     return Some(format!(
                         "Mutually exclusive technology choices in domain {:?}: {:?} vs {:?}",
@@ -231,11 +238,17 @@ pub fn detect_heuristic_contradiction(m1: &Memory, m2: &Memory) -> Option<String
         if t_clean.len() < 3 {
             continue;
         }
-        let pos_m1 = t1.contains(&format!("use {}", t_clean)) || t1.contains(&format!("always {}", t_clean));
-        let neg_m1 = t1.contains(&format!("avoid {}", t_clean)) || t1.contains(&format!("never {}", t_clean)) || t1.contains(&format!("do not use {}", t_clean));
+        let pos_m1 =
+            t1.contains(&format!("use {}", t_clean)) || t1.contains(&format!("always {}", t_clean));
+        let neg_m1 = t1.contains(&format!("avoid {}", t_clean))
+            || t1.contains(&format!("never {}", t_clean))
+            || t1.contains(&format!("do not use {}", t_clean));
 
-        let pos_m2 = t2.contains(&format!("use {}", t_clean)) || t2.contains(&format!("always {}", t_clean));
-        let neg_m2 = t2.contains(&format!("avoid {}", t_clean)) || t2.contains(&format!("never {}", t_clean)) || t2.contains(&format!("do not use {}", t_clean));
+        let pos_m2 =
+            t2.contains(&format!("use {}", t_clean)) || t2.contains(&format!("always {}", t_clean));
+        let neg_m2 = t2.contains(&format!("avoid {}", t_clean))
+            || t2.contains(&format!("never {}", t_clean))
+            || t2.contains(&format!("do not use {}", t_clean));
 
         if (pos_m1 && neg_m2) || (neg_m1 && pos_m2) {
             return Some(format!("Direct directive conflict regarding '{}'", tag));
@@ -284,7 +297,8 @@ mod tests {
             scope: MemoryScope::Project,
             project_id: Some("proj_web".to_string()),
             memory_type: MemoryType::Decision,
-            content: "Migrated from Vue 2 to Vue 3 for composition API and TypeScript support.".to_string(),
+            content: "Migrated from Vue 2 to Vue 3 for composition API and TypeScript support."
+                .to_string(),
             summary: "Frontend Framework: Migrated to Vue 3 instead of Vue 2".to_string(),
             confidence: 0.95,
             importance: 0.9,

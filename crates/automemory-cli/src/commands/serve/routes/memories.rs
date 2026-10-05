@@ -18,10 +18,21 @@ pub async fn api_memories(
 ) -> impl IntoResponse {
     let limit = 50;
     let mut memories: Vec<Memory> = if let Some(ref q) = params.q {
-        let results = state.db.search_memories_fts(q, params.project_id.as_deref(), limit).unwrap_or_default();
+        let results = state
+            .db
+            .search_memories_fts(q, params.project_id.as_deref(), limit)
+            .unwrap_or_default();
         results.into_iter().map(|(m, _)| m).collect()
     } else {
-        state.db.list_memories(params.project_id.as_deref(), Some(MemoryStatus::Active), None, limit).unwrap_or_default()
+        state
+            .db
+            .list_memories(
+                params.project_id.as_deref(),
+                Some(MemoryStatus::Active),
+                None,
+                limit,
+            )
+            .unwrap_or_default()
     };
 
     if let Some(ref scope) = params.scope {
@@ -39,10 +50,15 @@ pub async fn api_skills(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    let mut skills = state.db.list_skills(params.project_id.as_deref(), 50).unwrap_or_default();
+    let mut skills = state
+        .db
+        .list_skills(params.project_id.as_deref(), 50)
+        .unwrap_or_default();
     if skills.is_empty() {
         let distiller = SkillDistiller::new(&state.db);
-        skills = distiller.distill_skills(params.project_id.as_deref()).unwrap_or_default();
+        skills = distiller
+            .distill_skills(params.project_id.as_deref())
+            .unwrap_or_default();
     }
     Json(skills)
 }
@@ -52,7 +68,9 @@ pub async fn api_constitution(
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
     let engine = RetrievalEngine::new(&state.db);
-    let constitution = engine.generate_constitution(params.project_id.as_deref()).unwrap_or_default();
+    let constitution = engine
+        .generate_constitution(params.project_id.as_deref())
+        .unwrap_or_default();
     Json(json!({ "constitution": constitution }))
 }
 
@@ -84,12 +102,15 @@ pub async fn api_proposals_decide(
 ) -> impl IntoResponse {
     match state.db.decide_proposal(&payload.id, payload.approved) {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "proposal_decided",
-                "id": payload.id,
-                "approved": payload.approved,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "proposal_decided",
+                    "id": payload.id,
+                    "approved": payload.approved,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             (
                 StatusCode::OK,
                 Json(json!({ "success": true, "id": payload.id, "approved": payload.approved })),
@@ -136,14 +157,20 @@ pub async fn api_proposals_decide_all(
         payload.approved,
     ) {
         Ok(result) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "proposals_decided_all",
-                "approved": payload.approved,
-                "decided_count": result.decided_count,
-                "archived_memories_count": result.archived_memories_count,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
-            (StatusCode::OK, Json(json!({ "success": true, "result": result })))
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "proposals_decided_all",
+                    "approved": payload.approved,
+                    "decided_count": result.decided_count,
+                    "archived_memories_count": result.archived_memories_count,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
+            (
+                StatusCode::OK,
+                Json(json!({ "success": true, "result": result })),
+            )
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -158,15 +185,24 @@ pub async fn api_memory_archive(
 ) -> impl IntoResponse {
     match state.db.archive_memory(&id) {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "memory_archived",
-                "id": id,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "memory_archived",
+                    "id": id,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             (StatusCode::OK, Json(json!({ "success": true, "id": id })))
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Memory not found" }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Memory not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }
 
@@ -191,21 +227,38 @@ pub async fn api_memory_update(
                 mem.content = c;
             }
             mem.updated_at = Utc::now();
-            let reason = payload.reason.unwrap_or_else(|| "Manual edit via dashboard".to_string());
+            let reason = payload
+                .reason
+                .unwrap_or_else(|| "Manual edit via dashboard".to_string());
 
             match state.db.update_memory(&mem, Some(&reason), &[]) {
                 Ok(()) => {
-                    let _ = state.broadcast_tx.send(json!({
-                        "type": "memory_updated",
-                        "id": id,
-                        "timestamp": Utc::now().to_rfc3339(),
-                    }).to_string());
-                    (StatusCode::OK, Json(json!({ "success": true, "memory": mem })))
+                    let _ = state.broadcast_tx.send(
+                        json!({
+                            "type": "memory_updated",
+                            "id": id,
+                            "timestamp": Utc::now().to_rfc3339(),
+                        })
+                        .to_string(),
+                    );
+                    (
+                        StatusCode::OK,
+                        Json(json!({ "success": true, "memory": mem })),
+                    )
                 }
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                ),
             }
         }
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Memory not found" }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Memory not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }

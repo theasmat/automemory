@@ -66,7 +66,10 @@ impl Database {
         let conn = self.conn();
         let mut sql = "SELECT id, project_id, task_title, category, failed_tool, error_message, root_cause_hypothesis, fix_applied, verification_result, status, evidence_event_ids, created_at, updated_at FROM failure_records WHERE 1=1".to_string();
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND (project_id IS NULL OR project_id = '{}')", pid));
+            sql.push_str(&format!(
+                " AND (project_id IS NULL OR project_id = '{}')",
+                pid
+            ));
         }
         if let Some(s) = status {
             sql.push_str(&format!(" AND status = '{}'", s));

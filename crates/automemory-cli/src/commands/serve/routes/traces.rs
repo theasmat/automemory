@@ -18,7 +18,10 @@ pub async fn api_sessions(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    let sessions = state.db.list_sessions(params.project_id.as_deref(), 50).unwrap_or_default();
+    let sessions = state
+        .db
+        .list_sessions(params.project_id.as_deref(), 50)
+        .unwrap_or_default();
     Json(sessions)
 }
 
@@ -37,13 +40,19 @@ pub async fn api_session_distill(
     let distiller = TrajectoryDistiller::new(&state.db);
     match distiller.distill_session(&session_id) {
         Ok(report) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "session_distilled",
-                "session_id": session_id,
-                "report": report,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
-            (StatusCode::OK, Json(json!({ "success": true, "report": report })))
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "session_distilled",
+                    "session_id": session_id,
+                    "report": report,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
+            (
+                StatusCode::OK,
+                Json(json!({ "success": true, "report": report })),
+            )
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -73,18 +82,32 @@ pub async fn api_failure_resolve(
     Path(id): Path<String>,
     Json(payload): Json<ResolveFailurePayload>,
 ) -> impl IntoResponse {
-    let verification = payload.verification_result.unwrap_or_else(|| "Verified by user via dashboard".to_string());
-    match state.db.resolve_failure(&id, &payload.fix_applied, &verification) {
+    let verification = payload
+        .verification_result
+        .unwrap_or_else(|| "Verified by user via dashboard".to_string());
+    match state
+        .db
+        .resolve_failure(&id, &payload.fix_applied, &verification)
+    {
         Ok(true) => {
-            let _ = state.broadcast_tx.send(json!({
-                "type": "failure_resolved",
-                "id": id,
-                "fix_applied": payload.fix_applied,
-                "timestamp": Utc::now().to_rfc3339(),
-            }).to_string());
+            let _ = state.broadcast_tx.send(
+                json!({
+                    "type": "failure_resolved",
+                    "id": id,
+                    "fix_applied": payload.fix_applied,
+                    "timestamp": Utc::now().to_rfc3339(),
+                })
+                .to_string(),
+            );
             (StatusCode::OK, Json(json!({ "success": true, "id": id })))
         }
-        Ok(false) => (StatusCode::NOT_FOUND, Json(json!({ "error": "Failure record not found" }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Failure record not found" })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        ),
     }
 }

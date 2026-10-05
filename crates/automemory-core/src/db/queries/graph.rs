@@ -48,7 +48,7 @@ impl Database {
             VALUES (?1, ?2, ?3, ?4, ?5)
             ON CONFLICT(source_id, target_id, relation_type) DO UPDATE SET
                 confidence = excluded.confidence
-            "#
+            "#,
         )?;
 
         for edge in edges {
@@ -138,7 +138,11 @@ impl Database {
         Ok(edges)
     }
 
-    pub fn list_all_graph_entities(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<GraphEntity>> {
+    pub fn list_all_graph_entities(
+        &self,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GraphEntity>> {
         self.query_graph_entities(project_id, None, None, None, limit)
     }
 

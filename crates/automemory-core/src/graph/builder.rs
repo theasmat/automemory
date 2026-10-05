@@ -18,7 +18,11 @@ impl<'a> GraphBuilder<'a> {
 
     /// Scans a workspace directory and indexes file structure and markdown documents into the graph.
     /// Deep AST symbol and call-graph analysis is delegated to companion engines (e.g. codebase-memory-mcp).
-    pub fn scan_and_index_project(&self, project_id: &str, root_path: &str) -> Result<(usize, usize)> {
+    pub fn scan_and_index_project(
+        &self,
+        project_id: &str,
+        root_path: &str,
+    ) -> Result<(usize, usize)> {
         let mut entities = Vec::new();
         let edges = Vec::new();
 
@@ -74,7 +78,18 @@ impl<'a> GraphBuilder<'a> {
                     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                     let is_code_or_doc = matches!(
                         ext,
-                        "rs" | "ts" | "js" | "tsx" | "jsx" | "py" | "go" | "md" | "json" | "toml" | "yaml" | "yml" | "sql"
+                        "rs" | "ts"
+                            | "js"
+                            | "tsx"
+                            | "jsx"
+                            | "py"
+                            | "go"
+                            | "md"
+                            | "json"
+                            | "toml"
+                            | "yaml"
+                            | "yml"
+                            | "sql"
                     );
 
                     if is_code_or_doc {
@@ -102,21 +117,38 @@ impl<'a> GraphBuilder<'a> {
     }
 
     /// Ingest external entities and edges (e.g. from companion codebase-memory tools) into AutoMemory's graph store.
-    pub fn ingest_graph_data(&self, entities: &[GraphEntity], edges: &[GraphEdge]) -> Result<(usize, usize)> {
+    pub fn ingest_graph_data(
+        &self,
+        entities: &[GraphEntity],
+        edges: &[GraphEdge],
+    ) -> Result<(usize, usize)> {
         self.db.batch_insert_graph_entities(entities)?;
         self.db.batch_insert_graph_edges(edges)?;
         Ok((entities.len(), edges.len()))
     }
 
     /// Calculate blast-radius impact of modifying an entity or file path.
-    pub fn trace_impact(&self, project_id: Option<&str>, target_path_or_symbol: &str, max_depth: usize) -> Result<Option<ImpactReport>> {
+    pub fn trace_impact(
+        &self,
+        project_id: Option<&str>,
+        target_path_or_symbol: &str,
+        max_depth: usize,
+    ) -> Result<Option<ImpactReport>> {
         // 1. Find target entity
-        let entities = self.db.query_graph_entities(project_id, None, Some(target_path_or_symbol), None, 1)?;
+        let entities =
+            self.db
+                .query_graph_entities(project_id, None, Some(target_path_or_symbol), None, 1)?;
         let target = match entities.into_iter().next() {
             Some(e) => e,
             None => {
                 // Try searching by exact path
-                let by_path = self.db.query_graph_entities(project_id, None, None, Some(target_path_or_symbol), 1)?;
+                let by_path = self.db.query_graph_entities(
+                    project_id,
+                    None,
+                    None,
+                    Some(target_path_or_symbol),
+                    1,
+                )?;
                 match by_path.into_iter().next() {
                     Some(e) => e,
                     None => return Ok(None),
@@ -208,10 +240,14 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        db.batch_insert_graph_entities(&[e1, e2]).expect("insert entities failed");
-        db.batch_insert_graph_edges(&[edge]).expect("insert edge failed");
+        db.batch_insert_graph_entities(&[e1, e2])
+            .expect("insert entities failed");
+        db.batch_insert_graph_edges(&[edge])
+            .expect("insert edge failed");
 
-        let impact = builder.trace_impact(Some("proj-1"), "auth.rs", 2).expect("trace impact failed");
+        let impact = builder
+            .trace_impact(Some("proj-1"), "auth.rs", 2)
+            .expect("trace impact failed");
         assert!(impact.is_some());
         let rep = impact.unwrap();
         assert_eq!(rep.target_entity.id, "file-auth");

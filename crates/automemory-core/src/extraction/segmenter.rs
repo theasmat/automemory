@@ -58,13 +58,29 @@ impl<'a> ImplicitTaskSegmenter<'a> {
         let mut consecutive_reads = 0;
 
         for (i, event) in events.iter().enumerate() {
-            let is_read = event.tool.as_ref().map(|t| {
-                t.category == "file_read" || t.name.contains("view") || t.name.contains("read") || t.name.contains("grep") || t.name.contains("list")
-            }).unwrap_or(false);
+            let is_read = event
+                .tool
+                .as_ref()
+                .map(|t| {
+                    t.category == "file_read"
+                        || t.name.contains("view")
+                        || t.name.contains("read")
+                        || t.name.contains("grep")
+                        || t.name.contains("list")
+                })
+                .unwrap_or(false);
 
-            let is_edit = event.tool.as_ref().map(|t| {
-                t.category == "file_write" || t.category == "edit" || t.name.contains("write") || t.name.contains("replace") || t.name.contains("edit")
-            }).unwrap_or(false);
+            let is_edit = event
+                .tool
+                .as_ref()
+                .map(|t| {
+                    t.category == "file_write"
+                        || t.category == "edit"
+                        || t.name.contains("write")
+                        || t.name.contains("replace")
+                        || t.name.contains("edit")
+                })
+                .unwrap_or(false);
 
             if is_read {
                 consecutive_reads += 1;
@@ -80,15 +96,27 @@ impl<'a> ImplicitTaskSegmenter<'a> {
                 consecutive_reads = 0;
             }
 
-            if is_edit || event.tool.as_ref().map(|t| t.status == "failed").unwrap_or(false) {
+            if is_edit
+                || event
+                    .tool
+                    .as_ref()
+                    .map(|t| t.status == "failed")
+                    .unwrap_or(false)
+            {
                 had_file_edits_or_failures = true;
                 consecutive_reads = 0;
             }
 
             if let Some(tool) = &event.tool {
-                let cmd = tool.input.as_ref().and_then(|v| {
-                    v.get("CommandLine").or_else(|| v.get("command")).and_then(|c| c.as_str())
-                }).unwrap_or("");
+                let cmd = tool
+                    .input
+                    .as_ref()
+                    .and_then(|v| {
+                        v.get("CommandLine")
+                            .or_else(|| v.get("command"))
+                            .and_then(|c| c.as_str())
+                    })
+                    .unwrap_or("");
 
                 // 1. Git Commit Boundary
                 if cmd.contains("git commit") || cmd.contains("git merge") {
@@ -111,7 +139,10 @@ impl<'a> ImplicitTaskSegmenter<'a> {
                     consecutive_reads = 0;
                 }
                 // 3. Deployment Action
-                else if cmd.contains("publish") || cmd.contains("deploy") || cmd.contains("kubectl apply") {
+                else if cmd.contains("publish")
+                    || cmd.contains("deploy")
+                    || cmd.contains("kubectl apply")
+                {
                     boundary = Some((
                         TaskBoundaryReason::DeploymentAction,
                         format!("Deployment: {}", cmd.trim()),
@@ -123,7 +154,9 @@ impl<'a> ImplicitTaskSegmenter<'a> {
             // 4. Temporal Idle Gap
             if boundary.is_none() && i + 1 < events.len() {
                 let next_time = events[i + 1].timestamp;
-                let diff = next_time.signed_duration_since(event.timestamp).num_seconds();
+                let diff = next_time
+                    .signed_duration_since(event.timestamp)
+                    .num_seconds();
                 if diff >= self.idle_threshold_seconds {
                     boundary = Some((
                         TaskBoundaryReason::IdleGap,
@@ -139,8 +172,14 @@ impl<'a> ImplicitTaskSegmenter<'a> {
             // If boundary triggered, flush bucket to segment
             if let Some((reason, title)) = boundary {
                 if !current_bucket.is_empty() {
-                    let start_time = current_bucket.first().map(|e| e.timestamp).unwrap_or_else(Utc::now);
-                    let end_time = current_bucket.last().map(|e| e.timestamp).unwrap_or_else(Utc::now);
+                    let start_time = current_bucket
+                        .first()
+                        .map(|e| e.timestamp)
+                        .unwrap_or_else(Utc::now);
+                    let end_time = current_bucket
+                        .last()
+                        .map(|e| e.timestamp)
+                        .unwrap_or_else(Utc::now);
                     let session_id = current_bucket[0].session_id.clone();
                     let project_id = current_bucket[0].project.id.clone();
 
@@ -159,8 +198,14 @@ impl<'a> ImplicitTaskSegmenter<'a> {
 
         // Remaining events flush
         if !current_bucket.is_empty() {
-            let start_time = current_bucket.first().map(|e| e.timestamp).unwrap_or_else(Utc::now);
-            let end_time = current_bucket.last().map(|e| e.timestamp).unwrap_or_else(Utc::now);
+            let start_time = current_bucket
+                .first()
+                .map(|e| e.timestamp)
+                .unwrap_or_else(Utc::now);
+            let end_time = current_bucket
+                .last()
+                .map(|e| e.timestamp)
+                .unwrap_or_else(Utc::now);
             let session_id = current_bucket[0].session_id.clone();
             let project_id = current_bucket[0].project.id.clone();
 
@@ -215,10 +260,18 @@ mod tests {
                 event_id: "e1".to_string(),
                 event_type: "tool.failed".to_string(),
                 timestamp: now,
-                agent: AgentInfo { adapter_id: "agy".to_string(), agent_instance_id: None },
+                agent: AgentInfo {
+                    adapter_id: "agy".to_string(),
+                    agent_instance_id: None,
+                },
                 session_id: "s1".to_string(),
                 task_id: None,
-                project: ProjectRef { id: Some("p1".to_string()), slug: None, root_path: "".to_string(), source_git_remote: None },
+                project: ProjectRef {
+                    id: Some("p1".to_string()),
+                    slug: None,
+                    root_path: "".to_string(),
+                    source_git_remote: None,
+                },
                 tool: Some(ToolInfo {
                     name: "run_command".to_string(),
                     category: "command".to_string(),
@@ -239,10 +292,18 @@ mod tests {
                 event_id: "e2".to_string(),
                 event_type: "tool.completed".to_string(),
                 timestamp: now + Duration::seconds(5),
-                agent: AgentInfo { adapter_id: "agy".to_string(), agent_instance_id: None },
+                agent: AgentInfo {
+                    adapter_id: "agy".to_string(),
+                    agent_instance_id: None,
+                },
                 session_id: "s1".to_string(),
                 task_id: None,
-                project: ProjectRef { id: Some("p1".to_string()), slug: None, root_path: "".to_string(), source_git_remote: None },
+                project: ProjectRef {
+                    id: Some("p1".to_string()),
+                    slug: None,
+                    root_path: "".to_string(),
+                    source_git_remote: None,
+                },
                 tool: Some(ToolInfo {
                     name: "write_to_file".to_string(),
                     category: "file_write".to_string(),
@@ -263,14 +324,24 @@ mod tests {
                 event_id: "e3".to_string(),
                 event_type: "tool.completed".to_string(),
                 timestamp: now + Duration::seconds(10),
-                agent: AgentInfo { adapter_id: "agy".to_string(), agent_instance_id: None },
+                agent: AgentInfo {
+                    adapter_id: "agy".to_string(),
+                    agent_instance_id: None,
+                },
                 session_id: "s1".to_string(),
                 task_id: None,
-                project: ProjectRef { id: Some("p1".to_string()), slug: None, root_path: "".to_string(), source_git_remote: None },
+                project: ProjectRef {
+                    id: Some("p1".to_string()),
+                    slug: None,
+                    root_path: "".to_string(),
+                    source_git_remote: None,
+                },
                 tool: Some(ToolInfo {
                     name: "run_command".to_string(),
                     category: "command".to_string(),
-                    input: Some(serde_json::json!({ "CommandLine": "git commit -m 'fix: resolve compilation bug'" })),
+                    input: Some(
+                        serde_json::json!({ "CommandLine": "git commit -m 'fix: resolve compilation bug'" }),
+                    ),
                     input_hash: None,
                     output: Some(serde_json::json!("[main 12345] fix")),
                     output_hash: None,

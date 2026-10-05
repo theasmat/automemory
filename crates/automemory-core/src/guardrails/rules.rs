@@ -165,4 +165,3 @@ impl From<CustomGuardrailRule> for GuardrailRule {
         }
     }
 }
-

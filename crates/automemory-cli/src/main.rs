@@ -5,7 +5,10 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "automemory")]
-#[command(about = "AutoMemory: Open-source local-first persistent memory engine for coding agents", version = "0.1.0")]
+#[command(
+    about = "AutoMemory: Open-source local-first persistent memory engine for coding agents",
+    version = "0.1.0"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -187,7 +190,6 @@ enum ProposalCommands {
     },
 }
 
-
 #[derive(Subcommand)]
 enum DocCommands {
     /// Track a product specification or documentation file
@@ -364,7 +366,6 @@ enum ProjectCommands {
         name: String,
     },
 }
-
 
 #[derive(Subcommand)]
 enum MemoryCommands {
@@ -551,8 +552,9 @@ async fn main() -> Result<()> {
     // In dev / debug mode (cargo run / debug builds), enable full debug & info logs.
     // In production / release builds, enable only critical error logging by default.
     let filter = if cfg!(debug_assertions) {
-        tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("automemory=debug,tower_http=info"))
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            tracing_subscriber::EnvFilter::new("automemory=debug,tower_http=info")
+        })
     } else {
         tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("automemory=error"))
@@ -594,7 +596,13 @@ async fn main() -> Result<()> {
         }
         Commands::Project { command } => match command {
             ProjectCommands::List => commands::project::list()?,
-            ProjectCommands::Register { name, path, track, vault_repo, restore_to_workspace } => {
+            ProjectCommands::Register {
+                name,
+                path,
+                track,
+                vault_repo,
+                restore_to_workspace,
+            } => {
                 commands::project::register(name, path, track, vault_repo, restore_to_workspace)?;
             }
             ProjectCommands::Remove { name } => {
@@ -627,24 +635,48 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Sync { command } => match command {
-            SyncCommands::Init { project, endpoint, token } => {
+            SyncCommands::Init {
+                project,
+                endpoint,
+                token,
+            } => {
                 commands::sync::init(project, endpoint, token)?;
             }
             SyncCommands::Status { project } => {
                 commands::sync::status(project)?;
             }
-            SyncCommands::Push { project, endpoint, token, key } => {
+            SyncCommands::Push {
+                project,
+                endpoint,
+                token,
+                key,
+            } => {
                 commands::sync::push(project, endpoint, token, key).await?;
             }
-            SyncCommands::Pull { project, endpoint, token, key } => {
+            SyncCommands::Pull {
+                project,
+                endpoint,
+                token,
+                key,
+            } => {
                 commands::sync::pull(project, endpoint, token, key).await?;
             }
-            SyncCommands::Restore { project, from_file, endpoint, token, key } => {
+            SyncCommands::Restore {
+                project,
+                from_file,
+                endpoint,
+                token,
+                key,
+            } => {
                 commands::sync::restore(project, from_file, endpoint, token, key).await?;
             }
             SyncCommands::Export { path } => commands::sync::export_vault(path)?,
             SyncCommands::Import { path } => commands::sync::import_vault(path)?,
-            SyncCommands::Pair { join, endpoint, token } => {
+            SyncCommands::Pair {
+                join,
+                endpoint,
+                token,
+            } => {
                 commands::sync::pair(join, endpoint, token).await?;
             }
             SyncCommands::Watch { project, interval } => {
@@ -676,13 +708,25 @@ async fn main() -> Result<()> {
                 description,
                 mitigation,
                 project,
-            } => commands::rule::add(name, pattern, critical, action, description, mitigation, project)?,
+            } => commands::rule::add(
+                name,
+                pattern,
+                critical,
+                action,
+                description,
+                mitigation,
+                project,
+            )?,
             RuleCommands::Remove { id } => commands::rule::remove(&id)?,
             RuleCommands::Toggle { id, enabled } => commands::rule::toggle(&id, enabled)?,
         },
         Commands::Skill { command } => match command {
             SkillCommands::List { project } => commands::skill::list(project)?,
-            SkillCommands::Export { project, target, min_runs } => {
+            SkillCommands::Export {
+                project,
+                target,
+                min_runs,
+            } => {
                 commands::skill::export(project, target, min_runs)?;
             }
         },
@@ -695,19 +739,28 @@ async fn main() -> Result<()> {
                 offset,
                 project,
             } => commands::proposal::list(status, proposal_type, limit, offset, project)?,
-            ProposalCommands::Decide { id, approve, reject } => {
+            ProposalCommands::Decide {
+                id,
+                approve,
+                reject,
+            } => {
                 let final_approval = if reject { false } else { approve };
                 commands::proposal::decide(id, final_approval)?;
             }
-            ProposalCommands::ApproveAll { proposal_type, project } => {
+            ProposalCommands::ApproveAll {
+                proposal_type,
+                project,
+            } => {
                 commands::proposal::approve_all(proposal_type, project)?;
             }
-            ProposalCommands::RejectAll { proposal_type, project } => {
+            ProposalCommands::RejectAll {
+                proposal_type,
+                project,
+            } => {
                 commands::proposal::reject_all(proposal_type, project)?;
             }
         },
     }
-
 
     Ok(())
 }

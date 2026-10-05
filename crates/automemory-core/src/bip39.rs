@@ -13,7 +13,10 @@ type HmacSha256 = Hmac<Sha256>;
 pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String> {
     let ent_len = entropy.len();
     if ent_len != 16 && ent_len != 32 {
-        bail!("Entropy must be 16 bytes (12 words) or 32 bytes (24 words), got {}", ent_len);
+        bail!(
+            "Entropy must be 16 bytes (12 words) or 32 bytes (24 words), got {}",
+            ent_len
+        );
     }
 
     // Checksum length in bits: ENT / 32
@@ -191,7 +194,10 @@ mod tests {
         assert_eq!(phrase.split_whitespace().count(), 12);
 
         let key2 = mnemonic_to_master_key(&phrase).unwrap();
-        assert_eq!(key1, key2, "Master key derived from 12-word phrase must match exactly");
+        assert_eq!(
+            key1, key2,
+            "Master key derived from 12-word phrase must match exactly"
+        );
     }
 
     #[test]
@@ -205,7 +211,10 @@ mod tests {
         assert_eq!(phrase.split_whitespace().count(), 24);
 
         let recovered = mnemonic_to_master_key(&phrase).unwrap();
-        assert_eq!(raw_key, recovered, "24-word phrase must bijectively reconstruct 32-byte key");
+        assert_eq!(
+            raw_key, recovered,
+            "24-word phrase must bijectively reconstruct 32-byte key"
+        );
     }
 
     #[test]

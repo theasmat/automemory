@@ -61,9 +61,24 @@ impl Database {
 }
 
 fn run_migrations(conn: &Connection) {
-    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'", []);
-    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''", []);
-    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT",
+        [],
+    );
 }

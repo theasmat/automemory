@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use automemory_core::config::{Config, GlobalConfig};
-use automemory_core::crypto::{
-    BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob,
-};
+use automemory_core::crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob};
 use automemory_core::db::Database;
 use automemory_core::models::*;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -105,7 +103,6 @@ fn generate_device_id(device_file: &Path) -> String {
     id
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestoreManifest {
     pub project_id: String,
@@ -115,7 +112,11 @@ pub struct RestoreManifest {
     pub skills: Vec<ProceduralSkill>,
 }
 
-pub fn init(project_id: Option<String>, endpoint: Option<String>, token: Option<String>) -> Result<()> {
+pub fn init(
+    project_id: Option<String>,
+    endpoint: Option<String>,
+    token: Option<String>,
+) -> Result<()> {
     let cwd = std::env::current_dir().context("Failed to get current working directory")?;
     let proj_id = project_id.unwrap_or_else(|| infer_project_id(&cwd));
 
@@ -136,7 +137,10 @@ pub fn init(project_id: Option<String>, endpoint: Option<String>, token: Option<
     // Protect .automemory and .context in .gitignore
     update_gitignore(&cwd)?;
 
-    println!("✓ Initialized AutoMemory cloud sync configuration for '{}':", proj_id);
+    println!(
+        "✓ Initialized AutoMemory cloud sync configuration for '{}':",
+        proj_id
+    );
     println!("  📁 Config: {}", config_path.display());
     println!("  🛡️  Protection: Verified .automemory and .context in .gitignore");
 
@@ -156,8 +160,16 @@ pub fn status(project_opt: Option<String>) -> Result<()> {
     let cfg_path = cwd.join(".automemory").join("config.json");
     if let Ok(content) = fs::read_to_string(&cfg_path) {
         if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
-            println!("  Cloud Endpoint: {}", cfg.endpoint.as_deref().unwrap_or("Local Vault (No remote endpoint set)"));
-            println!("  Last Synced:    {}", cfg.last_synced_at.as_deref().unwrap_or("Never"));
+            println!(
+                "  Cloud Endpoint: {}",
+                cfg.endpoint
+                    .as_deref()
+                    .unwrap_or("Local Vault (No remote endpoint set)")
+            );
+            println!(
+                "  Last Synced:    {}",
+                cfg.last_synced_at.as_deref().unwrap_or("Never")
+            );
             println!();
         }
     }
@@ -175,14 +187,24 @@ pub fn status(project_opt: Option<String>) -> Result<()> {
             synced += 1;
         } else {
             pending_upload += 1;
-            println!("  ⚡ Pending Delta: [{}] {} ({})", d.category.to_uppercase(), d.title, d.relative_path);
+            println!(
+                "  ⚡ Pending Delta: [{}] {} ({})",
+                d.category.to_uppercase(),
+                d.title,
+                d.relative_path
+            );
         }
     }
 
     let memories = db.list_memories(Some(&project_id), Some(MemoryStatus::Active), None, 50)?;
     let skills = db.list_skills(Some(&project_id), 50)?;
 
-    println!("\n  Tracked Documents: {} total ({} synced, {} pending deltas)", docs.len(), synced, pending_upload);
+    println!(
+        "\n  Tracked Documents: {} total ({} synced, {} pending deltas)",
+        docs.len(),
+        synced,
+        pending_upload
+    );
     println!("  Active Memories:   {} records", memories.len());
     println!("  Procedural Skills: {} playbooks", skills.len());
 
@@ -254,7 +276,9 @@ pub async fn push(
     let db = Database::open(&config.db_path)?;
 
     // Auto-discover and track documents in workspace according to trackable_patterns
-    let target_dir = registered_proj.map(|p| PathBuf::from(&p.local_dir)).unwrap_or_else(|| cwd.clone());
+    let target_dir = registered_proj
+        .map(|p| PathBuf::from(&p.local_dir))
+        .unwrap_or_else(|| cwd.clone());
     let trackable_patterns = registered_proj
         .map(|p| p.trackable_files.clone())
         .filter(|v| !v.is_empty())
@@ -280,7 +304,9 @@ pub async fn push(
     project.document_config.include_patterns = trackable_patterns;
 
     // Scan the project workspace
-    let scanner = automemory_core::docs::DocumentScanner::new(std::sync::Arc::new(Database::open(&config.db_path)?));
+    let scanner = automemory_core::docs::DocumentScanner::new(std::sync::Arc::new(Database::open(
+        &config.db_path,
+    )?));
     let _ = scanner.scan_project(&project, &target_dir);
 
     let docs = db.list_documents(&project_id)?;
@@ -288,9 +314,15 @@ pub async fn push(
     // Resolve endpoint and auth token
     let cfg_path = cwd.join(".automemory").join("config.json");
     let (endpoint, auth_token) = if let Some(ep) = endpoint_opt {
-        (Some(ep), token_opt.or_else(|| global_cfg.cloud.auth_token.clone()))
+        (
+            Some(ep),
+            token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
+        )
     } else if let Some(ref ep) = global_cfg.cloud.endpoint {
-        (Some(ep.clone()), token_opt.or_else(|| global_cfg.cloud.auth_token.clone()))
+        (
+            Some(ep.clone()),
+            token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
+        )
     } else if let Ok(content) = fs::read_to_string(&cfg_path) {
         if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
             (cfg.endpoint, cfg.auth_token.or(token_opt))
@@ -302,7 +334,11 @@ pub async fn push(
     };
 
     let mut deltas = Vec::new();
-    let context_root = config.home_dir.join("context").join("projects").join(&project_id);
+    let context_root = config
+        .home_dir
+        .join("context")
+        .join("projects")
+        .join(&project_id);
 
     for d in &docs {
         let is_synced = match &d.remote_synced_hash {
@@ -316,9 +352,10 @@ pub async fn push(
             let content = if file_path.exists() {
                 fs::read_to_string(&file_path).unwrap_or_default()
             } else {
-                let context_path = context_root.join("docs").join(&d.category).join(
-                    Path::new(&d.relative_path).file_name().unwrap_or_default()
-                );
+                let context_path = context_root
+                    .join("docs")
+                    .join(&d.category)
+                    .join(Path::new(&d.relative_path).file_name().unwrap_or_default());
                 fs::read_to_string(&context_path).unwrap_or_default()
             };
 
@@ -347,8 +384,16 @@ pub async fn push(
         let vector_engine = automemory_core::retrieval::vector::VectorEngine::default();
         let mut blind_memories = Vec::new();
         for m in &memories {
-            let embedding = vector_engine.embed_text(&format!("{} {}", m.summary, m.content)).ok();
-            match BlindCrypto::encrypt_memory_with_embedding(&master_key, &index_key, m, &project_id, embedding) {
+            let embedding = vector_engine
+                .embed_text(&format!("{} {}", m.summary, m.content))
+                .ok();
+            match BlindCrypto::encrypt_memory_with_embedding(
+                &master_key,
+                &index_key,
+                m,
+                &project_id,
+                embedding,
+            ) {
                 Ok(bm) => blind_memories.push(bm),
                 Err(e) => eprintln!("Warning: failed to encrypt memory {}: {}", m.id, e),
             }
@@ -364,24 +409,30 @@ pub async fn push(
 
         let mut encrypted_deltas = Vec::new();
         for d in &deltas {
-            match BlindCrypto::encrypt_delta(&master_key, &d.relative_path, &d.category, &d.content) {
+            match BlindCrypto::encrypt_delta(&master_key, &d.relative_path, &d.category, &d.content)
+            {
                 Ok(ed) => encrypted_deltas.push(ed),
-                Err(e) => eprintln!("Warning: failed to encrypt delta {}: {}", d.relative_path, e),
+                Err(e) => eprintln!(
+                    "Warning: failed to encrypt delta {}: {}",
+                    d.relative_path, e
+                ),
             }
         }
 
         let (push_url, _, device_reg_url, _) = resolve_cloud_urls(&ep);
-        println!("Transmitting zero-knowledge blind payload from device '{}' ({}) to: {}...", device_name, device_id, push_url);
+        println!(
+            "Transmitting zero-knowledge blind payload from device '{}' ({}) to: {}...",
+            device_name, device_id, push_url
+        );
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
-        let mut reg_req = client.post(&device_reg_url)
-            .json(&serde_json::json!({
-                "device_id": &device_id,
-                "device_name": &device_name,
-            }));
+        let mut reg_req = client.post(&device_reg_url).json(&serde_json::json!({
+            "device_id": &device_id,
+            "device_name": &device_name,
+        }));
         if let Some(ref tok) = auth_token {
             reg_req = reg_req.header("Authorization", format!("Bearer {}", tok));
         }
@@ -389,7 +440,9 @@ pub async fn push(
             if reg_resp.status() == reqwest::StatusCode::FORBIDDEN {
                 if let Ok(err_body) = reg_resp.text().await {
                     if err_body.contains("DEVICE_QUOTA_EXCEEDED") {
-                        println!("🛑 Cloud Sync Alert: Device quota exceeded on your current tier!");
+                        println!(
+                            "🛑 Cloud Sync Alert: Device quota exceeded on your current tier!"
+                        );
                         println!("   Please upgrade your plan or revoke an inactive device in dashboard.");
                     }
                 }
@@ -407,7 +460,8 @@ pub async fn push(
             "encrypted_deltas": encrypted_deltas,
         });
 
-        let mut req = client.post(&push_url)
+        let mut req = client
+            .post(&push_url)
             .json(&blind_payload)
             .header("X-Device-Id", &device_id)
             .header("X-Device-Name", &device_name);
@@ -417,17 +471,35 @@ pub async fn push(
 
         match req.send().await {
             Ok(resp) if resp.status().is_success() => {
-                println!("✓ Zero-Knowledge Blind Sync accepted by Cloudflare Edge! (HTTP {})", resp.status());
+                println!(
+                    "✓ Zero-Knowledge Blind Sync accepted by Cloudflare Edge! (HTTP {})",
+                    resp.status()
+                );
                 println!("  🔒 Client-Side Encryption: AES-256-GCM + HMAC blind index tokens");
-                println!("  🧠 Blind Memories:   {} encrypted records", blind_memories.len());
-                println!("  ⚡ Blind Skills:     {} encrypted playbooks", blind_skills.len());
-                println!("  📦 Encrypted Deltas: {} chunks stored in R2", encrypted_deltas.len());
+                println!(
+                    "  🧠 Blind Memories:   {} encrypted records",
+                    blind_memories.len()
+                );
+                println!(
+                    "  ⚡ Blind Skills:     {} encrypted playbooks",
+                    blind_skills.len()
+                );
+                println!(
+                    "  📦 Encrypted Deltas: {} chunks stored in R2",
+                    encrypted_deltas.len()
+                );
             }
             Ok(resp) => {
-                println!("⚠ Cloud endpoint returned {}. Archiving delta locally.", resp.status());
+                println!(
+                    "⚠ Cloud endpoint returned {}. Archiving delta locally.",
+                    resp.status()
+                );
             }
             Err(e) => {
-                println!("⚠ Cloud endpoint unreachable ({}). Archiving delta locally.", e);
+                println!(
+                    "⚠ Cloud endpoint unreachable ({}). Archiving delta locally.",
+                    e
+                );
             }
         }
     }
@@ -462,7 +534,10 @@ pub async fn push(
         }
     }
 
-    println!("✓ Successfully pushed updates for project '{}'!", project_id);
+    println!(
+        "✓ Successfully pushed updates for project '{}'!",
+        project_id
+    );
     println!("  📄 Documents Synced: {} delta files", deltas.len());
 
     // Also update text-first Git Vault and push to GitHub if configured
@@ -491,13 +566,20 @@ pub async fn pull(
 
     // 1. Pull latest commits from GitHub memory vault if remote is configured
     let config = Config::default_config();
-    let vault_path = global_cfg.vault.local_vault_dir.clone().unwrap_or(config.vault_dir.clone());
+    let vault_path = global_cfg
+        .vault
+        .local_vault_dir
+        .clone()
+        .unwrap_or(config.vault_dir.clone());
     if let Some(ref remote_url) = global_cfg.vault.remote_url {
         if !automemory_core::sync::GitSync::is_git_repo(&vault_path) {
             let _ = automemory_core::sync::GitSync::init_repo(&vault_path);
         }
         let _ = automemory_core::sync::GitSync::set_remote(&vault_path, "origin", remote_url);
-        println!("Pulling latest commits from GitHub memory vault: {}...", remote_url);
+        println!(
+            "Pulling latest commits from GitHub memory vault: {}...",
+            remote_url
+        );
         if let Err(e) = automemory_core::sync::GitSync::pull(&vault_path, None, None) {
             println!("ℹ Git pull note: {}", e);
         } else {
@@ -506,8 +588,12 @@ pub async fn pull(
     }
 
     // 2. Re-materialize git-ignored files to workspace if restore_to_workspace is enabled
-    let restore_enabled = registered_proj.map(|p| p.restore_to_workspace).unwrap_or(true);
-    let target_dir = registered_proj.map(|p| PathBuf::from(&p.local_dir)).unwrap_or_else(|| cwd.clone());
+    let restore_enabled = registered_proj
+        .map(|p| p.restore_to_workspace)
+        .unwrap_or(true);
+    let target_dir = registered_proj
+        .map(|p| PathBuf::from(&p.local_dir))
+        .unwrap_or_else(|| cwd.clone());
 
     if restore_enabled {
         let db_opt = Database::open(&config.db_path).ok();
@@ -545,7 +631,10 @@ pub async fn pull(
                                 }
                                 if let Ok(_) = fs::copy(&entry, &dest) {
                                     restored_count += 1;
-                                    println!("  ✓ Restored document to workspace: {}", rel.display());
+                                    println!(
+                                        "  ✓ Restored document to workspace: {}",
+                                        rel.display()
+                                    );
                                 }
                             }
                         }
@@ -553,7 +642,10 @@ pub async fn pull(
                 }
             }
             if restored_count > 0 {
-                println!("✓ Re-materialized {} git-ignored documents/plans in workspace!", restored_count);
+                println!(
+                    "✓ Re-materialized {} git-ignored documents/plans in workspace!",
+                    restored_count
+                );
             }
         }
     }
@@ -567,9 +659,15 @@ pub async fn pull(
     // 4. Cloudflare Worker Edge Blind Sync Pull
     let cfg_path = cwd.join(".automemory").join("config.json");
     let (endpoint, auth_token) = if let Some(ep) = endpoint_opt {
-        (Some(ep), token_opt.or_else(|| global_cfg.cloud.auth_token.clone()))
+        (
+            Some(ep),
+            token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
+        )
     } else if let Some(ref ep) = global_cfg.cloud.endpoint {
-        (Some(ep.clone()), token_opt.or_else(|| global_cfg.cloud.auth_token.clone()))
+        (
+            Some(ep.clone()),
+            token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
+        )
     } else if let Ok(content) = fs::read_to_string(&cfg_path) {
         if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
             (cfg.endpoint, cfg.auth_token.or(token_opt))
@@ -599,9 +697,13 @@ pub async fn pull(
                     let master_key = BlindCrypto::get_or_create_master_key(key_opt.as_deref())?;
 
                     let mut mem_count = 0;
-                    if let (Ok(db), Some(bms)) = (Database::open(&config.db_path), pull_data.blind_memories) {
+                    if let (Ok(db), Some(bms)) =
+                        (Database::open(&config.db_path), pull_data.blind_memories)
+                    {
                         for bm in bms {
-                            if let Ok(mem) = BlindCrypto::decrypt_memory(&master_key, &bm, Some(&project_id)) {
+                            if let Ok(mem) =
+                                BlindCrypto::decrypt_memory(&master_key, &bm, Some(&project_id))
+                            {
                                 let _ = db.save_memory(&mem);
                                 mem_count += 1;
                             }
@@ -609,9 +711,13 @@ pub async fn pull(
                     }
 
                     let mut skill_count = 0;
-                    if let (Ok(db), Some(bss)) = (Database::open(&config.db_path), pull_data.blind_skills) {
+                    if let (Ok(db), Some(bss)) =
+                        (Database::open(&config.db_path), pull_data.blind_skills)
+                    {
                         for bs in bss {
-                            if let Ok(skill) = BlindCrypto::decrypt_skill(&master_key, &bs, Some(&project_id)) {
+                            if let Ok(skill) =
+                                BlindCrypto::decrypt_skill(&master_key, &bs, Some(&project_id))
+                            {
                                 let _ = db.save_skill(&skill);
                                 skill_count += 1;
                             }
@@ -635,10 +741,12 @@ pub async fn pull(
                                 };
 
                                 if need_download {
-                                    let blob_url = format!("{}/{}/{}", blob_base, project_id, f.sha256);
+                                    let blob_url =
+                                        format!("{}/{}/{}", blob_base, project_id, f.sha256);
                                     let mut blob_req = client.get(&blob_url);
                                     if let Some(ref tok) = auth_token {
-                                        blob_req = blob_req.header("Authorization", format!("Bearer {}", tok));
+                                        blob_req = blob_req
+                                            .header("Authorization", format!("Bearer {}", tok));
                                     }
 
                                     if let Ok(b_resp) = blob_req.send().await {
@@ -650,16 +758,22 @@ pub async fn pull(
                                                 .map(|s| s.to_string())
                                                 .or(f.nonce_base64);
 
-                                            if let (Some(nonce), Ok(bytes)) = (nonce_opt, b_resp.bytes().await) {
+                                            if let (Some(nonce), Ok(bytes)) =
+                                                (nonce_opt, b_resp.bytes().await)
+                                            {
                                                 let blob = EncryptedBlob {
                                                     ciphertext_base64: BASE64.encode(&bytes),
                                                     nonce_base64: nonce,
                                                 };
-                                                if let Ok(decrypted_bytes) = BlindCrypto::decrypt(&master_key, &blob) {
+                                                if let Ok(decrypted_bytes) =
+                                                    BlindCrypto::decrypt(&master_key, &blob)
+                                                {
                                                     if let Some(parent) = target_path.parent() {
                                                         let _ = fs::create_dir_all(parent);
                                                     }
-                                                    if fs::write(&target_path, &decrypted_bytes).is_ok() {
+                                                    if fs::write(&target_path, &decrypted_bytes)
+                                                        .is_ok()
+                                                    {
                                                         blob_restored_count += 1;
                                                         println!("  ✓ Decrypted & restored encrypted document: {}", f.path);
                                                     }
@@ -674,9 +788,15 @@ pub async fn pull(
 
                     println!("✓ Cloudflare Edge Zero-Knowledge Sync successfully applied!");
                     println!("  🧠 Decrypted Memories:   {} records imported", mem_count);
-                    println!("  ⚡ Decrypted Skills:     {} playbooks imported", skill_count);
+                    println!(
+                        "  ⚡ Decrypted Skills:     {} playbooks imported",
+                        skill_count
+                    );
                     if blob_restored_count > 0 {
-                        println!("  📦 Restored Plans/Docs:  {} files re-materialized in workspace", blob_restored_count);
+                        println!(
+                            "  📦 Restored Plans/Docs:  {} files re-materialized in workspace",
+                            blob_restored_count
+                        );
                     }
                 }
             }
@@ -720,7 +840,10 @@ pub async fn restore(
         println!("Performing disaster recovery pull from Cloudflare Edge Sync...");
         pull(Some(project_id.clone()), endpoint_opt, token_opt, key_opt).await?;
         let _ = crate::commands::link::execute(Some(project_id.clone()));
-        println!("\n✓ Disaster recovery complete! Project '{}' is fully restored from edge.", project_id);
+        println!(
+            "\n✓ Disaster recovery complete! Project '{}' is fully restored from edge.",
+            project_id
+        );
         return Ok(());
     }
 
@@ -730,7 +853,10 @@ pub async fn restore(
         let content = fs::read_to_string(&file_path)?;
         serde_json::from_str(&content).ok()
     } else if let Some(ep) = endpoint_opt {
-        println!("Fetching cloud manifest from {}/projects/{}/manifest...", ep, project_id);
+        println!(
+            "Fetching cloud manifest from {}/projects/{}/manifest...",
+            ep, project_id
+        );
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
@@ -751,7 +877,12 @@ pub async fn restore(
         }
     } else {
         // Read latest delta from canonical context if available
-        let deltas_dir = config.home_dir.join("context").join("projects").join(&project_id).join("deltas");
+        let deltas_dir = config
+            .home_dir
+            .join("context")
+            .join("projects")
+            .join(&project_id)
+            .join("deltas");
         if deltas_dir.exists() {
             if let Ok(entries) = fs::read_dir(&deltas_dir) {
                 let mut files: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
@@ -773,7 +904,10 @@ pub async fn restore(
 
     // 2. Restore memories into SQLite
     if let Some(ref m) = manifest {
-        println!("• Restoring {} memories into SQLite database...", m.memories.len());
+        println!(
+            "• Restoring {} memories into SQLite database...",
+            m.memories.len()
+        );
         for mem in &m.memories {
             let _ = db.save_memory(mem);
         }
@@ -803,7 +937,10 @@ pub async fn restore(
                     // Conflict protection: write .remote.md
                     let remote_path = target_path.with_extension("remote.md");
                     fs::write(&remote_path, &doc.content)?;
-                    println!("  ⚠ Conflict detected in '{}': local file differs from cloud version.", doc.relative_path);
+                    println!(
+                        "  ⚠ Conflict detected in '{}': local file differs from cloud version.",
+                        doc.relative_path
+                    );
                     println!("    Saved cloud version to: {}", remote_path.display());
                 } else {
                     println!("  ✓ Verified existing document: {}", doc.relative_path);
@@ -811,10 +948,16 @@ pub async fn restore(
                 doc.relative_path.clone()
             } else {
                 // Check for fuzzy path match: did the file move to another folder?
-                let filename = Path::new(&doc.relative_path).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let filename = Path::new(&doc.relative_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
                 let moved_match = find_fuzzy_match(&cwd, &doc.content_hash, filename);
                 if let Some(new_rel_path) = moved_match {
-                    println!("  ℹ Intelligent path remap: '{}' found locally at '{}'", doc.relative_path, new_rel_path);
+                    println!(
+                        "  ℹ Intelligent path remap: '{}' found locally at '{}'",
+                        doc.relative_path, new_rel_path
+                    );
                     new_rel_path
                 } else {
                     // Create parent directories and restore file
@@ -846,8 +989,14 @@ pub async fn restore(
         }
     }
 
-    println!("\n✓ Disaster recovery complete! Project '{}' is fully restored.", project_id);
-    println!("  🔗 Local symlink: .context/ -> ~/.automemory/context/projects/{}", project_id);
+    println!(
+        "\n✓ Disaster recovery complete! Project '{}' is fully restored.",
+        project_id
+    );
+    println!(
+        "  🔗 Local symlink: .context/ -> ~/.automemory/context/projects/{}",
+        project_id
+    );
 
     Ok(())
 }
@@ -861,7 +1010,8 @@ fn find_fuzzy_match(cwd: &Path, expected_hash: &str, filename: &str) -> Option<S
                 if name.starts_with('.') || name == "target" || name == "node_modules" {
                     continue;
                 }
-                if let Some(found) = find_fuzzy_match_recursive(&path, cwd, expected_hash, filename) {
+                if let Some(found) = find_fuzzy_match_recursive(&path, cwd, expected_hash, filename)
+                {
                     return Some(found);
                 }
             }
@@ -870,7 +1020,12 @@ fn find_fuzzy_match(cwd: &Path, expected_hash: &str, filename: &str) -> Option<S
     None
 }
 
-fn find_fuzzy_match_recursive(dir: &Path, cwd: &Path, expected_hash: &str, target_name: &str) -> Option<String> {
+fn find_fuzzy_match_recursive(
+    dir: &Path,
+    cwd: &Path,
+    expected_hash: &str,
+    target_name: &str,
+) -> Option<String> {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -882,7 +1037,10 @@ fn find_fuzzy_match_recursive(dir: &Path, cwd: &Path, expected_hash: &str, targe
                             hasher.update(content.as_bytes());
                             let h = format!("{:x}", hasher.finalize());
                             if h == expected_hash {
-                                return path.strip_prefix(cwd).ok().map(|p| p.to_string_lossy().to_string());
+                                return path
+                                    .strip_prefix(cwd)
+                                    .ok()
+                                    .map(|p| p.to_string_lossy().to_string());
                             }
                         }
                     }
@@ -890,7 +1048,9 @@ fn find_fuzzy_match_recursive(dir: &Path, cwd: &Path, expected_hash: &str, targe
             } else if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !name.starts_with('.') {
-                    if let Some(found) = find_fuzzy_match_recursive(&path, cwd, expected_hash, target_name) {
+                    if let Some(found) =
+                        find_fuzzy_match_recursive(&path, cwd, expected_hash, target_name)
+                    {
                         return Some(found);
                     }
                 }
@@ -911,14 +1071,20 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
     let db = Database::open(&config.db_path)?;
     let manager = automemory_core::sync::VaultManager::new(&db, &vault_path);
     manager.export_to_vault()?;
-    println!("✓ Exported database to text-first vault at: {:?}", vault_path);
+    println!(
+        "✓ Exported database to text-first vault at: {:?}",
+        vault_path
+    );
 
     // Ensure vault git repository is initialized
     if !automemory_core::sync::GitSync::is_git_repo(&vault_path) {
         let _ = automemory_core::sync::GitSync::init_repo(&vault_path);
     }
 
-    let msg = format!("AutoMemory: automated vault sync at {}", Utc::now().to_rfc3339());
+    let msg = format!(
+        "AutoMemory: automated vault sync at {}",
+        Utc::now().to_rfc3339()
+    );
     let committed = automemory_core::sync::GitSync::commit_all(&vault_path, &msg)?;
     if committed {
         println!("✓ Committed vault updates to local git repository.");
@@ -1064,7 +1230,10 @@ pub async fn pair(
 
             match req.send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    println!("✓ Acquired active device lease from Cloudflare Edge for '{}' ({})", device_name, device_id);
+                    println!(
+                        "✓ Acquired active device lease from Cloudflare Edge for '{}' ({})",
+                        device_name, device_id
+                    );
                 }
                 Ok(resp) if resp.status() == reqwest::StatusCode::FORBIDDEN => {
                     println!("⚠️ Device registration blocked: Device quota exceeded on your current plan.");
@@ -1081,7 +1250,9 @@ pub async fn pair(
             println!("✓ Device paired successfully with Master Key.");
         }
 
-        println!("\n🎉 Pairing successful! This machine is now securely synchronized with your vault.");
+        println!(
+            "\n🎉 Pairing successful! This machine is now securely synchronized with your vault."
+        );
         Ok(())
     } else {
         // --- Displaying pairing code from current device ---
@@ -1100,7 +1271,10 @@ pub async fn pair(
         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let saved_seed_file = home.join(".automemory").join("pairing_seed.txt");
         let phrase = if saved_seed_file.exists() {
-            std::fs::read_to_string(&saved_seed_file).unwrap_or_default().trim().to_string()
+            std::fs::read_to_string(&saved_seed_file)
+                .unwrap_or_default()
+                .trim()
+                .to_string()
         } else {
             automemory_core::bip39::master_key_to_mnemonic_24(&master_key)?
         };
@@ -1121,7 +1295,9 @@ pub async fn pair(
         println!();
         println!("Security Guarantee:");
         if automemory_core::keychain::is_native_keychain_active() {
-            println!("  • Master Key is encrypted in macOS Apple Keychain ('dev.automemory.master-key')");
+            println!(
+                "  • Master Key is encrypted in macOS Apple Keychain ('dev.automemory.master-key')"
+            );
         }
         println!("  • Cloudflare Edge and GitHub Vault hold ZERO decryption keys");
         println!("==========================================================================");
@@ -1146,11 +1322,17 @@ pub async fn watch(project_opt: Option<String>, interval_secs: u64) -> Result<()
     println!("     AutoMemory — Real-Time Background File Watcher & Auto-Sync Engine    ");
     println!("==========================================================================");
     println!("Watching project '{}' in {}", project_id, cwd.display());
-    println!("Polling interval: {}s. Auto-pushing git-ignored plans & encrypted deltas.", interval_secs);
+    println!(
+        "Polling interval: {}s. Auto-pushing git-ignored plans & encrypted deltas.",
+        interval_secs
+    );
     println!("Press Ctrl+C to terminate auto-sync.\n");
 
     // Perform initial synchronization
-    println!("[{}] Executing baseline sync...", chrono::Local::now().format("%H:%M:%S"));
+    println!(
+        "[{}] Executing baseline sync...",
+        chrono::Local::now().format("%H:%M:%S")
+    );
     let _ = push(Some(project_id.clone()), None, None, None).await;
 
     let poll_duration = std::time::Duration::from_secs(interval_secs);
@@ -1161,11 +1343,12 @@ pub async fn watch(project_opt: Option<String>, interval_secs: u64) -> Result<()
         // Periodic sync trigger for active modifications
         if last_sync.elapsed() >= std::time::Duration::from_secs(interval_secs * 2) {
             let now_str = chrono::Local::now().format("%H:%M:%S").to_string();
-            println!("[{}] Auto-synchronizing changes to Edge and GitHub Vault...", now_str);
+            println!(
+                "[{}] Auto-synchronizing changes to Edge and GitHub Vault...",
+                now_str
+            );
             let _ = push(Some(project_id.clone()), None, None, None).await;
             last_sync = std::time::Instant::now();
         }
     }
 }
-
-

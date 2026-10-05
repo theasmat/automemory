@@ -59,7 +59,10 @@ fn test_mcp_comprehensive_tool_suite_execution() {
         })),
     };
     let resp_recall = server.handle_request(req_recall).unwrap();
-    let text = resp_recall.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+    let text = resp_recall.result.unwrap()["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(text.contains("Redis TTL 300s"));
 
     // 4. Save & Query Repeatable SuccessTrace via MCP
@@ -136,7 +139,10 @@ fn test_mcp_comprehensive_tool_suite_execution() {
         })),
     };
     let resp_ctx = server.handle_request(req_ctx).unwrap();
-    let ctx_text = resp_ctx.result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+    let ctx_text = resp_ctx.result.unwrap()["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(ctx_text.contains("Redis TTL 300s"));
     println!("📦 Context Assembly Output:\n{}", ctx_text);
 }

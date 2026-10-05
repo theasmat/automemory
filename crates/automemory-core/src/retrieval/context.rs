@@ -38,7 +38,9 @@ impl<'a> RetrievalEngine<'a> {
         }
 
         // 2. High-Confidence Architectural Decisions
-        let memories = self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 10)?;
+        let memories = self
+            .db
+            .list_memories(project_id, Some(MemoryStatus::Active), None, 10)?;
         let decisions: Vec<_> = memories
             .iter()
             .filter(|m| m.memory_type == MemoryType::Decision || m.memory_type == MemoryType::Fact)
@@ -57,7 +59,11 @@ impl<'a> RetrievalEngine<'a> {
         if !failures.is_empty() {
             lines.push("## Known Pitfalls & Past Resolutions".to_string());
             for f in failures.iter().take(3) {
-                lines.push(format!("- **Avoid**: {} -> **Fix**: {}", f.task_title, f.fix_applied.as_deref().unwrap_or("See trace")));
+                lines.push(format!(
+                    "- **Avoid**: {} -> **Fix**: {}",
+                    f.task_title,
+                    f.fix_applied.as_deref().unwrap_or("See trace")
+                ));
             }
             lines.push("".to_string());
         }
@@ -67,7 +73,13 @@ impl<'a> RetrievalEngine<'a> {
         if !skills.is_empty() {
             lines.push("## Autonomous Procedural Playbooks".to_string());
             for s in skills {
-                let steps_preview = s.steps.iter().take(2).cloned().collect::<Vec<_>>().join(" -> ");
+                let steps_preview = s
+                    .steps
+                    .iter()
+                    .take(2)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
                 lines.push(format!("- **{}**: {}", s.name, steps_preview));
             }
             lines.push("".to_string());
@@ -76,7 +88,10 @@ impl<'a> RetrievalEngine<'a> {
         // 5. Verification Check
         lines.push("## Inviolable Verification".to_string());
         lines.push("- Always verify code changes with existing test suites before declaring tasks complete.".to_string());
-        lines.push("- Never execute destructive system/git commands without explicit user confirmation.".to_string());
+        lines.push(
+            "- Never execute destructive system/git commands without explicit user confirmation."
+                .to_string(),
+        );
 
         Ok(lines.join("\n"))
     }
@@ -86,8 +101,15 @@ impl<'a> RetrievalEngine<'a> {
         let q_clean = query.trim();
         let q_lower = q_clean.to_lowercase();
 
-        if q_lower.starts_with("how") || q_lower.starts_with("where") || q_lower.starts_with("why") || q_lower.starts_with("what") {
-            format!("{} architecture setup configuration pattern implementation", q_clean)
+        if q_lower.starts_with("how")
+            || q_lower.starts_with("where")
+            || q_lower.starts_with("why")
+            || q_lower.starts_with("what")
+        {
+            format!(
+                "{} architecture setup configuration pattern implementation",
+                q_clean
+            )
         } else {
             q_clean.to_string()
         }
@@ -104,16 +126,17 @@ impl<'a> RetrievalEngine<'a> {
         let mut sections: Vec<String> = Vec::new();
         let mut current_chars = 0;
 
-        let add_section = |title: &str, body: &str, sections: &mut Vec<String>, current_chars: &mut usize| {
-            if body.trim().is_empty() {
-                return;
-            }
-            let formatted = format!("### {}\n\n{}\n", title, body.trim());
-            if *current_chars + formatted.len() <= max_chars {
-                *current_chars += formatted.len();
-                sections.push(formatted);
-            }
-        };
+        let add_section =
+            |title: &str, body: &str, sections: &mut Vec<String>, current_chars: &mut usize| {
+                if body.trim().is_empty() {
+                    return;
+                }
+                let formatted = format!("### {}\n\n{}\n", title, body.trim());
+                if *current_chars + formatted.len() <= max_chars {
+                    *current_chars += formatted.len();
+                    sections.push(formatted);
+                }
+            };
 
         // 1. Locked Global Preferences & Active Preferences
         let prefs = self.db.list_preferences(project_id)?;
@@ -128,7 +151,12 @@ impl<'a> RetrievalEngine<'a> {
             }
         }
         if !locked_prefs_str.is_empty() {
-            add_section("Locked Global Preferences", &locked_prefs_str, &mut sections, &mut current_chars);
+            add_section(
+                "Locked Global Preferences",
+                &locked_prefs_str,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 2. Project Identity & Stack Summary
@@ -144,29 +172,44 @@ impl<'a> RetrievalEngine<'a> {
                     "- **Project**: {} (`{}`)\n- **Registered Paths**: {}\n- **Sync Mode**: {}\n",
                     proj.display_name, proj.slug, path_list, proj.sync_config.mode
                 );
-                add_section("Project Identity", &summary, &mut sections, &mut current_chars);
+                add_section(
+                    "Project Identity",
+                    &summary,
+                    &mut sections,
+                    &mut current_chars,
+                );
             }
         }
 
         // 3. High-confidence Project Decisions and Architectural Facts (HyDE + RRF Hybrid Search)
         let memories = if let Some(raw_query) = task_query {
             let expanded_query = self.expand_hyde_query(raw_query);
-            let fts_results = self.db.search_memories_fts(&expanded_query, project_id, 15).unwrap_or_default();
-            let query_emb = self.vec_engine.embed_text(&expanded_query).unwrap_or_default();
+            let fts_results = self
+                .db
+                .search_memories_fts(&expanded_query, project_id, 15)
+                .unwrap_or_default();
+            let query_emb = self
+                .vec_engine
+                .embed_text(&expanded_query)
+                .unwrap_or_default();
             let vec_results = if !query_emb.is_empty() {
-                self.db.search_memories_vector(&query_emb, project_id, 15).unwrap_or_default()
+                self.db
+                    .search_memories_vector(&query_emb, project_id, 15)
+                    .unwrap_or_default()
             } else {
                 Vec::new()
             };
 
             let scored = self.scorer.fuse_and_rank(fts_results, vec_results, 10);
             if scored.is_empty() {
-                self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 10)?
+                self.db
+                    .list_memories(project_id, Some(MemoryStatus::Active), None, 10)?
             } else {
                 scored.into_iter().map(|c| c.memory).collect()
             }
         } else {
-            self.db.list_memories(project_id, Some(MemoryStatus::Active), None, 15)?
+            self.db
+                .list_memories(project_id, Some(MemoryStatus::Active), None, 15)?
         };
 
         let mut decisions_and_facts = String::new();
@@ -197,12 +240,22 @@ impl<'a> RetrievalEngine<'a> {
         }
 
         if !decisions_and_facts.is_empty() {
-            add_section("High-Confidence Decisions & Architectural Facts", &decisions_and_facts, &mut sections, &mut current_chars);
+            add_section(
+                "High-Confidence Decisions & Architectural Facts",
+                &decisions_and_facts,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 4. Relevant Preferences
         if !other_prefs_str.is_empty() {
-            add_section("Preferences & Conventions", &other_prefs_str, &mut sections, &mut current_chars);
+            add_section(
+                "Preferences & Conventions",
+                &other_prefs_str,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 5. Relevant Warnings and Unresolved Failures
@@ -212,7 +265,12 @@ impl<'a> RetrievalEngine<'a> {
             warnings_str.push_str(&line);
         }
         if !warnings_str.is_empty() {
-            add_section("Active Warnings & Unresolved Failures", &warnings_str, &mut sections, &mut current_chars);
+            add_section(
+                "Active Warnings & Unresolved Failures",
+                &warnings_str,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 6. Relevant Successful Procedures (Success Traces)
@@ -234,21 +292,37 @@ impl<'a> RetrievalEngine<'a> {
             }
         }
         if !traces_str.is_empty() {
-            add_section("Relevant Success Traces (Repeatable Procedures)", &traces_str, &mut sections, &mut current_chars);
+            add_section(
+                "Relevant Success Traces (Repeatable Procedures)",
+                &traces_str,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 7. Autonomous Procedural Playbooks
         let skills = self.db.list_skills(project_id, 5)?;
         let mut skills_str = String::new();
         for s in skills {
-            let steps_preview = s.steps.iter().take(3).cloned().collect::<Vec<_>>().join("\n  ");
+            let steps_preview = s
+                .steps
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n  ");
             skills_str.push_str(&format!(
                 "- **{}** (successes: {}):\n  {}\n",
                 s.name, s.success_count, steps_preview
             ));
         }
         if !skills_str.is_empty() {
-            add_section("Autonomous Procedural Playbooks (Synthesized Skills)", &skills_str, &mut sections, &mut current_chars);
+            add_section(
+                "Autonomous Procedural Playbooks (Synthesized Skills)",
+                &skills_str,
+                &mut sections,
+                &mut current_chars,
+            );
         }
 
         // 8. Adaptive Tiered Product Specifications & Architecture Guidelines (L0/L1/L2)
@@ -261,7 +335,13 @@ impl<'a> RetrievalEngine<'a> {
 
                     for d in &docs {
                         let rel = if let Some(q) = task_query {
-                            compute_doc_relevance(q, &d.title, &d.category, &d.relative_path, d.l0_abstract.as_deref())
+                            compute_doc_relevance(
+                                q,
+                                &d.title,
+                                &d.category,
+                                &d.relative_path,
+                                d.l0_abstract.as_deref(),
+                            )
                         } else {
                             0.0
                         };
@@ -275,7 +355,8 @@ impl<'a> RetrievalEngine<'a> {
 
                     // For highly relevant docs: expand to L2 section overview
                     if !elevated_docs.is_empty() {
-                        docs_str.push_str("#### 🎯 Active Task Relevant Specifications (L2 Detail)\n");
+                        docs_str
+                            .push_str("#### 🎯 Active Task Relevant Specifications (L2 Detail)\n");
                         for d in &elevated_docs {
                             docs_str.push_str(&format!(
                                 "##### [{}] {} (`{}`)\n",
@@ -299,15 +380,31 @@ impl<'a> RetrievalEngine<'a> {
                         }
                         for d in ambient_docs.iter().take(6) {
                             if let Some(l0) = &d.l0_abstract {
-                                docs_str.push_str(&format!("- **[{}] {}**: {} (`{}`)\n", d.category.to_uppercase(), d.title, l0, d.relative_path));
+                                docs_str.push_str(&format!(
+                                    "- **[{}] {}**: {} (`{}`)\n",
+                                    d.category.to_uppercase(),
+                                    d.title,
+                                    l0,
+                                    d.relative_path
+                                ));
                             } else {
-                                docs_str.push_str(&format!("- **[{}] {}** (`{}`)\n", d.category.to_uppercase(), d.title, d.relative_path));
+                                docs_str.push_str(&format!(
+                                    "- **[{}] {}** (`{}`)\n",
+                                    d.category.to_uppercase(),
+                                    d.title,
+                                    d.relative_path
+                                ));
                             }
                         }
                     }
 
                     if !docs_str.is_empty() {
-                        add_section("Product Specifications & Architecture Guidelines", &docs_str, &mut sections, &mut current_chars);
+                        add_section(
+                            "Product Specifications & Architecture Guidelines",
+                            &docs_str,
+                            &mut sections,
+                            &mut current_chars,
+                        );
                     }
                 }
             }
@@ -315,7 +412,12 @@ impl<'a> RetrievalEngine<'a> {
 
         // 9. Memory Instructions
         let instructions = "- Memories and traces are persistent across chats.\n- High-confidence facts have been verified by prior tool executions.\n- Use `memory_save` or `trace_save` for durable learnings, or `failure_resolve` when an error is fixed.\n";
-        add_section("AutoMemory Context Guidelines", instructions, &mut sections, &mut current_chars);
+        add_section(
+            "AutoMemory Context Guidelines",
+            instructions,
+            &mut sections,
+            &mut current_chars,
+        );
 
         let mut output = String::new();
         output.push_str("# AutoMemory Active Context\n\n");
@@ -338,10 +440,18 @@ impl<'a> RetrievalEngine<'a> {
         let expanded_query = self.expand_hyde_query(query);
 
         // 1. Hybrid Search over memories via FTS5 + Vector Embeddings with RRF
-        let fts_results = self.db.search_memories_fts(&expanded_query, project_id, limit * 2).unwrap_or_default();
-        let query_emb = self.vec_engine.embed_text(&expanded_query).unwrap_or_default();
+        let fts_results = self
+            .db
+            .search_memories_fts(&expanded_query, project_id, limit * 2)
+            .unwrap_or_default();
+        let query_emb = self
+            .vec_engine
+            .embed_text(&expanded_query)
+            .unwrap_or_default();
         let vec_results = if !query_emb.is_empty() {
-            self.db.search_memories_vector(&query_emb, project_id, limit * 2).unwrap_or_default()
+            self.db
+                .search_memories_vector(&query_emb, project_id, limit * 2)
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -362,12 +472,17 @@ impl<'a> RetrievalEngine<'a> {
         let traces = self.db.list_traces(project_id, limit)?;
         let q_lower = query.to_lowercase();
         for t in traces {
-            if t.title.to_lowercase().contains(&q_lower) || t.category.to_lowercase().contains(&q_lower) {
+            if t.title.to_lowercase().contains(&q_lower)
+                || t.category.to_lowercase().contains(&q_lower)
+            {
                 results.push(SearchResult {
                     id: t.id,
                     kind: "trace".to_string(),
                     title: t.title.clone(),
-                    content: format!("Category: {}, Preconditions: {:?}", t.category, t.preconditions),
+                    content: format!(
+                        "Category: {}, Preconditions: {:?}",
+                        t.category, t.preconditions
+                    ),
                     score: 0.85,
                     project_id: t.project_id,
                 });
@@ -391,7 +506,11 @@ impl<'a> RetrievalEngine<'a> {
             }
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         Ok(results)
     }
@@ -407,7 +526,13 @@ pub struct SearchResult {
     pub project_id: Option<String>,
 }
 
-fn compute_doc_relevance(query: &str, title: &str, category: &str, path: &str, l0: Option<&str>) -> f32 {
+fn compute_doc_relevance(
+    query: &str,
+    title: &str,
+    category: &str,
+    path: &str,
+    l0: Option<&str>,
+) -> f32 {
     let q_lower = query.to_lowercase();
     let q_words: Vec<&str> = q_lower.split_whitespace().filter(|w| w.len() > 2).collect();
     if q_words.is_empty() {

@@ -65,9 +65,15 @@ impl McpServer {
                         ));
                     }
                 };
-                let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                let arguments = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
                 let tool_result: ToolCallResult = self.registry.call_tool(name, &arguments);
-                Some(JsonRpcResponse::success(id, serde_json::to_value(tool_result).unwrap_or_default()))
+                Some(JsonRpcResponse::success(
+                    id,
+                    serde_json::to_value(tool_result).unwrap_or_default(),
+                ))
             }
 
             unknown => Some(JsonRpcResponse::error(

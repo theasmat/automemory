@@ -1,5 +1,7 @@
 use crate::db::Database;
-use crate::models::{AgentInfo, ArtifactRef, NormalizedEvent, ProjectRef, SessionSummary, ToolInfo};
+use crate::models::{
+    AgentInfo, ArtifactRef, NormalizedEvent, ProjectRef, SessionSummary, ToolInfo,
+};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
@@ -7,22 +9,41 @@ use rusqlite::params;
 impl Database {
     pub fn append_event(&self, event: &NormalizedEvent) -> Result<()> {
         let conn = self.conn();
-        let (tool_name, tool_category, tool_input, tool_input_hash, tool_output, tool_output_hash, status, exit_code, duration_ms) =
-            if let Some(ref t) = event.tool {
-                (
-                    Some(t.name.clone()),
-                    Some(t.category.clone()),
-                    t.input.as_ref().map(|v| v.to_string()),
-                    t.input_hash.clone(),
-                    t.output.as_ref().map(|v| v.to_string()),
-                    t.output_hash.clone(),
-                    t.status.clone(),
-                    t.exit_code,
-                    t.duration_ms.map(|d| d as i64),
-                )
-            } else {
-                (None, None, None, None, None, None, "success".to_string(), None, None)
-            };
+        let (
+            tool_name,
+            tool_category,
+            tool_input,
+            tool_input_hash,
+            tool_output,
+            tool_output_hash,
+            status,
+            exit_code,
+            duration_ms,
+        ) = if let Some(ref t) = event.tool {
+            (
+                Some(t.name.clone()),
+                Some(t.category.clone()),
+                t.input.as_ref().map(|v| v.to_string()),
+                t.input_hash.clone(),
+                t.output.as_ref().map(|v| v.to_string()),
+                t.output_hash.clone(),
+                t.status.clone(),
+                t.exit_code,
+                t.duration_ms.map(|d| d as i64),
+            )
+        } else {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "success".to_string(),
+                None,
+                None,
+            )
+        };
 
         let artifacts_json = serde_json::to_string(&event.artifacts)?;
         let raw_payload_json = event.raw_payload.as_ref().map(|v| v.to_string());
@@ -116,7 +137,8 @@ impl Database {
                 duration_ms: duration_ms.map(|d| d as u64),
             });
 
-            let artifacts: Vec<ArtifactRef> = serde_json::from_str(&artifacts_str).unwrap_or_default();
+            let artifacts: Vec<ArtifactRef> =
+                serde_json::from_str(&artifacts_str).unwrap_or_default();
             let raw_payload = raw_payload_str.and_then(|s| serde_json::from_str(&s).ok());
 
             Ok(NormalizedEvent {
@@ -152,7 +174,10 @@ impl Database {
 
     pub fn mark_event_processed(&self, event_id: &str) -> Result<()> {
         let conn = self.conn();
-        conn.execute("UPDATE tool_events SET processed = 1 WHERE event_id = ?1", params![event_id])?;
+        conn.execute(
+            "UPDATE tool_events SET processed = 1 WHERE event_id = ?1",
+            params![event_id],
+        )?;
         Ok(())
     }
 
@@ -209,7 +234,8 @@ impl Database {
                 duration_ms: duration_ms.map(|d| d as u64),
             });
 
-            let artifacts: Vec<ArtifactRef> = serde_json::from_str(&artifacts_str).unwrap_or_default();
+            let artifacts: Vec<ArtifactRef> =
+                serde_json::from_str(&artifacts_str).unwrap_or_default();
             let raw_payload = raw_payload_str.and_then(|s| serde_json::from_str(&s).ok());
 
             Ok(NormalizedEvent {
@@ -243,7 +269,11 @@ impl Database {
         Ok(events)
     }
 
-    pub fn list_sessions(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<SessionSummary>> {
+    pub fn list_sessions(
+        &self,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SessionSummary>> {
         let conn = self.conn();
         let res = if let Some(pid) = project_id {
             let mut stmt = conn.prepare(
@@ -363,7 +393,8 @@ impl Database {
                 duration_ms: duration_ms.map(|d| d as u64),
             });
 
-            let artifacts: Vec<ArtifactRef> = serde_json::from_str(&artifacts_str).unwrap_or_default();
+            let artifacts: Vec<ArtifactRef> =
+                serde_json::from_str(&artifacts_str).unwrap_or_default();
             let raw_payload = raw_payload_str.and_then(|s| serde_json::from_str(&s).ok());
 
             Ok(NormalizedEvent {

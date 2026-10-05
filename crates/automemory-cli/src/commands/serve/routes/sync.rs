@@ -36,10 +36,15 @@ pub async fn api_sync_status(
     State(state): State<AppState>,
     Query(params): Query<ProjectQuery>,
 ) -> impl IntoResponse {
-    let project_id = params.project_id.unwrap_or_else(|| "default-project".to_string());
+    let project_id = params
+        .project_id
+        .unwrap_or_else(|| "default-project".to_string());
     let docs = state.db.list_documents(&project_id).unwrap_or_default();
     let (active_mem, _) = state.db.count_memories(Some(&project_id)).unwrap_or((0, 0));
-    let skills = state.db.list_skills(Some(&project_id), 100).unwrap_or_default();
+    let skills = state
+        .db
+        .list_skills(Some(&project_id), 100)
+        .unwrap_or_default();
 
     let mut pending = 0;
     let mut synced = 0;
@@ -56,7 +61,12 @@ pub async fn api_sync_status(
     // Check canonical snapshots
     let mut snapshots = Vec::new();
     let config = automemory_core::config::Config::default_config();
-    let deltas_dir = config.home_dir.join("context").join("projects").join(&project_id).join("deltas");
+    let deltas_dir = config
+        .home_dir
+        .join("context")
+        .join("projects")
+        .join(&project_id)
+        .join("deltas");
     if let Ok(entries) = fs::read_dir(deltas_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             if let Some(name) = entry.file_name().to_str() {
@@ -69,7 +79,8 @@ pub async fn api_sync_status(
     snapshots.sort();
     snapshots.reverse();
 
-    let (device_id, device_name) = crate::commands::sync::get_or_create_device_identity(&config.home_dir);
+    let (device_id, device_name) =
+        crate::commands::sync::get_or_create_device_identity(&config.home_dir);
 
     Json(json!({
         "project_id": project_id,
@@ -84,7 +95,6 @@ pub async fn api_sync_status(
     }))
 }
 
-
 // Local mock cloud endpoint for offline testing
 pub async fn api_mock_cloud_sync(
     State(_state): State<AppState>,
@@ -92,10 +102,17 @@ pub async fn api_mock_cloud_sync(
 ) -> impl IntoResponse {
     let project_id = payload.project_id.clone();
     let config = automemory_core::config::Config::default_config();
-    let mock_dir = config.home_dir.join("mock_cloud").join("projects").join(&project_id);
+    let mock_dir = config
+        .home_dir
+        .join("mock_cloud")
+        .join("projects")
+        .join(&project_id);
     let _ = fs::create_dir_all(&mock_dir);
     let manifest_path = mock_dir.join("manifest.json");
-    let _ = fs::write(&manifest_path, serde_json::to_string_pretty(&payload).unwrap_or_default());
+    let _ = fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&payload).unwrap_or_default(),
+    );
 
     Json(json!({
         "status": "success",
@@ -112,7 +129,12 @@ pub async fn api_mock_cloud_manifest(
     Path(project_id): Path<String>,
 ) -> impl IntoResponse {
     let config = automemory_core::config::Config::default_config();
-    let manifest_path = config.home_dir.join("mock_cloud").join("projects").join(&project_id).join("manifest.json");
+    let manifest_path = config
+        .home_dir
+        .join("mock_cloud")
+        .join("projects")
+        .join(&project_id)
+        .join("manifest.json");
     if let Ok(content) = fs::read_to_string(&manifest_path) {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
             return Json(val);

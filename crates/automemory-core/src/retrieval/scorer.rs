@@ -42,17 +42,22 @@ impl HybridScorer {
         vec_results: Vec<(Memory, f32)>,
         limit: usize,
     ) -> Vec<ScoredCandidate> {
-        let mut candidate_map: HashMap<String, (Memory, Option<usize>, Option<f32>)> = HashMap::new();
+        let mut candidate_map: HashMap<String, (Memory, Option<usize>, Option<f32>)> =
+            HashMap::new();
 
         // 1. Ingest FTS results (0-indexed rank)
         for (rank, (mem, _score)) in fts_results.into_iter().enumerate() {
-            let entry = candidate_map.entry(mem.id.clone()).or_insert_with(|| (mem.clone(), None, None));
+            let entry = candidate_map
+                .entry(mem.id.clone())
+                .or_insert_with(|| (mem.clone(), None, None));
             entry.1 = Some(rank);
         }
 
         // 2. Ingest Vector results
         for (mem, sim) in vec_results {
-            let entry = candidate_map.entry(mem.id.clone()).or_insert_with(|| (mem.clone(), None, None));
+            let entry = candidate_map
+                .entry(mem.id.clone())
+                .or_insert_with(|| (mem.clone(), None, None));
             entry.2 = Some(sim);
         }
 
@@ -152,7 +157,10 @@ mod tests {
         let ranked = scorer.fuse_and_rank(fts_results, vec_results, 5);
 
         assert!(!ranked.is_empty());
-        assert_eq!(ranked[0].memory.id, "m1", "m1 is in both FTS and Vec so must rank first");
+        assert_eq!(
+            ranked[0].memory.id, "m1",
+            "m1 is in both FTS and Vec so must rank first"
+        );
         assert!(ranked[0].final_score > 0.0);
     }
 }

@@ -40,7 +40,10 @@ impl DocumentWatcher {
 
         for (project, path) in &projects_with_paths {
             if path.exists() && path.is_dir() {
-                info!("Starting file watch for project '{}' at {:?}", project.slug, path);
+                info!(
+                    "Starting file watch for project '{}' at {:?}",
+                    project.slug, path
+                );
                 let _ = watcher.watch(path, RecursiveMode::Recursive);
             }
         }
@@ -51,7 +54,8 @@ impl DocumentWatcher {
             // Keep watcher alive inside thread
             let _watcher = watcher;
             let scanner = DocumentScanner::new(db);
-            let mut last_processed: std::collections::HashMap<PathBuf, std::time::Instant> = std::collections::HashMap::new();
+            let mut last_processed: std::collections::HashMap<PathBuf, std::time::Instant> =
+                std::collections::HashMap::new();
 
             while let Ok(res) = rx.recv() {
                 match res {
@@ -62,7 +66,10 @@ impl DocumentWatcher {
                                     if !file_path.is_file() {
                                         continue;
                                     }
-                                    let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                                    let ext = file_path
+                                        .extension()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or("");
                                     if ext != "md" && ext != "txt" && ext != "json" {
                                         continue;
                                     }
@@ -73,11 +80,14 @@ impl DocumentWatcher {
                                             continue;
                                         }
                                     }
-                                    last_processed.insert(file_path.clone(), std::time::Instant::now());
+                                    last_processed
+                                        .insert(file_path.clone(), std::time::Instant::now());
 
                                     // Prune old debounce entries if map grows large
                                     if last_processed.len() > 1000 {
-                                        last_processed.retain(|_, time| time.elapsed() < Duration::from_secs(60));
+                                        last_processed.retain(|_, time| {
+                                            time.elapsed() < Duration::from_secs(60)
+                                        });
                                     }
 
                                     for (project, root) in &projects_with_paths {

@@ -21,7 +21,10 @@ pub fn summary(project: Option<String>) -> Result<()> {
     if summary.by_type.is_empty() {
         println!("(No proposals recorded in database)");
     } else {
-        println!("{:<28} {:>10} {:>10} {:>10}", "Proposal Type", "Pending", "Approved", "Rejected");
+        println!(
+            "{:<28} {:>10} {:>10} {:>10}",
+            "Proposal Type", "Pending", "Approved", "Rejected"
+        );
         println!("{:-<28} {:-<10} {:-<10} {:-<10}", "", "", "", "");
         for item in summary.by_type {
             println!(
@@ -103,7 +106,10 @@ pub fn approve_all(proposal_type: Option<String>, project: Option<String>) -> Re
     println!("         AutoMemory Bulk Proposal Approval Result       ");
     println!("========================================================");
     println!("  • Proposals Approved:        {}", result.approved_count);
-    println!("  • Duplicate Memories Archived: {}", result.archived_memories_count);
+    println!(
+        "  • Duplicate Memories Archived: {}",
+        result.archived_memories_count
+    );
     println!("========================================================");
 
     Ok(())

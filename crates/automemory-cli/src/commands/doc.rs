@@ -48,7 +48,8 @@ pub fn track(
             "prd".to_string()
         } else if lower.contains("adr") || lower.contains("decision") {
             "adr".to_string()
-        } else if lower.contains("rule") || lower.contains("invariant") || lower.contains("policy") {
+        } else if lower.contains("rule") || lower.contains("invariant") || lower.contains("policy")
+        {
             "business-rules".to_string()
         } else if lower.contains("api") || lower.contains("spec") || lower.contains("schema") {
             "api".to_string()
@@ -94,7 +95,11 @@ pub fn track(
     db.track_document(&doc, Some(&content))?;
 
     // Copy to canonical context directory: ~/.automemory/context/projects/{project_id}/docs/{category}/
-    let context_root = config.home_dir.join("context").join("projects").join(&project_id);
+    let context_root = config
+        .home_dir
+        .join("context")
+        .join("projects")
+        .join(&project_id);
     let target_context_dir = context_root.join("docs").join(&category);
     fs::create_dir_all(&target_context_dir)?;
     let target_filename = target_path.file_name().unwrap_or_default();
@@ -104,12 +109,23 @@ pub fn track(
     let compiler = DocCompiler::new(&db);
     let _ = compiler.compile_project_docs(&project_id, &context_root);
 
-    println!("✓ Successfully tracked document for project '{}':", project_id);
+    println!(
+        "✓ Successfully tracked document for project '{}':",
+        project_id
+    );
     println!("  📄 File:        {}", rel_path);
     println!("  🏷️  Category:    [{}] {}", category.to_uppercase(), title);
-    println!("  🔒 SHA-256:     {} ({} bytes)", &hash[..12], content.len());
+    println!(
+        "  🔒 SHA-256:     {} ({} bytes)",
+        &hash[..12],
+        content.len()
+    );
     println!("  💡 L0 Abstract: {}", l0);
-    println!("  📁 Context:     .context/docs/{}/{}", category, target_filename.to_string_lossy());
+    println!(
+        "  📁 Context:     .context/docs/{}/{}",
+        category,
+        target_filename.to_string_lossy()
+    );
 
     Ok(())
 }
@@ -122,10 +138,15 @@ pub fn list(project_opt: Option<String>) -> Result<()> {
     let project_id = project_opt.unwrap_or_else(|| infer_project_id(&cwd));
     let docs = db.list_documents(&project_id)?;
 
-    println!("=== Tracked Product Documents & Specs: '{}' ===\n", project_id);
+    println!(
+        "=== Tracked Product Documents & Specs: '{}' ===\n",
+        project_id
+    );
 
     if docs.is_empty() {
-        println!("  No documents tracked yet. Track a document using: 'automemory doc track <path>'");
+        println!(
+            "  No documents tracked yet. Track a document using: 'automemory doc track <path>'"
+        );
         return Ok(());
     }
 
@@ -138,7 +159,11 @@ pub fn list(project_opt: Option<String>) -> Result<()> {
 
         println!("• [{}] {}", d.category.to_uppercase(), d.title);
         println!("  Path:   {}", d.relative_path);
-        println!("  Hash:   {} | Status: {}", &d.content_hash[..12], sync_status);
+        println!(
+            "  Hash:   {} | Status: {}",
+            &d.content_hash[..12],
+            sync_status
+        );
         if let Some(l0) = d.l0_abstract {
             println!("  L0:     {}", l0);
         }
@@ -154,7 +179,11 @@ pub fn compile(project_opt: Option<String>) -> Result<()> {
     let db = Database::open(&config.db_path)?;
 
     let project_id = project_opt.unwrap_or_else(|| infer_project_id(&cwd));
-    let context_root = config.home_dir.join("context").join("projects").join(&project_id);
+    let context_root = config
+        .home_dir
+        .join("context")
+        .join("projects")
+        .join(&project_id);
 
     println!("Compiling L0/L1 summaries for project '{}'...", project_id);
     let compiler = DocCompiler::new(&db);
@@ -211,9 +240,17 @@ pub fn scan(path_opt: Option<String>, project_opt: Option<String>) -> Result<()>
     let scanner = automemory_core::docs::DocumentScanner::new(db.clone());
     let docs = scanner.scan_project(&project, &target_dir)?;
 
-    println!("\n✓ Auto-discovery complete: tracked & compiled {} documents!", docs.len());
+    println!(
+        "\n✓ Auto-discovery complete: tracked & compiled {} documents!",
+        docs.len()
+    );
     for d in &docs {
-        println!("  • [{}] {} -> {}", d.category.to_uppercase(), d.title, d.relative_path);
+        println!(
+            "  • [{}] {} -> {}",
+            d.category.to_uppercase(),
+            d.title,
+            d.relative_path
+        );
     }
     println!("  📄 Updated: .context/.overview.md");
 

@@ -63,20 +63,31 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
     if event == "boot" {
         let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
-        let ctx = engine.assemble_context(effective_project_id, None, 2000).unwrap_or_default();
+        let ctx = engine
+            .assemble_context(effective_project_id, None, 2000)
+            .unwrap_or_default();
         if !ctx.trim().is_empty() {
-            println!("{}", json!({
-                "context": ctx,
-                "additionalContext": ctx,
-                "prompt": ctx,
-            }));
+            println!(
+                "{}",
+                json!({
+                    "context": ctx,
+                    "additionalContext": ctx,
+                    "prompt": ctx,
+                })
+            );
             return Ok(());
         }
     }
 
     // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
     if event == "pre-tool" {
-        if !evaluate_pre_tool_guardrail(&db, &raw_payload, tool_info.as_ref(), effective_project_id, autopilot_mode)? {
+        if !evaluate_pre_tool_guardrail(
+            &db,
+            &raw_payload,
+            tool_info.as_ref(),
+            effective_project_id,
+            autopilot_mode,
+        )? {
             return Ok(());
         }
     }
@@ -128,7 +139,10 @@ fn evaluate_pre_tool_guardrail(
 
     match decision.action {
         GuardrailAction::Block => {
-            eprintln!("🛑 [AutoMemory Guardrail] CRITICAL STOP: {}", decision.title);
+            eprintln!(
+                "🛑 [AutoMemory Guardrail] CRITICAL STOP: {}",
+                decision.title
+            );
             eprintln!("   Reason: {}", decision.risk_summary);
             if let Some(hint) = &decision.mitigation_hint {
                 eprintln!("   💡 Mitigation: {}", hint);
@@ -275,10 +289,7 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
 
 /// Normalizes arbitrary agent payloads (Antigravity, Claude Code, Cursor, Copilot)
 /// into a structured `(Option<ToolInfo>, session_id, Option<task_id>)`.
-fn normalize_payload(
-    event: &str,
-    raw: &Value,
-) -> (Option<ToolInfo>, String, Option<String>) {
+fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Option<String>) {
     let session_id = raw
         .get("conversationId")
         .or_else(|| raw.get("session_id"))
@@ -297,7 +308,10 @@ fn normalize_payload(
         .get("toolCall")
         .or_else(|| raw.get("tool_call"))
         .or_else(|| {
-            if raw.get("toolName").is_some() || raw.get("name").is_some() || raw.get("tool").is_some() {
+            if raw.get("toolName").is_some()
+                || raw.get("name").is_some()
+                || raw.get("tool").is_some()
+            {
                 Some(raw)
             } else {
                 None

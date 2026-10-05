@@ -27,7 +27,10 @@ pub fn list(project_slug: Option<String>) -> Result<()> {
     println!("└────────────────────────────────────────────────────────────────────────┘");
 
     if skills.is_empty() {
-        println!("No procedural skills synthesized yet for project '{}'.", slug);
+        println!(
+            "No procedural skills synthesized yet for project '{}'.",
+            slug
+        );
         println!("Skills are automatically synthesized when successful execution traces repeat.");
         return Ok(());
     }
@@ -78,7 +81,11 @@ pub fn export(
         Path::new(".agents").join("skills")
     };
 
-    println!("Exporting {} procedural skill(s) to {:?}", skills.len(), target_base);
+    println!(
+        "Exporting {} procedural skill(s) to {:?}",
+        skills.len(),
+        target_base
+    );
 
     let mut exported_count = 0;
     for skill in &skills {
@@ -86,11 +93,18 @@ pub fn export(
             continue;
         }
         let file_path = skill.export_to_skill_dir(&target_base)?;
-        println!("  ✓ Exported skill '{}' -> {:?}", skill.skill_slug(), file_path);
+        println!(
+            "  ✓ Exported skill '{}' -> {:?}",
+            skill.skill_slug(),
+            file_path
+        );
         exported_count += 1;
     }
 
-    println!("Successfully exported {} verified skill(s).", exported_count);
+    println!(
+        "Successfully exported {} verified skill(s).",
+        exported_count
+    );
     Ok(())
 }
 

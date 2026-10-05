@@ -93,18 +93,37 @@ impl ShellCommandTree {
             }
 
             // Inline language scripts: python -c "...", node -e "...", etc.
-            if cmd.is_binary("python") || cmd.is_binary("python3") || cmd.is_binary("node") || cmd.is_binary("ruby") || cmd.is_binary("perl") {
+            if cmd.is_binary("python")
+                || cmd.is_binary("python3")
+                || cmd.is_binary("node")
+                || cmd.is_binary("ruby")
+                || cmd.is_binary("perl")
+            {
                 let is_eval = cmd.has_flag("-c") || cmd.has_flag("-e");
                 if is_eval {
                     for arg in &cmd.positional_args {
                         let lower = arg.to_lowercase();
-                        if (lower.contains("rmtree") || lower.contains("rmdir") || lower.contains("rmsync") || lower.contains("unlink"))
-                            && (lower.contains("'/") || lower.contains("\"/") || lower.contains("'~") || lower.contains("\"~") || lower.contains("os.environ['home']"))
+                        if (lower.contains("rmtree")
+                            || lower.contains("rmdir")
+                            || lower.contains("rmsync")
+                            || lower.contains("unlink"))
+                            && (lower.contains("'/")
+                                || lower.contains("\"/")
+                                || lower.contains("'~")
+                                || lower.contains("\"~")
+                                || lower.contains("os.environ['home']"))
                         {
                             return true;
                         }
-                        if lower.contains("system(") || lower.contains("popen(") || lower.contains("exec(") || lower.contains("spawn(") {
-                            if lower.contains("rm -rf /") || lower.contains("rm -rf ~") || lower.contains("rm -rf $home") {
+                        if lower.contains("system(")
+                            || lower.contains("popen(")
+                            || lower.contains("exec(")
+                            || lower.contains("spawn(")
+                        {
+                            if lower.contains("rm -rf /")
+                                || lower.contains("rm -rf ~")
+                                || lower.contains("rm -rf $home")
+                            {
                                 return true;
                             }
                         }
@@ -118,8 +137,13 @@ impl ShellCommandTree {
     /// Returns true if any command is a destructive git force push to main, master, prod, or release.
     pub fn is_git_force_push_prod(&self) -> bool {
         for cmd in &self.commands {
-            if cmd.is_binary("git") && cmd.positional_args.first().map(|s| s.as_str()) == Some("push") {
-                let has_force = cmd.flags.iter().any(|f| f == "--force" || f == "-f" || f == "--force-with-lease");
+            if cmd.is_binary("git")
+                && cmd.positional_args.first().map(|s| s.as_str()) == Some("push")
+            {
+                let has_force = cmd
+                    .flags
+                    .iter()
+                    .any(|f| f == "--force" || f == "-f" || f == "--force-with-lease");
                 let targets_prod = cmd.positional_args.iter().skip(1).any(|arg| {
                     let a = arg.to_lowercase();
                     a == "main"
@@ -147,7 +171,10 @@ impl ShellCommandTree {
             }
             if cmd.is_binary("dd") {
                 if cmd.flags.iter().any(|f| f.starts_with("of=/dev/"))
-                    || cmd.positional_args.iter().any(|a| a.starts_with("of=/dev/"))
+                    || cmd
+                        .positional_args
+                        .iter()
+                        .any(|a| a.starts_with("of=/dev/"))
                 {
                     return true;
                 }
@@ -159,7 +186,9 @@ impl ShellCommandTree {
     /// Returns true if any command is an unescaped raw database drop or truncate.
     pub fn is_raw_db_drop(&self) -> bool {
         let upper = self.raw_input.to_uppercase();
-        upper.contains("DROP DATABASE") || upper.contains("TRUNCATE TABLE") || upper.contains("DROP SCHEMA")
+        upper.contains("DROP DATABASE")
+            || upper.contains("TRUNCATE TABLE")
+            || upper.contains("DROP SCHEMA")
     }
 
     /// Returns true if plain text secrets (API keys, PATs) are detected directly in the command.
@@ -219,13 +248,19 @@ impl ShellCommandTree {
     /// Returns true if cloud infrastructure teardown is executing.
     pub fn is_cloud_infra_delete(&self) -> bool {
         for cmd in &self.commands {
-            if cmd.is_binary("kubectl") && cmd.positional_args.first().map(|s| s.as_str()) == Some("delete") {
+            if cmd.is_binary("kubectl")
+                && cmd.positional_args.first().map(|s| s.as_str()) == Some("delete")
+            {
                 return true;
             }
-            if cmd.is_binary("helm") && cmd.positional_args.first().map(|s| s.as_str()) == Some("uninstall") {
+            if cmd.is_binary("helm")
+                && cmd.positional_args.first().map(|s| s.as_str()) == Some("uninstall")
+            {
                 return true;
             }
-            if cmd.is_binary("terraform") && cmd.positional_args.first().map(|s| s.as_str()) == Some("destroy") {
+            if cmd.is_binary("terraform")
+                && cmd.positional_args.first().map(|s| s.as_str()) == Some("destroy")
+            {
                 return true;
             }
             if cmd.is_binary("docker")
@@ -242,7 +277,9 @@ impl ShellCommandTree {
     pub fn is_destructive_git_reset(&self) -> bool {
         for cmd in &self.commands {
             if cmd.is_binary("git") {
-                if cmd.positional_args.first().map(|s| s.as_str()) == Some("reset") && cmd.has_flag("--hard") {
+                if cmd.positional_args.first().map(|s| s.as_str()) == Some("reset")
+                    && cmd.has_flag("--hard")
+                {
                     return true;
                 }
                 if cmd.positional_args.first().map(|s| s.as_str()) == Some("clean")
@@ -419,7 +456,9 @@ fn unwrap_command_tokens(tokens: &[String]) -> Vec<ParsedCommand> {
     }
 
     // 2. Handle package/runner wrappers: `npx`, `pnpm`, `bunx`, `yarn`, `bundle exec`, `python -m`
-    if (binary == "npx" || binary == "bunx" || binary == "pnpm" || binary == "yarn") && tokens.len() >= 2 {
+    if (binary == "npx" || binary == "bunx" || binary == "pnpm" || binary == "yarn")
+        && tokens.len() >= 2
+    {
         let mut idx = 1;
         while idx < tokens.len() && tokens[idx].starts_with('-') {
             idx += 1;
@@ -438,7 +477,9 @@ fn unwrap_command_tokens(tokens: &[String]) -> Vec<ParsedCommand> {
     }
 
     // 3. Handle subshells: `sh -c "..."`, `bash -c "..."`, `zsh -c "..."`
-    if (binary == "sh" || binary == "bash" || binary == "zsh" || binary == "dash") && tokens.len() >= 3 {
+    if (binary == "sh" || binary == "bash" || binary == "zsh" || binary == "dash")
+        && tokens.len() >= 3
+    {
         if tokens[1] == "-c" {
             let inner_cmd_str = tokens[2..].join(" ");
             let inner_tree = ShellCommandTree::parse(&inner_cmd_str);

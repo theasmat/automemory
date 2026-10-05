@@ -132,7 +132,12 @@ impl BlindCrypto {
 
         // 3. Global config (~/.automemory/config.toml)
         if let Ok(global_cfg) = crate::config::GlobalConfig::load() {
-            if let Some(k) = global_cfg.cloud.encryption_key.as_ref().or(global_cfg.vault.encryption_key.as_ref()) {
+            if let Some(k) = global_cfg
+                .cloud
+                .encryption_key
+                .as_ref()
+                .or(global_cfg.vault.encryption_key.as_ref())
+            {
                 if !k.trim().is_empty() {
                     return Ok(Self::derive_key(k.trim(), b"automemory-salt-v1"));
                 }
@@ -192,7 +197,10 @@ impl BlindCrypto {
             .decode(&blob.nonce_base64)
             .context("Failed to base64 decode nonce")?;
         if nonce_bytes.len() != 12 {
-            bail!("Invalid nonce length: expected 12 bytes, got {}", nonce_bytes.len());
+            bail!(
+                "Invalid nonce length: expected 12 bytes, got {}",
+                nonce_bytes.len()
+            );
         }
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -200,9 +208,9 @@ impl BlindCrypto {
             .decode(&blob.ciphertext_base64)
             .context("Failed to base64 decode ciphertext")?;
 
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext.as_ref())
-            .map_err(|e| anyhow::anyhow!("AES-GCM decryption failed (tampered or wrong key): {}", e))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|e| {
+            anyhow::anyhow!("AES-GCM decryption failed (tampered or wrong key): {}", e)
+        })?;
 
         Ok(plaintext)
     }
@@ -299,8 +307,14 @@ impl BlindCrypto {
         let payload_json = Self::decrypt_string(master_key, &blob)?;
         let payload: BlindMemoryPayload = serde_json::from_str(&payload_json)?;
 
-        let scope = wire.blind_scope.parse::<MemoryScope>().unwrap_or(MemoryScope::Project);
-        let status = wire.status.parse::<MemoryStatus>().unwrap_or(MemoryStatus::Active);
+        let scope = wire
+            .blind_scope
+            .parse::<MemoryScope>()
+            .unwrap_or(MemoryScope::Project);
+        let status = wire
+            .status
+            .parse::<MemoryStatus>()
+            .unwrap_or(MemoryStatus::Active);
         let created_at = DateTime::parse_from_rfc3339(&wire.created_at)
             .map(|d| d.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
@@ -314,7 +328,9 @@ impl BlindCrypto {
             project_id: if scope == MemoryScope::Global {
                 None
             } else {
-                default_project_id.map(|s| s.to_string()).or_else(|| Some(wire.blind_project_id.clone()))
+                default_project_id
+                    .map(|s| s.to_string())
+                    .or_else(|| Some(wire.blind_project_id.clone()))
             },
             memory_type: payload.memory_type,
             content: payload.content,
@@ -386,7 +402,9 @@ impl BlindCrypto {
 
         Ok(ProceduralSkill {
             id: wire.id.clone(),
-            project_id: default_project_id.map(|s| s.to_string()).or_else(|| wire.blind_project_id.clone()),
+            project_id: default_project_id
+                .map(|s| s.to_string())
+                .or_else(|| wire.blind_project_id.clone()),
             name: payload.name,
             description: payload.description,
             trigger_patterns: payload.trigger_patterns,
@@ -436,7 +454,8 @@ mod tests {
         let salt = b"automemory-salt";
         let key = BlindCrypto::derive_key(secret, salt);
 
-        let sensitive_text = "# Q4 Architecture Plan\nInternal confidential roadmaps with secret API keys.";
+        let sensitive_text =
+            "# Q4 Architecture Plan\nInternal confidential roadmaps with secret API keys.";
         let encrypted = BlindCrypto::encrypt_string(&key, sensitive_text).unwrap();
 
         assert_ne!(encrypted.ciphertext_base64, sensitive_text);
@@ -487,7 +506,8 @@ mod tests {
             scope: MemoryScope::Project,
             project_id: Some("my-cool-project".to_string()),
             memory_type: MemoryType::Decision,
-            content: "We decided to use SQLite at the edge for sub-millisecond queries.".to_string(),
+            content: "We decided to use SQLite at the edge for sub-millisecond queries."
+                .to_string(),
             summary: "Architecture: SQLite edge database decision".to_string(),
             confidence: 0.98,
             importance: 0.95,
@@ -503,7 +523,8 @@ mod tests {
             metadata: serde_json::json!({"phase": "q4"}),
         };
 
-        let wire = BlindCrypto::encrypt_memory(&master_key, &index_key, &mem, "my-cool-project").unwrap();
+        let wire =
+            BlindCrypto::encrypt_memory(&master_key, &index_key, &mem, "my-cool-project").unwrap();
 
         // Verify zero-knowledge properties
         assert_ne!(wire.ciphertext_base64, mem.content);
@@ -513,7 +534,8 @@ mod tests {
         assert_ne!(wire.blind_tags[0], "architecture");
 
         // Decrypt
-        let restored = BlindCrypto::decrypt_memory(&master_key, &wire, Some("my-cool-project")).unwrap();
+        let restored =
+            BlindCrypto::decrypt_memory(&master_key, &wire, Some("my-cool-project")).unwrap();
         assert_eq!(restored.id, mem.id);
         assert_eq!(restored.content, mem.content);
         assert_eq!(restored.summary, mem.summary);
@@ -546,7 +568,8 @@ mod tests {
         let wire = BlindCrypto::encrypt_skill(&master_key, &skill, "my-cool-project").unwrap();
         assert!(!wire.ciphertext_base64.contains("Cloudflare"));
 
-        let restored = BlindCrypto::decrypt_skill(&master_key, &wire, Some("my-cool-project")).unwrap();
+        let restored =
+            BlindCrypto::decrypt_skill(&master_key, &wire, Some("my-cool-project")).unwrap();
         assert_eq!(restored.name, skill.name);
         assert_eq!(restored.description, skill.description);
         assert_eq!(restored.steps, skill.steps);
@@ -559,7 +582,8 @@ mod tests {
         let master_key = BlindCrypto::derive_key("super-secret", b"salt");
         let content = "# Secret Roadmap\nDo not leak!";
 
-        let delta_wire = BlindCrypto::encrypt_delta(&master_key, "plans/secret.md", "plans", content).unwrap();
+        let delta_wire =
+            BlindCrypto::encrypt_delta(&master_key, "plans/secret.md", "plans", content).unwrap();
         assert_ne!(delta_wire.ciphertext_base64, content);
         assert!(!delta_wire.ciphertext_base64.contains("Secret"));
 
@@ -569,7 +593,8 @@ mod tests {
                 ciphertext_base64: delta_wire.ciphertext_base64,
                 nonce_base64: delta_wire.nonce_base64,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(String::from_utf8(decrypted_bytes).unwrap(), content);
     }

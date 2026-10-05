@@ -16,11 +16,17 @@ pub fn get(project_slug: Option<String>) -> Result<()> {
         println!("│              AutoMemory Autopilot Mode                 │");
         println!("├────────────────────────────────────────────────────────┤");
         println!("│  Project: {:<44} │", project.slug);
-        println!("│  Active Mode: {:<40} │", format!("{:?}", project.capture_policy.mode).to_uppercase());
+        println!(
+            "│  Active Mode: {:<40} │",
+            format!("{:?}", project.capture_policy.mode).to_uppercase()
+        );
         println!("└────────────────────────────────────────────────────────┘");
         print_mode_description(project.capture_policy.mode);
     } else {
-        println!("Project '{}' not found in database. Defaulting to VIBE mode.", slug);
+        println!(
+            "Project '{}' not found in database. Defaulting to VIBE mode.",
+            slug
+        );
         print_mode_description(AutopilotMode::Vibe);
     }
 
@@ -39,7 +45,10 @@ pub fn set(mode_str: &str, project_slug: Option<String>) -> Result<()> {
         project.capture_policy.mode = mode;
         project.updated_at = chrono::Utc::now();
         db.save_project(&project)?;
-        println!("✓ Updated project '{}' autopilot mode to '{}'", project.slug, mode);
+        println!(
+            "✓ Updated project '{}' autopilot mode to '{}'",
+            project.slug, mode
+        );
     } else {
         // Create new project if doesn't exist
         let new_project = automemory_core::models::Project {
@@ -57,7 +66,10 @@ pub fn set(mode_str: &str, project_slug: Option<String>) -> Result<()> {
             sync_config: Default::default(),
         };
         db.save_project(&new_project)?;
-        println!("✓ Created project '{}' and set autopilot mode to '{}'", slug, mode);
+        println!(
+            "✓ Created project '{}' and set autopilot mode to '{}'",
+            slug, mode
+        );
     }
 
     print_mode_description(mode);

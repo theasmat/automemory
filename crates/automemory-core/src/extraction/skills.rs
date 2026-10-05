@@ -38,7 +38,11 @@ impl<'a> SkillDistiller<'a> {
             if trace.status != "active" {
                 continue;
             }
-            let key = format!("{}:{}", trace.category.trim().to_lowercase(), trace.title.trim().to_lowercase());
+            let key = format!(
+                "{}:{}",
+                trace.category.trim().to_lowercase(),
+                trace.title.trim().to_lowercase()
+            );
             clusters.entry(key).or_default().push(trace);
         }
 
@@ -49,7 +53,10 @@ impl<'a> SkillDistiller<'a> {
                 continue;
             }
 
-            let avg_repro = cluster_traces.iter().map(|t| t.reproducibility_score).sum::<f64>()
+            let avg_repro = cluster_traces
+                .iter()
+                .map(|t| t.reproducibility_score)
+                .sum::<f64>()
                 / (cluster_traces.len() as f64);
 
             if avg_repro < min_reproducibility {
@@ -121,15 +128,13 @@ mod tests {
             category: "database".to_string(),
             status: "active".to_string(),
             preconditions: vec!["SQLite DB initialized".to_string()],
-            steps: vec![
-                TraceStep {
-                    position: 1,
-                    action: "Set busy timeout pragma".to_string(),
-                    tool: "edit".to_string(),
-                    command: Some("PRAGMA busy_timeout = 5000".to_string()),
-                    verification: Some("Passed".to_string()),
-                }
-            ],
+            steps: vec![TraceStep {
+                position: 1,
+                action: "Set busy timeout pragma".to_string(),
+                tool: "edit".to_string(),
+                command: Some("PRAGMA busy_timeout = 5000".to_string()),
+                verification: Some("Passed".to_string()),
+            }],
             reproducibility_score: 0.98,
             caveats: vec![],
             source_task_id: None,
@@ -178,7 +183,9 @@ mod tests {
         }
 
         // With threshold 3, it should NOT distill a skill yet
-        let pending = distiller.distill_skills_with_threshold(Some("proj_alpha"), 3, 0.85).unwrap();
+        let pending = distiller
+            .distill_skills_with_threshold(Some("proj_alpha"), 3, 0.85)
+            .unwrap();
         assert_eq!(pending.len(), 0);
 
         // Add the 3rd trace to cross the threshold
@@ -206,7 +213,9 @@ mod tests {
         db.save_trace(&trace3).unwrap();
 
         // Now it crosses the threshold of 3 occurrences and >= 0.85 reproducibility!
-        let promoted = distiller.distill_skills_with_threshold(Some("proj_alpha"), 3, 0.85).unwrap();
+        let promoted = distiller
+            .distill_skills_with_threshold(Some("proj_alpha"), 3, 0.85)
+            .unwrap();
         assert_eq!(promoted.len(), 1);
         assert_eq!(promoted[0].success_count, 3);
         assert!(promoted[0].name.contains("Run cargo build in release mode"));

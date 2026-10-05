@@ -16,9 +16,16 @@ pub use config::Config;
 pub use crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob, EncryptedDeltaWire};
 pub use db::Database;
 pub use docs::{DocumentScanner, DocumentWatcher};
-pub use extraction::{ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics, ExtractionWorker, ImplicitTaskSegmenter, LlmExtractor, LlmProviderConfig, TaskBoundaryReason, TaskSegment, TrajectoryDistiller};
+pub use extraction::{
+    ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics,
+    ExtractionWorker, ImplicitTaskSegmenter, LlmExtractor, LlmProviderConfig, TaskBoundaryReason,
+    TaskSegment, TrajectoryDistiller,
+};
 pub use graph::{GraphBuilder, GraphEdge, GraphEntity, GraphQuery, ImpactReport};
-pub use guardrails::{CustomGuardrailRule, GuardrailAction, GuardrailDecision, GuardrailEvaluator, GuardrailRule, GuardrailSeverity, RiskCategory};
+pub use guardrails::{
+    CustomGuardrailRule, GuardrailAction, GuardrailDecision, GuardrailEvaluator, GuardrailRule,
+    GuardrailSeverity, RiskCategory,
+};
 pub use models::*;
 pub use redaction::{contains_secrets, redact_json, redact_text};
 pub use retrieval::{HybridScorer, RetrievalEngine, ScoredCandidate, SearchResult, VectorEngine};
@@ -47,10 +54,13 @@ mod tests {
             sync_config: SyncConfig::default(),
         };
         db.save_project(&project).expect("save_project failed");
-        db.add_project_path("proj-1", "/dev/test-project", true).expect("add_project_path failed");
+        db.add_project_path("proj-1", "/dev/test-project", true)
+            .expect("add_project_path failed");
 
         // Lookup
-        let found = db.find_project_by_path("/dev/test-project/src/main.rs").expect("find failed");
+        let found = db
+            .find_project_by_path("/dev/test-project/src/main.rs")
+            .expect("find failed");
         assert!(found.is_some());
         assert_eq!(found.unwrap().slug, "test-project");
 
@@ -78,7 +88,9 @@ mod tests {
         db.save_memory(&mem).expect("save_memory failed");
 
         // 3. FTS5 Search
-        let results = db.search_memories_fts("JWT", Some("proj-1"), 5).expect("fts search failed");
+        let results = db
+            .search_memories_fts("JWT", Some("proj-1"), 5)
+            .expect("fts search failed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0.summary, "Use 30m JWT expiry");
 
@@ -89,7 +101,9 @@ mod tests {
         db.update_memory(&updated_mem, Some("Increased timeout for stability"), &[])
             .expect("update_memory failed");
 
-        let versions = db.get_memory_versions(&mem.id).expect("get_memory_versions failed");
+        let versions = db
+            .get_memory_versions(&mem.id)
+            .expect("get_memory_versions failed");
         assert_eq!(versions.len(), 2);
         assert_eq!(versions[1].version_num, 2);
         assert_eq!(versions[1].summary, "Use 60m JWT expiry");
@@ -109,7 +123,9 @@ mod tests {
         db.save_memory(&dup_mem).expect("save duplicate failed");
 
         let consolidator = ConsolidationWorker::new(std::sync::Arc::new(db));
-        let report = consolidator.consolidate(Some("proj-1")).expect("consolidate failed");
+        let report = consolidator
+            .consolidate(Some("proj-1"))
+            .expect("consolidate failed");
         assert_eq!(report.duplicates_merged, 1);
         assert_eq!(report.proposals_created, 1);
     }

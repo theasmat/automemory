@@ -34,7 +34,8 @@ impl StdioTransport {
                     }
                 }
                 Err(e) => {
-                    let err_resp = JsonRpcResponse::error(None, -32700, &format!("Parse error: {}", e));
+                    let err_resp =
+                        JsonRpcResponse::error(None, -32700, &format!("Parse error: {}", e));
                     let mut serialized = serde_json::to_string(&err_resp)?;
                     serialized.push('\n');
                     stdout.write_all(serialized.as_bytes()).await?;
