@@ -44,11 +44,44 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         "codex" | "openai" => {
             connect_codex(&home, &cwd, &exe_path, global)?;
         }
+        "opencode" => {
+            connect_opencode(&home, &cwd, &exe_path, global)?;
+        }
+        "goose" | "block-goose" => {
+            connect_goose(&home, &cwd, &exe_path, global)?;
+        }
+        "kilo" | "kilocode" | "kilo-code" => {
+            connect_kilo(&home, &cwd, &exe_path, global)?;
+        }
+        "aider" => {
+            connect_aider(&home, &cwd, &exe_path, global)?;
+        }
+        "warp" => {
+            connect_warp(&home, &cwd, &exe_path, global)?;
+        }
+        "gemini-cli" | "geminicli" => {
+            connect_gemini_cli(&home, &cwd, &exe_path, global)?;
+        }
+        "devin" => {
+            connect_devin(&home, &cwd, &exe_path, global)?;
+        }
+        "copilot" | "github-copilot" | "ghcopilot" => {
+            connect_copilot(&home, &cwd, &exe_path, global)?;
+        }
+        "openclaw" => {
+            connect_openclaw(&home, &cwd, &exe_path, global)?;
+        }
+        "hermes" => {
+            connect_hermes(&home, &cwd, &exe_path, global)?;
+        }
+        "claude-desktop" | "claudedesktop" => {
+            connect_claude_desktop(&home, &cwd, &exe_path, global)?;
+        }
         "all" => {
             connect_all(&home, &cwd, &exe_path, global)?;
         }
         other => {
-            println!("Unknown agent host: '{}'. Supported: agy, claude, cursor, windsurf, continue, cline, roo, zed, codex, all", other);
+            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all", other);
             return Ok(());
         }
     }
@@ -473,16 +506,345 @@ fn connect_all(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
 
     let _ = connect_agy(home, workspace_root, exe_path, global);
     let _ = connect_claude(home, workspace_root, exe_path, global);
+    let _ = connect_claude_desktop(home, workspace_root, exe_path, global);
     let _ = connect_cursor(workspace_root, home, exe_path, global);
     let _ = connect_windsurf(home, workspace_root, exe_path, global);
     let _ = connect_continue(home, workspace_root, exe_path, global);
     let _ = connect_cline(home, workspace_root, exe_path, global);
     let _ = connect_roo(home, workspace_root, exe_path, global);
+    let _ = connect_kilo(home, workspace_root, exe_path, global);
     let _ = connect_zed(home, workspace_root, exe_path, global);
     let _ = connect_codex(home, workspace_root, exe_path, global);
+    let _ = connect_opencode(home, workspace_root, exe_path, global);
+    let _ = connect_goose(home, workspace_root, exe_path, global);
+    let _ = connect_aider(home, workspace_root, exe_path, global);
+    let _ = connect_warp(home, workspace_root, exe_path, global);
+    let _ = connect_gemini_cli(home, workspace_root, exe_path, global);
+    let _ = connect_devin(home, workspace_root, exe_path, global);
+    let _ = connect_copilot(home, workspace_root, exe_path, global);
+    let _ = connect_openclaw(home, workspace_root, exe_path, global);
+    let _ = connect_hermes(home, workspace_root, exe_path, global);
 
     println!("========================================================");
-    println!("✓ All 9 coding agent hosts configured successfully!");
+    println!("✓ All 20 coding agent hosts configured successfully!");
     println!("========================================================");
     Ok(())
+}
+
+// ── OpenCode ─────────────────────────────────────────────────────────────────
+fn connect_opencode(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
+    let target_path = if global {
+        home.join(".opencode").join("config.json")
+    } else {
+        workspace_root.join(".opencode").join("config.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to OpenCode at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Goose (Block) ─────────────────────────────────────────────────────────────
+fn connect_goose(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    // Goose uses YAML config at ~/.config/goose/config.yaml
+    let target_path = if global {
+        home.join(".config").join("goose").join("config.yaml")
+    } else {
+        workspace_root.join(".goose").join("config.yaml")
+    };
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Read or create the YAML config
+    let mut content = if target_path.exists() {
+        fs::read_to_string(&target_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    // Only add the MCP extension block if not already present
+    if !content.contains("automemory") {
+        let mcp_block = format!(
+            "\nextensions:\n  - name: automemory\n    type: stdio\n    cmd: {}\n    args:\n      - mcp\n",
+            exe_path
+        );
+        content.push_str(&mcp_block);
+        fs::write(&target_path, content)?;
+    }
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Goose at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Kilo Code (VS Code Extension, same pattern as Cline/Roo) ─────────────────
+fn connect_kilo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        #[cfg(target_os = "macos")]
+        let p = home.join("Library/Application Support/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json");
+        #[cfg(target_os = "windows")]
+        let p = home.join("AppData/Roaming/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json");
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let p = home.join(
+            ".config/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json",
+        );
+        p
+    } else {
+        workspace_root.join(".kilo").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Kilo Code at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Aider ─────────────────────────────────────────────────────────────────────
+// Aider uses a YAML config file. MCP is injected via its `--mcp-server` key.
+fn connect_aider(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".aider.conf.yml")
+    } else {
+        workspace_root.join(".aider.conf.yml")
+    };
+
+    let mut content = if target_path.exists() {
+        fs::read_to_string(&target_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    if !content.contains("automemory") {
+        let mcp_block = format!(
+            "\n# AutoMemory MCP server\nmcp-servers:\n  automemory:\n    command: {}\n    args: [mcp]\n",
+            exe_path
+        );
+        content.push_str(&mcp_block);
+        fs::write(&target_path, content)?;
+    }
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Aider at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Warp Terminal ─────────────────────────────────────────────────────────────
+fn connect_warp(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    // Warp uses ~/.warp/mcp.json for MCP servers
+    let target_path = if global {
+        home.join(".warp").join("mcp.json")
+    } else {
+        workspace_root.join(".warp").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Warp at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Gemini CLI (standalone, different from Antigravity IDE) ──────────────────
+// `gemini-cli` is google-gemini/gemini-cli — separate from the AGY plugin system.
+fn connect_gemini_cli(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
+    // Gemini CLI uses ~/.gemini/settings.json (different from AGY's mcp_config.json)
+    let target_path = if global {
+        home.join(".gemini").join("settings.json")
+    } else {
+        workspace_root.join(".gemini").join("settings.json")
+    };
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut val = if target_path.exists() {
+        serde_json::from_str(&fs::read_to_string(&target_path)?)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if val.get("mcpServers").is_none() {
+        val["mcpServers"] = serde_json::json!({});
+    }
+    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
+
+    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Gemini CLI at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Devin ─────────────────────────────────────────────────────────────────────
+// Devin uses a .devin/config.json for MCP server configuration.
+fn connect_devin(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".devin").join("mcp.json")
+    } else {
+        workspace_root.join(".devin").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Devin at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── GitHub Copilot CLI ────────────────────────────────────────────────────────
+// GitHub Copilot CLI uses the VS Code MCP config path (it runs inside VS Code).
+fn connect_copilot(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        // VS Code user-level settings (same as what Copilot Chat picks up)
+        get_vscode_user_dir(home).join("mcp.json")
+    } else {
+        workspace_root.join(".vscode").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to GitHub Copilot (VS Code MCP) at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── OpenClaw ──────────────────────────────────────────────────────────────────
+fn connect_openclaw(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
+    let target_path = if global {
+        home.join(".openclaw").join("mcp.json")
+    } else {
+        workspace_root.join(".openclaw").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to OpenClaw at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Hermes (NousResearch) ─────────────────────────────────────────────────────
+fn connect_hermes(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+    let target_path = if global {
+        home.join(".hermes").join("mcp.json")
+    } else {
+        workspace_root.join(".hermes").join("mcp.json")
+    };
+
+    merge_mcp_config(&target_path, exe_path)?;
+
+    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
+    println!(
+        "✓ {} Connected to Hermes at {}",
+        scope_tag,
+        target_path.display()
+    );
+    Ok(())
+}
+
+// ── Claude Desktop (separate from Claude Code) ────────────────────────────────
+fn connect_claude_desktop(
+    home: &Path,
+    _workspace_root: &Path,
+    exe_path: &str,
+    _global: bool,
+) -> Result<()> {
+    // Claude Desktop always uses the macOS/Linux app-level config — no workspace mode.
+    #[cfg(target_os = "macos")]
+    let config_path = home
+        .join("Library")
+        .join("Application Support")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    #[cfg(target_os = "linux")]
+    let config_path = home
+        .join(".config")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let config_path = home.join(".claude").join("claude_desktop_config.json");
+
+    merge_mcp_config(&config_path, exe_path)?;
+
+    println!(
+        "✓ [APP] Connected to Claude Desktop at {}",
+        config_path.display()
+    );
+    Ok(())
+}
+
+// ── VS Code helpers ──────────────────────────────────────────────────────────
+fn get_vscode_user_dir(home: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    return home
+        .join("Library")
+        .join("Application Support")
+        .join("Code")
+        .join("User");
+
+    #[cfg(target_os = "linux")]
+    return home.join(".config").join("Code").join("User");
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    return home.join(".vscode").join("User");
 }

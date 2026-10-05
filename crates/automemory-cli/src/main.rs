@@ -25,7 +25,7 @@ enum Commands {
 
     /// Automatically connect and configure AutoMemory into host coding agents
     Connect {
-        /// Agent host to connect (agy, claude, cursor, windsurf, continue, cline, roo, zed, codex, all)
+        /// Agent host to connect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all)
         #[arg(default_value = "agy")]
         agent: String,
 
