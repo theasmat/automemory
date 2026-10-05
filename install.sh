@@ -83,7 +83,7 @@ log_info "Detected Platform: ${OS} (${ARCH}) -> Target: ${TARGET_TRIPLE}"
 INSTALLED=false
 
 # 2. Check if running inside repository clone
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
 if [ -f "${SCRIPT_DIR}/Cargo.toml" ] && grep -q 'automemory' "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null; then
     log_info "Detected local repository clone at ${SCRIPT_DIR}"
     if [ -f "${SCRIPT_DIR}/target/release/${BINARY_NAME}" ]; then
