@@ -84,9 +84,13 @@ INSTALLED=false
 
 # 2. Check if running inside repository clone
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
-if [ -f "${SCRIPT_DIR}/Cargo.toml" ] && grep -q 'name = "automemory"' "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null; then
+if [ -f "${SCRIPT_DIR}/Cargo.toml" ] && grep -q 'automemory' "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null; then
     log_info "Detected local repository clone at ${SCRIPT_DIR}"
-    if command -v cargo >/dev/null 2>&1; then
+    if [ -f "${SCRIPT_DIR}/target/release/${BINARY_NAME}" ]; then
+        log_info "Using existing local release binary..."
+        cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+        INSTALLED=true
+    elif command -v cargo >/dev/null 2>&1; then
         log_info "Building release binary with Cargo..."
         (cd "${SCRIPT_DIR}" && cargo build --release)
         cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
