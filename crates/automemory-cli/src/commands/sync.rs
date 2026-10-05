@@ -629,7 +629,7 @@ pub async fn pull(
                                 if let Some(parent) = dest.parent() {
                                     let _ = fs::create_dir_all(parent);
                                 }
-                                if let Ok(_) = fs::copy(&entry, &dest) {
+                                if fs::copy(&entry, &dest).is_ok() {
                                     restored_count += 1;
                                     println!(
                                         "  ✓ Restored document to workspace: {}",
@@ -686,7 +686,7 @@ pub async fn pull(
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
-        let mut req = client.get(&format!("{}?project={}", pull_url, project_id));
+        let mut req = client.get(format!("{}?project={}", pull_url, project_id));
         if let Some(ref tok) = auth_token {
             req = req.header("Authorization", format!("Bearer {}", tok));
         }
@@ -861,7 +861,7 @@ pub async fn restore(
             .timeout(std::time::Duration::from_secs(15))
             .build()?;
 
-        let mut req = client.get(&format!("{}/projects/{}/manifest", ep, project_id));
+        let mut req = client.get(format!("{}/projects/{}/manifest", ep, project_id));
         if let Some(tok) = token_opt {
             req = req.header("Authorization", format!("Bearer {}", tok));
         }

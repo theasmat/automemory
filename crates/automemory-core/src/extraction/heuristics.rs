@@ -15,9 +15,10 @@ impl EventHeuristics {
     pub fn evaluate(event: &NormalizedEvent) -> ExtractionOutcome {
         // 1. Check for tool failure
         if event.event_type == "tool.failed"
-            || (event.tool.as_ref().map_or(false, |t| {
-                t.status == "failed" || t.exit_code.unwrap_or(0) != 0
-            }))
+            || (event
+                .tool
+                .as_ref()
+                .is_some_and(|t| t.status == "failed" || t.exit_code.unwrap_or(0) != 0))
         {
             if let Some(ref tool) = event.tool {
                 let error_text = tool

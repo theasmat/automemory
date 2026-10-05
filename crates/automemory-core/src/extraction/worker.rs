@@ -89,7 +89,7 @@ impl ExtractionWorker {
             }
 
             // Every 10 iterations (~40s), run autonomous skill promotion pass
-            if tick_counter % 10 == 0 {
+            if tick_counter.is_multiple_of(10) {
                 if let Err(e) = self.promote_skills(None) {
                     warn!("Autonomous skill promotion error: {}", e);
                 }

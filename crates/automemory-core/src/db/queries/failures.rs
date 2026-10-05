@@ -77,7 +77,7 @@ impl Database {
         sql.push_str(" ORDER BY updated_at DESC LIMIT ?1");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![limit as i64], |row| Self::row_to_failure(row))?;
+        let rows = stmt.query_map(params![limit as i64], Self::row_to_failure)?;
         let mut list = Vec::new();
         for f in rows {
             list.push(f?);

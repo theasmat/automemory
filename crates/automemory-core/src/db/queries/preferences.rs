@@ -72,7 +72,7 @@ impl Database {
         sql.push_str(" ORDER BY scope ASC, key ASC");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| Self::row_to_preference(row))?;
+        let rows = stmt.query_map([], Self::row_to_preference)?;
         let mut list = Vec::new();
         for p in rows {
             list.push(p?);

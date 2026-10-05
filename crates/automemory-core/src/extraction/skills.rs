@@ -73,9 +73,7 @@ impl<'a> SkillDistiller<'a> {
                 avg_repro
             );
 
-            let mut trigger_patterns = Vec::new();
-            trigger_patterns.push(first.category.clone());
-            trigger_patterns.push(first.title.clone());
+            let trigger_patterns = vec![first.category.clone(), first.title.clone()];
 
             let mut ordered_steps = Vec::new();
             for (idx, step) in first.steps.iter().enumerate() {

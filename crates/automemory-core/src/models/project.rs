@@ -22,18 +22,13 @@ pub struct ProjectPath {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AutopilotMode {
+    #[default]
     Vibe,
     Strict,
     Review,
-}
-
-impl Default for AutopilotMode {
-    fn default() -> Self {
-        Self::Vibe
-    }
 }
 
 impl std::fmt::Display for AutopilotMode {

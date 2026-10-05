@@ -103,7 +103,7 @@ impl Database {
         sql.push_str(&format!(" ORDER BY path ASC LIMIT {}", limit));
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| Self::row_to_graph_entity(row))?;
+        let rows = stmt.query_map([], Self::row_to_graph_entity)?;
 
         let mut entities = Vec::new();
         for r in rows {
@@ -117,7 +117,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT source_id, target_id, relation_type, confidence, created_at FROM graph_edges WHERE source_id = ?1"
         )?;
-        let rows = stmt.query_map(params![source_id], |row| Self::row_to_graph_edge(row))?;
+        let rows = stmt.query_map(params![source_id], Self::row_to_graph_edge)?;
         let mut edges = Vec::new();
         for r in rows {
             edges.push(r?);
@@ -130,7 +130,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT source_id, target_id, relation_type, confidence, created_at FROM graph_edges WHERE target_id = ?1"
         )?;
-        let rows = stmt.query_map(params![target_id], |row| Self::row_to_graph_edge(row))?;
+        let rows = stmt.query_map(params![target_id], Self::row_to_graph_edge)?;
         let mut edges = Vec::new();
         for r in rows {
             edges.push(r?);
@@ -151,7 +151,7 @@ impl Database {
         let mut stmt = conn.prepare(
             &format!("SELECT source_id, target_id, relation_type, confidence, created_at FROM graph_edges LIMIT {}", limit)
         )?;
-        let rows = stmt.query_map([], |row| Self::row_to_graph_edge(row))?;
+        let rows = stmt.query_map([], Self::row_to_graph_edge)?;
         let mut edges = Vec::new();
         for r in rows {
             edges.push(r?);

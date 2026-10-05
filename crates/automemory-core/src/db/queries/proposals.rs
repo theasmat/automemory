@@ -98,7 +98,7 @@ impl Database {
         }
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| Self::row_to_proposal(row))?;
+        let rows = stmt.query_map([], Self::row_to_proposal)?;
 
         let mut list = Vec::new();
         for p in rows {
@@ -163,7 +163,7 @@ impl Database {
                 total: pend + app + rej,
             });
         }
-        by_type.sort_by(|a, b| b.total.cmp(&a.total));
+        by_type.sort_by_key(|a| std::cmp::Reverse(a.total));
 
         Ok(crate::models::ProposalsSummary {
             total_pending,

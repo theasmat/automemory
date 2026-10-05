@@ -115,17 +115,15 @@ impl ShellCommandTree {
                         {
                             return true;
                         }
-                        if lower.contains("system(")
+                        if (lower.contains("system(")
                             || lower.contains("popen(")
                             || lower.contains("exec(")
-                            || lower.contains("spawn(")
-                        {
-                            if lower.contains("rm -rf /")
+                            || lower.contains("spawn("))
+                            && (lower.contains("rm -rf /")
                                 || lower.contains("rm -rf ~")
-                                || lower.contains("rm -rf $home")
-                            {
-                                return true;
-                            }
+                                || lower.contains("rm -rf $home"))
+                        {
+                            return true;
                         }
                     }
                 }
@@ -169,15 +167,14 @@ impl ShellCommandTree {
             if cmd.binary.starts_with("mkfs") {
                 return true;
             }
-            if cmd.is_binary("dd") {
-                if cmd.flags.iter().any(|f| f.starts_with("of=/dev/"))
+            if cmd.is_binary("dd")
+                && (cmd.flags.iter().any(|f| f.starts_with("of=/dev/"))
                     || cmd
                         .positional_args
                         .iter()
-                        .any(|a| a.starts_with("of=/dev/"))
-                {
-                    return true;
-                }
+                        .any(|a| a.starts_with("of=/dev/")))
+            {
+                return true;
             }
         }
         false
@@ -477,16 +474,15 @@ fn unwrap_command_tokens(tokens: &[String]) -> Vec<ParsedCommand> {
     }
 
     // 3. Handle subshells: `sh -c "..."`, `bash -c "..."`, `zsh -c "..."`
-    if (binary == "sh" || binary == "bash" || binary == "zsh" || binary == "dash")
-        && tokens.len() >= 3
+    if ((binary == "sh" || binary == "bash" || binary == "zsh" || binary == "dash")
+        && tokens.len() >= 3)
+        && tokens[1] == "-c"
     {
-        if tokens[1] == "-c" {
-            let inner_cmd_str = tokens[2..].join(" ");
-            let inner_tree = ShellCommandTree::parse(&inner_cmd_str);
-            let mut all = inner_tree.commands;
-            all.push(build_parsed_command(tokens));
-            return all;
-        }
+        let inner_cmd_str = tokens[2..].join(" ");
+        let inner_tree = ShellCommandTree::parse(&inner_cmd_str);
+        let mut all = inner_tree.commands;
+        all.push(build_parsed_command(tokens));
+        return all;
     }
 
     // 4. Handle `eval "..."`
@@ -560,5 +556,34 @@ mod tests {
     fn test_python_rm_root_detection() {
         let t = ShellCommandTree::parse("python3 -c 'import shutil; shutil.rmtree(\"/\")'");
         assert!(t.is_destructive_rm_root_or_home());
+    }
+
+    #[test]
+    fn test_adversarial_bypass_attempts() {
+        // Subshell / eval unwrapping must not hide the payload.
+        for cmd in [
+            "sh -c 'rm -rf /'",
+            "bash -c 'rm -rf ~'",
+            "eval 'rm -rf /'",
+            "sudo sh -c 'rm -rf /'",
+            "python -c \"import os; os.system('rm -rf /')\"",
+            "node -e \"require('child_process').exec('rm -rf ~')\"",
+        ] {
+            let tree = ShellCommandTree::parse(cmd);
+            assert!(
+                tree.is_destructive_rm_root_or_home(),
+                "bypass missed: {cmd}"
+            );
+        }
+
+        // Raw disk overwrite in its common spellings.
+        for cmd in ["dd if=/dev/zero of=/dev/sda", "dd of=/dev/sda if=/dev/zero"] {
+            let tree = ShellCommandTree::parse(cmd);
+            assert!(tree.is_raw_disk_format(), "dd bypass missed: {cmd}");
+        }
+
+        // Benign lookalikes must stay quiet.
+        assert!(!ShellCommandTree::parse("dd if=/dev/zero of=backup.img").is_raw_disk_format());
+        assert!(!ShellCommandTree::parse("rm -rf ./target").is_destructive_rm_root_or_home());
     }
 }

@@ -5,6 +5,7 @@ use chrono::Utc;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 pub struct VaultManager<'a> {
     db: &'a Database,
@@ -17,6 +18,57 @@ impl<'a> VaultManager<'a> {
             db,
             vault_root: vault_root.as_ref().to_path_buf(),
         }
+    }
+
+    /// Import one JSONL file, saving each valid record and warning on skipped lines.
+    /// Returns `(imported, skipped)` so silent data loss is impossible to miss in logs.
+    fn import_jsonl<T>(path: &Path, mut save: impl FnMut(T)) -> (usize, usize)
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let Ok(file) = File::open(path) else {
+            return (0, 0);
+        };
+        let (mut imported, mut skipped) = (0usize, 0usize);
+        for (idx, line) in BufReader::new(file).lines().enumerate() {
+            let line = match line {
+                Ok(l) => l,
+                Err(e) => {
+                    skipped += 1;
+                    warn!(path = %path.display(), line_no = idx + 1, error = %e, "vault import: unreadable line skipped");
+                    continue;
+                }
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<T>(&line) {
+                Ok(v) => {
+                    save(v);
+                    imported += 1;
+                }
+                Err(e) => {
+                    skipped += 1;
+                    warn!(path = %path.display(), line_no = idx + 1, error = %e, "vault import: unparseable line skipped");
+                }
+            }
+        }
+        if skipped > 0 {
+            warn!(path = %path.display(), imported, skipped, "vault import: some lines skipped");
+        }
+        (imported, skipped)
+    }
+
+    /// Save one imported memory. Import is last-writer-wins by id (restore
+    /// semantics); when the incoming record is older than the local one, say
+    /// so loudly instead of silently discarding newer local state.
+    fn save_imported_memory(&self, path: &Path, mem: Memory) {
+        if let Ok(Some(local)) = self.db.get_memory_by_id(&mem.id) {
+            if local.updated_at > mem.updated_at {
+                warn!(id = %mem.id, path = %path.display(), local_updated_at = %local.updated_at, incoming_updated_at = %mem.updated_at, "vault import: overwriting newer local record (last-writer-wins)");
+            }
+        }
+        let _ = self.db.save_memory(&mem);
     }
 
     /// Export local state to the text-first vault directory layout.
@@ -183,47 +235,20 @@ impl<'a> VaultManager<'a> {
 
         // 2. Import Global Memories
         let global_mem_active = global_dir.join("memories").join("active.jsonl");
-        if global_mem_active.exists() {
-            if let Ok(file) = File::open(global_mem_active) {
-                let reader = BufReader::new(file);
-                for line in reader.lines().flatten() {
-                    if !line.trim().is_empty() {
-                        if let Ok(mem) = serde_json::from_str::<Memory>(&line) {
-                            let _ = self.db.save_memory(&mem);
-                        }
-                    }
-                }
-            }
-        }
+        Self::import_jsonl::<Memory>(&global_mem_active, |mem| {
+            self.save_imported_memory(&global_mem_active, mem);
+        });
 
         let global_mem_archived = global_dir.join("memories").join("archived.jsonl");
-        if global_mem_archived.exists() {
-            if let Ok(file) = File::open(global_mem_archived) {
-                let reader = BufReader::new(file);
-                for line in reader.lines().flatten() {
-                    if !line.trim().is_empty() {
-                        if let Ok(mem) = serde_json::from_str::<Memory>(&line) {
-                            let _ = self.db.save_memory(&mem);
-                        }
-                    }
-                }
-            }
-        }
+        Self::import_jsonl::<Memory>(&global_mem_archived, |mem| {
+            self.save_imported_memory(&global_mem_archived, mem);
+        });
 
         // 3. Import Global Skills
         let global_skills = global_dir.join("skills").join("skills.jsonl");
-        if global_skills.exists() {
-            if let Ok(file) = File::open(global_skills) {
-                let reader = BufReader::new(file);
-                for line in reader.lines().flatten() {
-                    if !line.trim().is_empty() {
-                        if let Ok(s) = serde_json::from_str::<ProceduralSkill>(&line) {
-                            let _ = self.db.save_skill(&s);
-                        }
-                    }
-                }
-            }
-        }
+        Self::import_jsonl::<ProceduralSkill>(&global_skills, |s| {
+            let _ = self.db.save_skill(&s);
+        });
 
         // 4. Import Projects
         let projects_dir = self.vault_root.join("projects");
@@ -249,47 +274,20 @@ impl<'a> VaultManager<'a> {
 
             // Import memories
             let active_jsonl = p_dir.join("memories").join("active.jsonl");
-            if active_jsonl.exists() {
-                if let Ok(file) = File::open(active_jsonl) {
-                    let reader = BufReader::new(file);
-                    for line in reader.lines().flatten() {
-                        if !line.trim().is_empty() {
-                            if let Ok(mem) = serde_json::from_str::<Memory>(&line) {
-                                let _ = self.db.save_memory(&mem);
-                            }
-                        }
-                    }
-                }
-            }
+            Self::import_jsonl::<Memory>(&active_jsonl, |mem| {
+                self.save_imported_memory(&active_jsonl, mem);
+            });
 
             let archived_jsonl = p_dir.join("memories").join("archived.jsonl");
-            if archived_jsonl.exists() {
-                if let Ok(file) = File::open(archived_jsonl) {
-                    let reader = BufReader::new(file);
-                    for line in reader.lines().flatten() {
-                        if !line.trim().is_empty() {
-                            if let Ok(mem) = serde_json::from_str::<Memory>(&line) {
-                                let _ = self.db.save_memory(&mem);
-                            }
-                        }
-                    }
-                }
-            }
+            Self::import_jsonl::<Memory>(&archived_jsonl, |mem| {
+                self.save_imported_memory(&archived_jsonl, mem);
+            });
 
             // Import skills
             let skills_jsonl = p_dir.join("skills").join("skills.jsonl");
-            if skills_jsonl.exists() {
-                if let Ok(file) = File::open(skills_jsonl) {
-                    let reader = BufReader::new(file);
-                    for line in reader.lines().flatten() {
-                        if !line.trim().is_empty() {
-                            if let Ok(s) = serde_json::from_str::<ProceduralSkill>(&line) {
-                                let _ = self.db.save_skill(&s);
-                            }
-                        }
-                    }
-                }
-            }
+            Self::import_jsonl::<ProceduralSkill>(&skills_jsonl, |s| {
+                let _ = self.db.save_skill(&s);
+            });
 
             // Import traces
             let traces_dir = p_dir.join("traces").join("success");

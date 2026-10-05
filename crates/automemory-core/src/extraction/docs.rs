@@ -56,10 +56,8 @@ impl<'a> DocCompiler<'a> {
                 key_points.push(format!("- **Section**: {}", h_title));
             } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
                 // Bullet points with bold words
-                if trimmed.contains("**") || trimmed.contains('`') {
-                    if key_points.len() < 8 {
-                        key_points.push(trimmed.to_string());
-                    }
+                if (trimmed.contains("**") || trimmed.contains('`')) && key_points.len() < 8 {
+                    key_points.push(trimmed.to_string());
                 }
             }
         }

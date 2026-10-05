@@ -64,8 +64,8 @@ pub fn track(
     let title = title_opt.unwrap_or_else(|| {
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("# ") {
-                return trimmed[2..].trim().to_string();
+            if let Some(stripped) = trimmed.strip_prefix("# ") {
+                return stripped.trim().to_string();
             }
         }
         target_path

@@ -80,16 +80,16 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     }
 
     // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
-    if event == "pre-tool" {
-        if !evaluate_pre_tool_guardrail(
+    if event == "pre-tool"
+        && !evaluate_pre_tool_guardrail(
             &db,
             &raw_payload,
             tool_info.as_ref(),
             effective_project_id,
             autopilot_mode,
-        )? {
-            return Ok(());
-        }
+        )?
+    {
+        return Ok(());
     }
 
     // ── Record Event ──────────────────────────────────────────────────────────

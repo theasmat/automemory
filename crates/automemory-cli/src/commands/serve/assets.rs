@@ -1,5 +1,5 @@
 use axum::{
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 use rust_embed::RustEmbed;
@@ -35,13 +35,13 @@ pub async fn static_asset_handler(uri: axum::http::Uri) -> impl IntoResponse {
         Some(content) => {
             let mime = get_mime_type(&path);
             let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(mime));
             (StatusCode::OK, headers, content.data).into_response()
         }
         None => match DashboardAssets::get("index.html") {
             Some(content) => {
                 let mut headers = HeaderMap::new();
-                headers.insert(header::CONTENT_TYPE, "text/html".parse().unwrap());
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
                 (StatusCode::OK, headers, content.data).into_response()
             }
             None => (StatusCode::NOT_FOUND, "Not Found").into_response(),

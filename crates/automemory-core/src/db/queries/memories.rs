@@ -180,7 +180,7 @@ impl Database {
         sql.push_str(" ORDER BY confidence DESC, updated_at DESC LIMIT ?1");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![limit as i64], |row| Self::row_to_memory(row))?;
+        let rows = stmt.query_map(params![limit as i64], Self::row_to_memory)?;
         let mut list = Vec::new();
         for m in rows {
             list.push(m?);

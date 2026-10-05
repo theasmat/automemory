@@ -40,6 +40,19 @@ pub struct GuardrailEvaluator<'a> {
     rules: Vec<GuardrailRule>,
 }
 
+/// Bundled inputs for a high-risk guardrail decision.
+struct HighRiskInput<'a> {
+    rule_id: &'a str,
+    title: &'a str,
+    risk_summary: &'a str,
+    mitigation_hint: Option<String>,
+    command_str: &'a str,
+    project_id: Option<&'a str>,
+    mode: AutopilotMode,
+    risk_score: f64,
+    matched_failure_id: Option<String>,
+}
+
 impl<'a> GuardrailEvaluator<'a> {
     pub fn new(db: Option<&'a Database>) -> Self {
         let mut rules = GuardrailRule::default_rules();
@@ -159,49 +172,51 @@ impl<'a> GuardrailEvaluator<'a> {
 
         // Mode-dependent High-Risk AST Checks (Strict blocks, Review queues proposal, Vibe warns)
         if tree.is_db_migration() {
-            return self.handle_high_risk(
-                "rule_db_migration_ast",
-                "High-Risk: Database Schema Migration",
-                "Database schema migration command detected.",
-                Some(
+            return self.handle_high_risk(HighRiskInput {
+                rule_id: "rule_db_migration_ast",
+                title: "High-Risk: Database Schema Migration",
+                risk_summary: "Database schema migration command detected.",
+                mitigation_hint: Some(
                     "Verify backup and ensure schema changes are backwards compatible.".to_string(),
                 ),
-                &command_str,
+                command_str: &command_str,
                 project_id,
                 mode,
-                0.75,
-                None,
-            );
+                risk_score: 0.75,
+                matched_failure_id: None,
+            });
         }
 
         if tree.is_cloud_infra_delete() {
-            return self.handle_high_risk(
-                "rule_cloud_infra_delete_ast",
-                "High-Risk: Cloud Infrastructure Teardown",
-                "Destructive cloud/container teardown detected.",
-                Some(
+            return self.handle_high_risk(HighRiskInput {
+                rule_id: "rule_cloud_infra_delete_ast",
+                title: "High-Risk: Cloud Infrastructure Teardown",
+                risk_summary: "Destructive cloud/container teardown detected.",
+                mitigation_hint: Some(
                     "Verify target cluster and namespace before destroying resources.".to_string(),
                 ),
-                &command_str,
+                command_str: &command_str,
                 project_id,
                 mode,
-                0.8,
-                None,
-            );
+                risk_score: 0.8,
+                matched_failure_id: None,
+            });
         }
 
         if tree.is_destructive_git_reset() {
-            return self.handle_high_risk(
-                "rule_git_hard_reset_ast",
-                "High-Risk: Destructive Git Reset/Clean",
-                "Git reset --hard or git clean will discard uncommitted changes.",
-                Some("Run git stash before resetting to prevent unrecoverable loss.".to_string()),
-                &command_str,
+            return self.handle_high_risk(HighRiskInput {
+                rule_id: "rule_git_hard_reset_ast",
+                title: "High-Risk: Destructive Git Reset/Clean",
+                risk_summary: "Git reset --hard or git clean will discard uncommitted changes.",
+                mitigation_hint: Some(
+                    "Run git stash before resetting to prevent unrecoverable loss.".to_string(),
+                ),
+                command_str: &command_str,
                 project_id,
                 mode,
-                0.7,
-                None,
-            );
+                risk_score: 0.7,
+                matched_failure_id: None,
+            });
         }
 
         // 2. ── Regex Rule Matching (File Tampering & Supplemental Patterns) ──
@@ -222,17 +237,17 @@ impl<'a> GuardrailEvaluator<'a> {
                         };
                     }
 
-                    return self.handle_high_risk(
-                        &rule.id,
-                        &format!("High-Risk Guardrail: {}", rule.name),
-                        &rule.description,
-                        Some(rule.mitigation_hint.clone()),
-                        &command_str,
+                    return self.handle_high_risk(HighRiskInput {
+                        rule_id: &rule.id,
+                        title: &format!("High-Risk Guardrail: {}", rule.name),
+                        risk_summary: &rule.description,
+                        mitigation_hint: Some(rule.mitigation_hint.clone()),
+                        command_str: &command_str,
                         project_id,
                         mode,
-                        0.75,
-                        None,
-                    );
+                        risk_score: 0.75,
+                        matched_failure_id: None,
+                    });
                 }
             }
         }
@@ -246,21 +261,21 @@ impl<'a> GuardrailEvaluator<'a> {
                         &f.error_message,
                         f.failed_tool.as_deref(),
                     ) {
-                        return self.handle_high_risk(
-                            "known_failure_match",
-                            &format!("Known Gotcha Alert: {}", f.task_title),
-                            &format!(
+                        return self.handle_high_risk(HighRiskInput {
+                            rule_id: "known_failure_match",
+                            title: &format!("Known Gotcha Alert: {}", f.task_title),
+                            risk_summary: &format!(
                                 "This action matches a known unresolved failure: {}. Root cause: {}",
                                 f.error_message,
                                 f.root_cause_hypothesis.unwrap_or_else(|| "Unknown".to_string())
                             ),
-                            Some("Review past failure resolution or test cautiously.".to_string()),
-                            &command_str,
+                            mitigation_hint: Some("Review past failure resolution or test cautiously.".to_string()),
+                            command_str: &command_str,
                             project_id,
                             mode,
-                            0.8,
-                            Some(f.id),
-                        );
+                            risk_score: 0.8,
+                            matched_failure_id: Some(f.id),
+                        });
                     }
                 }
             }
@@ -335,18 +350,18 @@ impl<'a> GuardrailEvaluator<'a> {
         false
     }
 
-    fn handle_high_risk(
-        &self,
-        rule_id: &str,
-        title: &str,
-        risk_summary: &str,
-        mitigation_hint: Option<String>,
-        command_str: &str,
-        project_id: Option<&str>,
-        mode: AutopilotMode,
-        risk_score: f64,
-        matched_failure_id: Option<String>,
-    ) -> GuardrailDecision {
+    fn handle_high_risk(&self, input: HighRiskInput) -> GuardrailDecision {
+        let HighRiskInput {
+            rule_id,
+            title,
+            risk_summary,
+            mitigation_hint,
+            command_str,
+            project_id,
+            mode,
+            risk_score,
+            matched_failure_id,
+        } = input;
         match mode {
             AutopilotMode::Strict => GuardrailDecision {
                 action: GuardrailAction::Block,

@@ -79,6 +79,40 @@ pub fn execute() -> Result<()> {
                     unprocessed.len()
                 );
             }
+
+            // 5. Snapshot backup (VACUUM INTO) + prune to newest 5
+            print!("Snapshotting database backup... ");
+            let backups_dir = config.home_dir.join("backups");
+            let backup_path = backups_dir.join(format!(
+                "automemory-{}.db",
+                Utc::now().format("%Y%m%d-%H%M%S")
+            ));
+            match db.backup_to(&backup_path) {
+                Ok(()) => {
+                    println!("✓ OK ({:?})", backup_path);
+                    if let Ok(mut snaps) = std::fs::read_dir(&backups_dir).map(|rd| {
+                        let mut v: Vec<_> = rd
+                            .filter_map(|e| e.ok().map(|e| e.path()))
+                            .filter(|p| {
+                                p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .map(|n| n.starts_with("automemory-") && n.ends_with(".db"))
+                                    .unwrap_or(false)
+                            })
+                            .collect();
+                        v.sort();
+                        v
+                    }) {
+                        while snaps.len() > 5 {
+                            let old = snaps.remove(0);
+                            let _ = std::fs::remove_file(&old);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("⚠ backup skipped: {}", e);
+                }
+            }
         }
         Err(e) => {
             println!("✗ Failed to open database: {}", e);

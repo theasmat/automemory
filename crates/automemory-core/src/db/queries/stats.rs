@@ -51,7 +51,7 @@ impl Database {
                 |r| r.get(0),
             ).unwrap_or(0)
         };
-        let mem_tokens = (mem_chars as usize + 3) / 4;
+        let mem_tokens = (mem_chars as usize).div_ceil(4);
 
         let event_chars: i64 = if let Some(pid) = project_id {
             conn.query_row(
@@ -66,7 +66,7 @@ impl Database {
                 |r| r.get(0),
             ).unwrap_or(0)
         };
-        let event_tokens = (event_chars as usize + 3) / 4;
+        let event_tokens = (event_chars as usize).div_ceil(4);
 
         Ok((mem_tokens, event_tokens))
     }

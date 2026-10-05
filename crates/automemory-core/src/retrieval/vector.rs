@@ -117,9 +117,8 @@ impl VectorEngine {
     /// Deserializes bytes from SQLite BLOB back to a float vector.
     pub fn from_blob(bytes: &[u8]) -> Vec<f32> {
         let mut vec = Vec::with_capacity(bytes.len() / 4);
-        for chunk in bytes.chunks_exact(4) {
-            let arr: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
-            vec.push(f32::from_le_bytes(arr));
+        for chunk in bytes.as_chunks::<4>().0 {
+            vec.push(f32::from_le_bytes(*chunk));
         }
         vec
     }

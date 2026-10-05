@@ -58,6 +58,22 @@ impl Database {
     pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("SQLite mutex poisoned")
     }
+
+    /// Snapshot the live database to `dest` with `VACUUM INTO` (compact + defragmented copy).
+    pub fn backup_to<P: AsRef<Path>>(&self, dest: P) -> Result<()> {
+        let dest_ref = dest.as_ref();
+        if let Some(parent) = dest_ref.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create backup directory {:?}", parent))?;
+        }
+        // VACUUM INTO requires a fresh target file.
+        let _ = std::fs::remove_file(dest_ref);
+        let dest_str = dest_ref.to_string_lossy().to_string();
+        self.conn()
+            .execute("VACUUM INTO ?1", [dest_str])
+            .with_context(|| format!("Failed to back up database to {:?}", dest_ref))?;
+        Ok(())
+    }
 }
 
 fn run_migrations(conn: &Connection) {
@@ -81,4 +97,22 @@ fn run_migrations(conn: &Connection) {
         "ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT",
         [],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backup_to_creates_snapshot() {
+        let db = Database::open_in_memory().expect("in-memory db open failed");
+        let dest =
+            std::env::temp_dir().join(format!("automemory-test-backup-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+        db.backup_to(&dest).expect("backup_to failed");
+        assert!(dest.exists(), "backup file must exist");
+        let size = dest.metadata().expect("backup metadata").len();
+        assert!(size > 0, "backup must be non-empty");
+        let _ = std::fs::remove_file(&dest);
+    }
 }

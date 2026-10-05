@@ -28,6 +28,9 @@ jobs:
       - name: Workspace Check
         run: cargo check --workspace
 
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Workspace Tests
         run: cargo test --workspace --verbose
 

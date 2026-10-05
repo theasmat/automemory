@@ -46,7 +46,7 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String> {
 
     // Extract 11-bit chunks
     let mut words = Vec::with_capacity(word_count);
-    for chunk in bits.chunks_exact(11) {
+    for chunk in bits.as_chunks::<11>().0 {
         let mut idx = 0usize;
         for &bit in chunk {
             idx = (idx << 1) | (bit as usize);
@@ -59,7 +59,7 @@ pub fn entropy_to_mnemonic(entropy: &[u8]) -> Result<String> {
 
 /// Converts a BIP-39 mnemonic phrase back into raw entropy.
 pub fn mnemonic_to_entropy(mnemonic: &str) -> Result<Vec<u8>> {
-    let words: Vec<&str> = mnemonic.trim().split_whitespace().collect();
+    let words: Vec<&str> = mnemonic.split_whitespace().collect();
     let word_count = words.len();
     if word_count != 12 && word_count != 24 {
         bail!("Mnemonic must contain 12 or 24 words, got {}", word_count);
@@ -85,7 +85,7 @@ pub fn mnemonic_to_entropy(mnemonic: &str) -> Result<Vec<u8>> {
     let cs_bits = &bits[ent_len * 8..];
 
     let mut entropy = Vec::with_capacity(ent_len);
-    for chunk in entropy_bits.chunks_exact(8) {
+    for chunk in entropy_bits.as_chunks::<8>().0 {
         let mut byte = 0u8;
         for &b in chunk {
             byte = (byte << 1) | b;
@@ -203,8 +203,8 @@ mod tests {
     #[test]
     fn test_bip39_roundtrip_24_words() {
         let mut raw_key = [0u8; 32];
-        for i in 0..32 {
-            raw_key[i] = (i * 7 + 13) as u8;
+        for (i, byte) in raw_key.iter_mut().enumerate() {
+            *byte = (i * 7 + 13) as u8;
         }
 
         let phrase = master_key_to_mnemonic_24(&raw_key).unwrap();

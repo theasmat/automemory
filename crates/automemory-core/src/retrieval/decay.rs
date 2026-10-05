@@ -61,7 +61,7 @@ impl MemoryDecayScorer {
         let days = (duration.num_seconds() as f64 / 86400.0).max(0.0);
 
         // Exponential decay: e^(-lambda * days), where lambda = ln(2) / half_life
-        let lambda = 0.69314718056 / self.config.half_life_days;
+        let lambda = std::f64::consts::LN_2 / self.config.half_life_days;
         let time_decay = (-lambda * days).exp().clamp(0.01, 1.0);
 
         // Access boost: 1 + alpha * ln(1 + count)

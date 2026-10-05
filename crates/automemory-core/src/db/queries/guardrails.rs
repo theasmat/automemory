@@ -53,7 +53,7 @@ impl Database {
         sql.push_str(" ORDER BY created_at DESC");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |row| Self::row_to_custom_rule(row))?;
+        let rows = stmt.query_map([], Self::row_to_custom_rule)?;
         let mut list = Vec::new();
         for r in rows {
             list.push(r?);

@@ -409,7 +409,7 @@ fn test_ast_knowledge_graph_multi_hop_impact_analysis() {
             id: id.to_string(),
             project_id: Some(project_id.to_string()),
             entity_type: etype.to_string(),
-            name: path.split('/').last().unwrap().to_string(),
+            name: path.split('/').next_back().unwrap().to_string(),
             path: path.to_string(),
             line_start: Some(1),
             line_end: Some(100),
