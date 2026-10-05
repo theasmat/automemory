@@ -40,6 +40,30 @@ pub struct GuardrailEvaluator<'a> {
     rules: Vec<GuardrailRule>,
 }
 
+/// Tool names that execute shell commands (canonical hook names and raw variants).
+fn is_command_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "command" | "run_command" | "shell" | "bash" | "sh" | "zsh" | "exec" | "run_shell_command"
+    )
+}
+
+/// True when the payload carries inspectable command text under a known key.
+fn has_command_text(args: &Value) -> bool {
+    let effective = args
+        .get("args")
+        .or_else(|| args.get("toolArgs"))
+        .unwrap_or(args);
+    effective
+        .get("CommandLine")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.trim().is_empty())
+        || effective
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.trim().is_empty())
+}
+
 /// Bundled inputs for a high-risk guardrail decision.
 struct HighRiskInput<'a> {
     rule_id: &'a str,
@@ -77,6 +101,22 @@ impl<'a> GuardrailEvaluator<'a> {
         project_id: Option<&str>,
         mode: AutopilotMode,
     ) -> GuardrailDecision {
+        // 0. ── Fail-closed envelope check: a command-execution tool carrying no
+        // inspectable command text must never silently pass as benign.
+        if is_command_tool(tool_name) && !has_command_text(args) {
+            return GuardrailDecision {
+                action: GuardrailAction::Warn,
+                severity: GuardrailSeverity::Warning,
+                risk_score: 0.5,
+                title: "Uninspectable Command Payload".to_string(),
+                risk_summary: "Command-execution tool call carried no inspectable command text (missing args.command). Treated as untrusted.".to_string(),
+                mitigation_hint: Some("Send run_command with args.command set, or probe the payload with `automemory guardrail test --command`.".to_string()),
+                rule_matched: Some("rule_uninspectable_payload".to_string()),
+                matched_failure_id: None,
+                requires_confirmation: true,
+            };
+        }
+
         let command_str = self.extract_command_string(tool_name, args);
         let tree = ShellCommandTree::parse(&command_str);
 
@@ -484,6 +524,33 @@ mod tests {
 
         assert_eq!(decision.action, GuardrailAction::Block);
         assert_eq!(decision.severity, GuardrailSeverity::Critical);
+    }
+
+    #[test]
+    fn test_uninspectable_payload_warns_instead_of_allowing() {
+        let evaluator = GuardrailEvaluator::new(None);
+        for tool in ["run_command", "command", "shell"] {
+            for args in [
+                serde_json::json!({}),
+                serde_json::json!({ "args": {} }),
+                serde_json::json!({ "command": "   " }),
+            ] {
+                let decision = evaluator.evaluate(tool, &args, None, AutopilotMode::Vibe);
+                assert_eq!(
+                    decision.action,
+                    GuardrailAction::Warn,
+                    "tool={tool} args={args}"
+                );
+                assert_eq!(
+                    decision.rule_matched.as_deref(),
+                    Some("rule_uninspectable_payload")
+                );
+            }
+        }
+        // Non-command tools with empty args still pass.
+        let decision =
+            evaluator.evaluate("read", &serde_json::json!({}), None, AutopilotMode::Vibe);
+        assert_eq!(decision.action, GuardrailAction::Allow);
     }
 
     #[test]

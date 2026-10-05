@@ -1,6 +1,7 @@
 pub mod connect;
 pub mod doc;
 pub mod doctor;
+pub mod guardrail;
 pub mod hook;
 pub mod init;
 pub mod link;

@@ -112,6 +112,12 @@ enum Commands {
         command: RuleCommands,
     },
 
+    /// Evaluate a shell command against guardrail rules without executing it
+    Guardrail {
+        #[command(subcommand)]
+        command: GuardrailCommands,
+    },
+
     /// Manage synthesized procedural playbooks and agent skills
     Skill {
         #[command(subcommand)]
@@ -286,6 +292,24 @@ enum RuleCommands {
 
         /// Enable flag (true or false)
         enabled: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum GuardrailCommands {
+    /// Evaluate a shell command against guardrail rules without executing it (exit 0 allow, 1 warn, 2 block)
+    Test {
+        /// Shell command to evaluate
+        #[arg(long)]
+        command: String,
+
+        /// Autopilot mode (vibe, strict, review) [default: vibe]
+        #[arg(long)]
+        mode: Option<String>,
+
+        /// Project slug for project-scoped rules and failure matching
+        #[arg(long)]
+        project: Option<String>,
     },
 }
 
@@ -686,6 +710,13 @@ async fn main() -> Result<()> {
         Commands::Mode { command } => match command {
             ModeCommands::Get { project } => commands::mode::get(project)?,
             ModeCommands::Set { mode, project } => commands::mode::set(&mode, project)?,
+        },
+        Commands::Guardrail { command } => match command {
+            GuardrailCommands::Test {
+                command,
+                mode,
+                project,
+            } => commands::guardrail::test_command(&command, mode, project)?,
         },
         Commands::Doc { command } => match command {
             DocCommands::Track {
