@@ -376,3 +376,22 @@ CREATE TABLE IF NOT EXISTS batons (
 );
 
 CREATE INDEX IF NOT EXISTS idx_batons_pickup ON batons(project_id, to_session, created_at);
+
+-- Cross-review diff queue (tests are the judge, not votes)
+CREATE TABLE IF NOT EXISTS reviews (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    task_id TEXT,
+    author_session TEXT NOT NULL,
+    title TEXT NOT NULL,
+    diff TEXT NOT NULL,
+    test_command TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewer_session TEXT,
+    tests_passed INTEGER,
+    verdict TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_queue ON reviews(project_id, status, created_at);

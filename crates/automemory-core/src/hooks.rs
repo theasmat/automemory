@@ -1,3 +1,4 @@
+use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
@@ -305,6 +306,42 @@ pub fn run_pipeline(
     results
 }
 
+/// Expands file targets to indexed symbols (and symbols to files) so
+/// symbol-level leases collide with file edits across naming styles
+/// (`auth::login` vs `auth.login`). Empty index = no expansion (fail-open).
+pub fn expand_scope_via_graph(
+    db: &Database,
+    project_id: Option<&str>,
+    paths: &[String],
+    symbols: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let mut all_paths: Vec<String> = paths.to_vec();
+    let mut all_symbols: Vec<String> = symbols.to_vec();
+    for p in paths.iter().take(10) {
+        for e in db
+            .query_graph_entities(project_id, None, None, Some(p), 20)
+            .unwrap_or_default()
+        {
+            if !all_symbols.contains(&e.name) {
+                all_symbols.push(e.name);
+            }
+        }
+    }
+    for s in symbols.iter().take(10) {
+        for spelling in [s.clone(), s.replace("::", "."), s.replace('.', "::")] {
+            for e in db
+                .query_graph_entities(project_id, None, Some(&spelling), None, 5)
+                .unwrap_or_default()
+            {
+                if !all_paths.contains(&e.path) {
+                    all_paths.push(e.path);
+                }
+            }
+        }
+    }
+    (all_paths, all_symbols)
+}
+
 /// Strictest decision wins; the reason comes from the strictest handler.
 pub fn merge_decision(results: &[HandlerResult]) -> HandlerOutput {
     let mut best = HandlerOutput::allow();
@@ -531,5 +568,56 @@ mod tests {
         let results = run_pipeline(&specs, &c, &never);
         assert_eq!(results[0].decision, GateDecision::Warn);
         assert_eq!(results[0].reason, "custom");
+    }
+
+    #[test]
+    fn scope_expansion_bridges_files_and_symbols() {
+        use crate::graph::GraphEntity;
+        use chrono::Utc;
+        let db = Database::open_in_memory().unwrap();
+        let now = Utc::now();
+        db.batch_insert_graph_entities(&[GraphEntity {
+            id: "e1".to_string(),
+            project_id: None,
+            entity_type: "function".to_string(),
+            name: "auth.login".to_string(),
+            path: "src/auth/login.ts".to_string(),
+            line_start: None,
+            line_end: None,
+            metadata: serde_json::json!({}),
+            created_at: now,
+            updated_at: now,
+        }])
+        .unwrap();
+
+        // File edit discovers the symbol defined inside it.
+        let (_, syms) = expand_scope_via_graph(
+            &db,
+            None,
+            &["src/auth/login.ts".to_string()],
+            &[],
+        );
+        assert!(syms.contains(&"auth.login".to_string()));
+
+        // Symbol lease in either spelling discovers the file.
+        for spelling in ["auth::login", "auth.login"] {
+            let (paths, _) =
+                expand_scope_via_graph(&db, None, &[], &[spelling.to_string()]);
+            assert!(
+                paths.contains(&"src/auth/login.ts".to_string()),
+                "spelling {spelling}"
+            );
+        }
+
+        // Empty index expands nothing.
+        let empty = Database::open_in_memory().unwrap();
+        let (p, s) = expand_scope_via_graph(
+            &empty,
+            None,
+            &["x.ts".to_string()],
+            &["y".to_string()],
+        );
+        assert_eq!(p, vec!["x.ts".to_string()]);
+        assert_eq!(s, vec!["y".to_string()]);
     }
 }

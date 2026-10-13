@@ -34,7 +34,7 @@ pub use guardrails::{
 };
 pub use hooks::{
     CanonicalEvent, FailureMode, GateDecision, HandlerOutput, HandlerResult, HandlerSpec,
-    HooksConfig, PipelineCtx, merge_decision, run_pipeline,
+    HooksConfig, PipelineCtx, expand_scope_via_graph, merge_decision, run_pipeline,
 };
 pub use models::*;
 pub use ports::{CODE_INTEL_API_VERSION, CodeIntel, GraphCodeIntel, NoneCodeIntel, Port, check_api_version};

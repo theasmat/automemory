@@ -294,6 +294,53 @@ impl Database {
         Ok(rows > 0)
     }
 
+    /// Flips one memory to `changed` without touching content/version history:
+    /// linkage changed, content didn't. Pinned invariants are never flipped.
+    pub fn mark_memory_changed(&self, id: &str) -> Result<bool> {
+        let rows = self.conn().execute(
+            "UPDATE memories SET status = 'changed' WHERE id = ?1 AND status = 'active'",
+            params![id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// PostCommit staleness: memories linked (via entities or recorded files)
+    /// to committed files flip to `changed` so the next recall re-verifies.
+    /// Returns the flipped ids. Symbols resolve through the graph index;
+    /// files with no indexed symbols still match recorded file lists.
+    pub fn flag_memories_changed_by_files(
+        &self,
+        project_id: Option<&str>,
+        files: &[String],
+    ) -> Result<Vec<String>> {
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut altered: Vec<String> = Vec::new();
+        for f in files.iter().take(50) {
+            for e in self
+                .query_graph_entities(project_id, None, None, Some(f), 50)
+                .unwrap_or_default()
+            {
+                if !altered.contains(&e.name) {
+                    altered.push(e.name);
+                }
+            }
+        }
+        let mut flipped = Vec::new();
+        for m in self
+            .list_memories(project_id, Some(MemoryStatus::Active), None, 500)
+            .unwrap_or_default()
+        {
+            let linked = m.entities.iter().any(|s| altered.contains(s))
+                || metadata_files(&m).iter().any(|f| files.contains(f));
+            if linked && self.mark_memory_changed(&m.id).unwrap_or(false) {
+                flipped.push(m.id);
+            }
+        }
+        Ok(flipped)
+    }
+
     /// Pin a memory as an immutable Tier 1 invariant (human control)
     pub fn pin_memory(&self, id: &str) -> Result<bool> {
         if let Some(mut mem) = self.get_memory_by_id(id)? {
@@ -492,6 +539,21 @@ impl Database {
     }
 }
 
+/// File paths a memory recorded itself against (`memory.save` stores them
+/// under `metadata.files_modified`).
+fn metadata_files(m: &Memory) -> Vec<String> {
+    m.metadata
+        .get("files_modified")
+        .or_else(|| m.metadata.get("files"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|i| i.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,5 +680,69 @@ mod tests {
         assert_eq!(revoked, 1);
         let fetched_revoked = db.get_memory_by_id(&mem.id).expect("get").expect("exists");
         assert_eq!(fetched_revoked.status, MemoryStatus::Archived);
+    }
+
+    #[test]
+    fn test_flag_changed_by_commit_files() {
+        use crate::graph::GraphEntity;
+        let db = Database::open_in_memory().expect("open db");
+        let now = Utc::now();
+        db.batch_insert_graph_entities(&[GraphEntity {
+            id: "e1".to_string(),
+            project_id: None,
+            entity_type: "function".to_string(),
+            name: "auth.session.createSession".to_string(),
+            path: "src/auth/session.ts".to_string(),
+            line_start: None,
+            line_end: None,
+            metadata: serde_json::json!({}),
+            created_at: now,
+            updated_at: now,
+        }])
+        .expect("seed graph");
+
+        let mk = |summary: &str, entities: Vec<String>, metadata: serde_json::Value, status: MemoryStatus| {
+            let mem = Memory {
+                id: Uuid::now_v7().to_string(),
+                scope: MemoryScope::Project,
+                project_id: None,
+                memory_type: MemoryType::Fact,
+                content: "c".to_string(),
+                summary: summary.to_string(),
+                confidence: 0.9,
+                importance: 0.8,
+                freshness: 1.0,
+                status,
+                source_kind: MemorySourceKind::Agent,
+                version: Some(1),
+                created_at: now,
+                updated_at: now,
+                last_recalled_at: None,
+                tags: vec![],
+                entities,
+                metadata,
+            };
+            db.save_memory_direct(&mem).expect("seed memory");
+            mem.id
+        };
+
+        let by_entity = mk("entity linked", vec!["auth.session.createSession".to_string()], serde_json::json!({}), MemoryStatus::Active);
+        let by_file = mk("file linked", vec![], serde_json::json!({"files_modified": ["src/auth/session.ts"]}), MemoryStatus::Active);
+        let unrelated = mk("unrelated", vec!["other.fn".to_string()], serde_json::json!({}), MemoryStatus::Active);
+        let pinned = mk("pinned linked", vec!["auth.session.createSession".to_string()], serde_json::json!({}), MemoryStatus::Pinned);
+
+        assert!(db.flag_memories_changed_by_files(None, &[]).unwrap().is_empty());
+        let flipped = db
+            .flag_memories_changed_by_files(None, &["src/auth/session.ts".to_string()])
+            .unwrap();
+        assert_eq!(flipped.len(), 2);
+        assert!(flipped.contains(&by_entity));
+        assert!(flipped.contains(&by_file));
+
+        let status = |id: &str| db.get_memory_by_id(id).unwrap().unwrap().status;
+        assert_eq!(status(&by_entity), MemoryStatus::Changed);
+        assert_eq!(status(&by_file), MemoryStatus::Changed);
+        assert_eq!(status(&unrelated), MemoryStatus::Active);
+        assert_eq!(status(&pinned), MemoryStatus::Pinned);
     }
 }

@@ -648,6 +648,48 @@ impl ToolRegistry {
                     "required": ["id", "session_id"]
                 }),
             },
+            ToolDefinition {
+                name: "review.submit".to_string(),
+                description: "Queue a diff for cross-review by a different agent session".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Authoring session ID" },
+                        "diff": { "type": "string", "description": "Unified diff under review" },
+                        "title": { "type": "string", "description": "Short review title" },
+                        "test_command": { "type": "string", "description": "Command the reviewer runs to judge it" },
+                        "task_id": { "type": "string", "description": "Source task ID" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["session_id", "diff"]
+                }),
+            },
+            ToolDefinition {
+                name: "review.next".to_string(),
+                description: "Fetch the oldest pending diff authored by another session".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Reviewing session ID" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "review.post".to_string(),
+                description: "Post a review verdict. Failing tests reject regardless of approval vote".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "description": "Review ID" },
+                        "session_id": { "type": "string", "description": "Reviewing session ID" },
+                        "approved": { "type": "boolean", "description": "Reviewer vote" },
+                        "tests_passed": { "type": "boolean", "description": "Test run outcome (judges the diff)" },
+                        "verdict": { "type": "string", "description": "Review notes" }
+                    },
+                    "required": ["id", "session_id", "tests_passed"]
+                }),
+            },
         ]
     }
 
@@ -1845,6 +1887,79 @@ impl ToolRegistry {
                         "Submit refused: task is not claimed by this session",
                     ),
                     Err(e) => ToolCallResult::error(format!("Failed to submit task: {}", e)),
+                }
+            }
+
+            "review.submit" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let diff = match arguments.get("diff").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: diff"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let task_id = arguments.get("task_id").and_then(|v| v.as_str());
+                let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("diff review");
+                let test_command = arguments.get("test_command").and_then(|v| v.as_str());
+
+                match self.db.submit_review(
+                    project_id,
+                    task_id,
+                    session_id,
+                    title,
+                    diff,
+                    test_command,
+                ) {
+                    Ok(review) => ToolCallResult::json(&json!({
+                        "status": "queued",
+                        "review": review,
+                        "next_action": "Another agent reviews it with review.next (never the author)."
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Failed to queue review: {}", e)),
+                }
+            }
+
+            "review.next" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+
+                match self.db.next_review(project_id, session_id) {
+                    Ok(Some(review)) => ToolCallResult::json(&json!({
+                        "review": review,
+                        "next_action": "Run its test_command, then post the verdict with review.post (tests_passed decides)."
+                    })),
+                    Ok(None) => ToolCallResult::error("No pending reviews for this session"),
+                    Err(e) => ToolCallResult::error(format!("Failed to fetch review: {}", e)),
+                }
+            }
+
+            "review.post" => {
+                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: id"),
+                };
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let approved = arguments.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let tests_passed = match arguments.get("tests_passed").and_then(|v| v.as_bool()) {
+                    Some(t) => t,
+                    None => return ToolCallResult::error("Missing required parameter: tests_passed (test results judge the diff)"),
+                };
+                let verdict = arguments.get("verdict").and_then(|v| v.as_str());
+
+                match self.db.post_review(id, session_id, approved, tests_passed, verdict) {
+                    Ok(Some(review)) => ToolCallResult::json(&json!({
+                        "review": review,
+                        "next_action": "If rejected, the author fixes and resubmits with review.submit."
+                    })),
+                    Ok(None) => ToolCallResult::error(
+                        "Post refused: review is decided, missing, or your own diff",
+                    ),
+                    Err(e) => ToolCallResult::error(format!("Failed to post review: {}", e)),
                 }
             }
 

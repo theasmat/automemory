@@ -4,8 +4,8 @@ use automemory_core::db::Database;
 use automemory_core::guardrails::{GuardrailAction, GuardrailEvaluator};
 use automemory_core::models::*;
 use automemory_core::hooks::{
-    CanonicalEvent, GateDecision, HandlerOutput, HooksConfig, PipelineCtx, merge_decision,
-    run_pipeline,
+    CanonicalEvent, GateDecision, HandlerOutput, HooksConfig, PipelineCtx, expand_scope_via_graph,
+    merge_decision, run_pipeline,
 };
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
@@ -59,10 +59,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // Normalize Antigravity / AGY tool call
     let (tool_info, session_id, task_id) = normalize_payload(event, &raw_payload);
 
+    let project_id_owned = project_ref.id.clone();
     let effective_project_id = current_project
         .as_ref()
         .map(|p| p.id.as_str())
-        .or(project_ref.id.as_deref());
+        .or(project_id_owned.as_deref());
 
     // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
     let canonical = CanonicalEvent::from_cli(event);
@@ -147,6 +148,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     }
 
     // ── Record Event ──────────────────────────────────────────────────────────
+    let project_root = project_ref.root_path.clone();
     let normalized_event = build_normalized_event(
         agent,
         event,
@@ -182,9 +184,21 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     }
 
     // Release all active leases held by this session upon stop
-    // ponytail: PostCommit symbol-linked staleness deferred until memories carry linked paths.
     if canonical == Some(CanonicalEvent::Stop) {
         let _ = db.release_leases(&session_id, None);
+    }
+
+    // PostCommit staleness: committed files flip linked memories to `changed`.
+    if canonical == Some(CanonicalEvent::PostCommit) {
+        let files = commit_files(&project_root);
+        match db.flag_memories_changed_by_files(effective_project_id, &files) {
+            Ok(flipped) if !flipped.is_empty() => eprintln!(
+                "[AutoMemory] PostCommit: {} linked memories marked changed ({} files).",
+                flipped.len(),
+                files.len()
+            ),
+            _ => {}
+        }
     }
 
     if !matches!(
@@ -198,6 +212,8 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
 
 /// Built-in `lock-check` handler: lease collision check for mutation tools.
 /// Strict denies, Review asks, Vibe warns on stderr only (defers to guardrail).
+/// File targets expand to their indexed symbols (and vice versa) so symbol
+/// leases collide with file edits even when the agent names only the file.
 fn builtin_lock_check(
     db: &Database,
     ctx: &PipelineCtx<'_>,
@@ -207,7 +223,8 @@ fn builtin_lock_check(
     if (ctx.paths.is_empty() && ctx.symbols.is_empty()) || !ctx.is_mutation {
         return HandlerOutput::allow();
     }
-    match db.check_collision(project_id, ctx.session_id, ctx.paths, ctx.symbols) {
+    let (paths, symbols) = expand_scope_via_graph(db, project_id, ctx.paths, ctx.symbols);
+    match db.check_collision(project_id, ctx.session_id, &paths, &symbols) {
         Ok(Some(conflict)) => {
             eprintln!(
                 "⚠️ [AutoMemory Lock Warning]: Target resource '{}' is actively locked by {} (Session: {}).",
@@ -292,6 +309,15 @@ fn builtin_guardrail(
 
 /// Staged (to-be-committed) files for PreCommit lease-overlap checks.
 fn staged_files(root_path: &str) -> Vec<String> {
+    git_files(root_path, &["diff", "--cached", "--name-only"])
+}
+
+/// Files touched by HEAD for PostCommit staleness marking.
+fn commit_files(root_path: &str) -> Vec<String> {
+    git_files(root_path, &["show", "--pretty=format:", "--name-only", "HEAD"])
+}
+
+fn git_files(root_path: &str, args: &[&str]) -> Vec<String> {
     let dir = if root_path.is_empty() {
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
     } else {
@@ -300,7 +326,7 @@ fn staged_files(root_path: &str) -> Vec<String> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["diff", "--cached", "--name-only"])
+        .args(args)
         .output()
         .ok()
         .filter(|o| o.status.success())

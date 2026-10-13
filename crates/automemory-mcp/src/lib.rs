@@ -200,4 +200,62 @@ mod tests {
         assert!(submitted.contains("submitted"));
         assert!(submitted.contains("baton.pass"));
     }
+
+    #[test]
+    fn test_mcp_review_submit_next_post() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+
+        let call = |id: i64, name: &str, arguments: serde_json::Value| {
+            server
+                .handle_request(JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(json!(id)),
+                    method: "tools/call".to_string(),
+                    params: Some(json!({ "name": name, "arguments": arguments })),
+                })
+                .unwrap()
+                .result
+                .unwrap()["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        // Author queues; author cannot review their own diff.
+        call(40, "review.submit", json!({
+            "session_id": "author-1", "diff": "diff --git a/f", "title": "fix leak",
+            "test_command": "cargo test"
+        }));
+        let own_empty = call(41, "review.next", json!({ "session_id": "author-1" }));
+        assert!(own_empty.contains("No pending reviews"));
+
+        // Reviewer approves with green tests → approved.
+        let job = call(42, "review.next", json!({ "session_id": "reviewer-1" }));
+        assert!(job.contains("fix leak"));
+        let rev_id: String = serde_json::from_str::<serde_json::Value>(&job)
+            .unwrap()["review"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let verdict = call(43, "review.post", json!({
+            "id": rev_id, "session_id": "reviewer-1",
+            "approved": true, "tests_passed": true
+        }));
+        assert!(verdict.contains("approved"));
+
+        // Approval with red tests → rejected: tests judge.
+        call(44, "review.submit", json!({ "session_id": "author-2", "diff": "diff2" }));
+        let job2 = call(45, "review.next", json!({ "session_id": "reviewer-1" }));
+        let rev2: String = serde_json::from_str::<serde_json::Value>(&job2)
+            .unwrap()["review"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let verdict2 = call(46, "review.post", json!({
+            "id": rev2, "session_id": "reviewer-1",
+            "approved": true, "tests_passed": false
+        }));
+        assert!(verdict2.contains("rejected"));
+    }
 }
