@@ -242,6 +242,38 @@ fn run_migrations(conn: &Connection) {
         );
         let _ = conn.execute("PRAGMA user_version = 7", []);
     }
+
+    if version < 8 {
+        let _ = conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS rooms (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                topic TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'open',
+                members TEXT NOT NULL DEFAULT '[]',
+                turn_holder TEXT,
+                round INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS room_posts (
+                id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL,
+                author_session TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                body TEXT NOT NULL,
+                evidence TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_rooms_turn ON rooms(project_id, state, turn_holder);
+            CREATE INDEX IF NOT EXISTS idx_room_posts_room ON room_posts(room_id, created_at);
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 8", []);
+    }
 }
 
 #[cfg(test)]

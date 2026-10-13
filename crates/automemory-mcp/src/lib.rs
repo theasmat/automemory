@@ -258,4 +258,67 @@ mod tests {
         }));
         assert!(verdict2.contains("rejected"));
     }
+
+    #[test]
+    fn test_mcp_room_full_round() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+
+        let call = |id: i64, name: &str, arguments: serde_json::Value| {
+            server
+                .handle_request(JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(json!(id)),
+                    method: "tools/call".to_string(),
+                    params: Some(json!({ "name": name, "arguments": arguments })),
+                })
+                .unwrap()
+                .result
+                .unwrap()["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        let saved = call(50, "memory.save", json!({
+            "content": "JWT in cookie", "summary": "auth fact"
+        }));
+        let ev: String = serde_json::from_str::<serde_json::Value>(&saved)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let joined = call(51, "room.join", json!({ "session_id": "a", "topic": "auth" }));
+        let room_id: String = serde_json::from_str::<serde_json::Value>(&joined)
+            .unwrap()["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        call(52, "room.join", json!({ "session_id": "b", "room_id": room_id }));
+
+        let post = |id: i64, sess: &str, kind: &str, body: &str| {
+            call(id, "room.post", json!({
+                "room_id": room_id, "session_id": sess,
+                "kind": kind, "body": body, "evidence": [ev]
+            }))
+        };
+        // Out-of-turn post is refused.
+        let refused = call(53, "room.post", json!({
+            "room_id": room_id, "session_id": "b",
+            "kind": "propose", "body": "nope", "evidence": [ev]
+        }));
+        assert!(refused.contains("not your turn"));
+
+        post(54, "a", "propose", "JWT plan");
+        post(55, "b", "critique", "rotation?");
+        let last = post(56, "a", "revise", "JWT plus rotation");
+        assert!(last.contains("decided"));
+        assert!(last.contains("decision.record"));
+
+        let status = call(57, "room.status", json!({ "room_id": room_id }));
+        let status: serde_json::Value =
+            serde_json::from_str(&status).unwrap();
+        assert_eq!(status["room"]["state"], "decided");
+    }
 }

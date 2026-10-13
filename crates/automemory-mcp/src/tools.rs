@@ -690,6 +690,57 @@ impl ToolRegistry {
                     "required": ["id", "session_id", "tests_passed"]
                 }),
             },
+            ToolDefinition {
+                name: "room.pending".to_string(),
+                description: "List planning rooms awaiting action (turn unheld or held by this session)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Session asking for its turns" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "room.join".to_string(),
+                description: "Join a planning room, or create one on a topic when room_id is omitted".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Joining session ID" },
+                        "room_id": { "type": "string", "description": "Room to join (omit to create)" },
+                        "topic": { "type": "string", "description": "Topic for a new room" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["session_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "room.post".to_string(),
+                description: "Post one turn (propose/critique/revise). Turn holder only; evidence IDs must resolve".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "room_id": { "type": "string", "description": "Room ID" },
+                        "session_id": { "type": "string", "description": "Posting session ID" },
+                        "kind": { "type": "string", "enum": ["propose", "critique", "revise"] },
+                        "body": { "type": "string", "description": "Short rationale (capped, never raw reasoning)" },
+                        "evidence": { "type": "array", "items": { "type": "string" }, "description": "Memory/trace/failure IDs backing the post" }
+                    },
+                    "required": ["room_id", "session_id", "kind", "body"]
+                }),
+            },
+            ToolDefinition {
+                name: "room.status".to_string(),
+                description: "Fetch a room with its posts in order".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "room_id": { "type": "string", "description": "Room ID" }
+                    },
+                    "required": ["room_id"]
+                }),
+            },
         ]
     }
 
@@ -1960,6 +2011,119 @@ impl ToolRegistry {
                         "Post refused: review is decided, missing, or your own diff",
                     ),
                     Err(e) => ToolCallResult::error(format!("Failed to post review: {}", e)),
+                }
+            }
+
+            "room.pending" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+
+                match self.db.pending_rooms(project_id, session_id) {
+                    Ok(rooms) => ToolCallResult::json(&json!({
+                        "rooms": rooms,
+                        "next_action": "Join a room with room.join, or post your turn with room.post."
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Failed to list rooms: {}", e)),
+                }
+            }
+
+            "room.join" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                if let Some(room_id) = arguments.get("room_id").and_then(|v| v.as_str()) {
+                    match self.db.join_room(room_id, session_id) {
+                        Ok(Some(room)) => ToolCallResult::json(&json!({
+                            "room": room,
+                            "next_action": "Post with room.post when turn_holder is your session."
+                        })),
+                        Ok(None) => ToolCallResult::error("Room not found"),
+                        Err(e) => ToolCallResult::error(format!("Failed to join room: {}", e)),
+                    }
+                } else {
+                    let topic = arguments.get("topic").and_then(|v| v.as_str()).unwrap_or("untitled");
+                    match self.db.create_room(project_id, topic, session_id) {
+                        Ok(room) => ToolCallResult::json(&json!({
+                            "room": room,
+                            "next_action": "Invite a second agent via room.join, then open with room.post kind=propose and evidence."
+                        })),
+                        Err(e) => ToolCallResult::error(format!("Failed to create room: {}", e)),
+                    }
+                }
+            }
+
+            "room.post" => {
+                let room_id = match arguments.get("room_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: room_id"),
+                };
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let kind = match arguments
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<automemory_core::models::PostKind>().ok())
+                {
+                    Some(k) => k,
+                    None => return ToolCallResult::error(
+                        "Missing or invalid parameter: kind (propose, critique, revise)",
+                    ),
+                };
+                let body = match arguments.get("body").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: body"),
+                };
+                let evidence: Vec<String> = arguments
+                    .get("evidence")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                match self.db.post_to_room(room_id, session_id, kind, body, &evidence) {
+                    Ok(post) => {
+                        let room = self.db.get_room(room_id).ok().flatten();
+                        let next_action = match room.as_ref().map(|r| r.state) {
+                            Some(automemory_core::models::RoomState::Decided) => {
+                                "Room decided. Record the outcome with decision.record."
+                            }
+                            _ => "Turn rotated. The next holder continues with room.post.",
+                        };
+                        ToolCallResult::json(&json!({
+                            "post": post,
+                            "room": room,
+                            "next_action": next_action
+                        }))
+                    }
+                    Err(e) => ToolCallResult::error(format!("Post refused: {}", e)),
+                }
+            }
+
+            "room.status" => {
+                let room_id = match arguments.get("room_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: room_id"),
+                };
+
+                match self.db.get_room(room_id) {
+                    Ok(Some(room)) => {
+                        let posts = self.db.room_posts(room_id).unwrap_or_default();
+                        ToolCallResult::json(&json!({
+                            "room": room,
+                            "posts": posts,
+                            "next_action": "Post with room.post when turn_holder is your session."
+                        }))
+                    }
+                    Ok(None) => ToolCallResult::error("Room not found"),
+                    Err(e) => ToolCallResult::error(format!("Failed to get room: {}", e)),
                 }
             }
 
