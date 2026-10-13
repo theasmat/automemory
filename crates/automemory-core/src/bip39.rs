@@ -219,12 +219,11 @@ mod tests {
 
     #[test]
     fn test_bip39_invalid_checksum_rejected() {
-        let (mut phrase, _) = generate_pairing_seed_12().unwrap();
-        let mut words: Vec<&str> = phrase.split_whitespace().collect();
-        // Tamper last word
-        words[11] = if words[11] == "zoo" { "abandon" } else { "zoo" };
-        phrase = words.join(" ");
+        // 12x "abandon" has zero entropy with 0b0000 checksum, but SHA-256(16 bytes 0x00)[0] >> 4 is 0b0011 != 0b0000
+        let invalid_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon";
+        assert!(mnemonic_to_master_key(invalid_phrase).is_err());
 
-        assert!(mnemonic_to_master_key(&phrase).is_err());
+        // Non-standard word count (not 12 or 24) must also be rejected
+        assert!(mnemonic_to_master_key("abandon abandon").is_err());
     }
 }

@@ -76,6 +76,8 @@ automemory hook --agent agy --event post-tool --project my-project
 - **`post_tool`**: Logs tool execution evidence and file diffs into the append-only SQLite WAL ledger in <5ms.
 - **`post_tool_fail`**: Captures error stack traces, triggers root-cause hypothesis generation, and catalogs failure playbooks.
 - **`session_stop`**: Triggers async trajectory distillation, pruning transient noise and synthesizing reusable procedural skills.
+- **`pre_commit`**: Checks staged files against active multi-agent leases before the commit lands.
+- **`post_commit`**: Records the commit and triggers distillation; symbol-linked staleness marking is planned (memories do not carry linked paths yet).
 
 ---
 

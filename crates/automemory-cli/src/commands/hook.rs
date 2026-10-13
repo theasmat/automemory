@@ -1,8 +1,12 @@
 use anyhow::Result;
 use automemory_core::config::Config;
 use automemory_core::db::Database;
-use automemory_core::guardrails::{GuardrailAction, GuardrailEvaluator, GuardrailSeverity};
+use automemory_core::guardrails::{GuardrailAction, GuardrailEvaluator};
 use automemory_core::models::*;
+use automemory_core::hooks::{
+    CanonicalEvent, GateDecision, HandlerOutput, HooksConfig, PipelineCtx, merge_decision,
+    run_pipeline,
+};
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -61,7 +65,8 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         .or(project_ref.id.as_deref());
 
     // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
-    if event == "boot" {
+    let canonical = CanonicalEvent::from_cli(event);
+    if canonical == Some(CanonicalEvent::SessionStart) {
         let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
         let ctx = engine
             .assemble_context(effective_project_id, None, 2000)
@@ -79,17 +84,66 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         }
     }
 
-    // ── Pre-Tool Guardrail Evaluation ─────────────────────────────────────────
-    if event == "pre-tool"
-        && !evaluate_pre_tool_guardrail(
-            &db,
-            &raw_payload,
-            tool_info.as_ref(),
-            effective_project_id,
-            autopilot_mode,
-        )?
-    {
-        return Ok(());
+    // ── Ordered Gate Pipeline (lock check → guardrail → custom exec) ──────────
+    // Strictest decision wins, so a catastrophic command is denied even when a
+    // lease check merely asks. Hot-reloaded: hooks.toml is re-read every call.
+    if matches!(
+        canonical,
+        Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
+    ) {
+        let gate_event = canonical.unwrap_or(CanonicalEvent::PreToolUse);
+        let tool_name = tool_info
+            .as_ref()
+            .map(|t| t.name.as_str())
+            .or_else(|| raw_payload.get("toolName").and_then(|v| v.as_str()))
+            .or_else(|| raw_payload.get("name").and_then(|v| v.as_str()))
+            .unwrap_or("unknown_tool");
+        let tool_args = tool_info
+            .as_ref()
+            .and_then(|t| t.input.as_ref())
+            .unwrap_or(&raw_payload);
+        let (mut paths, symbols) = extract_target_paths_and_symbols(tool_name, tool_args);
+        if gate_event == CanonicalEvent::PreCommit {
+            for f in staged_files(&project_ref.root_path) {
+                if !paths.contains(&f) {
+                    paths.push(f);
+                }
+            }
+        }
+        let pipe_ctx = PipelineCtx {
+            event: gate_event,
+            agent,
+            session_id: session_id.as_str(),
+            tool: tool_name,
+            args: tool_args,
+            paths: &paths,
+            symbols: &symbols,
+            is_mutation: gate_event == CanonicalEvent::PreCommit || is_mutation_tool(tool_name),
+        };
+        let hooks_cfg = HooksConfig::load(
+            &config.home_dir.join("hooks.toml"),
+            &project_hooks_path(&project_ref),
+        );
+        let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &|id, c| match id {
+            "lock-check" => builtin_lock_check(&db, c, effective_project_id, autopilot_mode),
+            "guardrail" => builtin_guardrail(&db, c, effective_project_id, autopilot_mode),
+            other => {
+                eprintln!("[AutoMemory Hook] unknown built-in '{other}'; allowing");
+                HandlerOutput::allow()
+            }
+        });
+        let merged = merge_decision(&results);
+        if merged.reason.is_empty() {
+            println!("{}", json!({"decision": merged.decision.as_str()}));
+        } else {
+            println!(
+                "{}",
+                json!({"decision": merged.decision.as_str(), "reason": merged.reason})
+            );
+        }
+        if merged.decision == GateDecision::Deny {
+            return Ok(());
+        }
     }
 
     // ── Record Event ──────────────────────────────────────────────────────────
@@ -104,39 +158,105 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     );
     let _ = db.append_event(&normalized_event);
 
-    // ── Post-Tool Implicit Task Segmentation ──────────────────────────────────
-    if event == "post-tool" || event == "stop" {
+    // ── Session Completion & Major Milestone Distillation ────────────────────
+    // Intermediate tool calls (view, grep, edit, read) only append to raw telemetry.
+    // Full distillation only runs at session stop or major git commit completion.
+    let is_major_milestone = normalized_event
+        .tool
+        .as_ref()
+        .and_then(|t| t.input.as_ref())
+        .and_then(|i| {
+            i.get("CommandLine")
+                .or_else(|| i.get("command"))
+                .and_then(|v| v.as_str())
+        })
+        .is_some_and(|cmd| {
+            cmd.contains("git commit") || cmd.contains("git merge")
+        });
+
+    if canonical == Some(CanonicalEvent::Stop)
+        || canonical == Some(CanonicalEvent::PostCommit)
+        || is_major_milestone
+    {
         run_post_tool_distillation(&db, &session_id);
     }
 
-    if event != "pre-tool" {
+    // Release all active leases held by this session upon stop
+    // ponytail: PostCommit symbol-linked staleness deferred until memories carry linked paths.
+    if canonical == Some(CanonicalEvent::Stop) {
+        let _ = db.release_leases(&session_id, None);
+    }
+
+    if !matches!(
+        canonical,
+        Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
+    ) {
         println!("{{}}");
     }
     Ok(())
 }
 
-/// Evaluates pre-tool guardrails against registered security & workflow policies.
-/// Returns `false` if the process should stop or has exited.
-fn evaluate_pre_tool_guardrail(
+/// Built-in `lock-check` handler: lease collision check for mutation tools.
+/// Strict denies, Review asks, Vibe warns on stderr only (defers to guardrail).
+fn builtin_lock_check(
     db: &Database,
-    raw_payload: &Value,
-    tool_info: Option<&ToolInfo>,
+    ctx: &PipelineCtx<'_>,
     project_id: Option<&str>,
     autopilot_mode: AutopilotMode,
-) -> Result<bool> {
-    let tool_name = tool_info
-        .map(|t| t.name.as_str())
-        .or_else(|| raw_payload.get("toolName").and_then(|v| v.as_str()))
-        .or_else(|| raw_payload.get("name").and_then(|v| v.as_str()))
-        .unwrap_or("unknown_tool");
+) -> HandlerOutput {
+    if (ctx.paths.is_empty() && ctx.symbols.is_empty()) || !ctx.is_mutation {
+        return HandlerOutput::allow();
+    }
+    match db.check_collision(project_id, ctx.session_id, ctx.paths, ctx.symbols) {
+        Ok(Some(conflict)) => {
+            eprintln!(
+                "⚠️ [AutoMemory Lock Warning]: Target resource '{}' is actively locked by {} (Session: {}).",
+                conflict.scope, conflict.holder_agent, conflict.holder_session_id
+            );
+            eprintln!("   🔒 Holder Goal: {}", conflict.goal);
+            eprintln!("   ⏳ Lease Expires In: {}s", conflict.remaining_seconds);
+            match autopilot_mode {
+                AutopilotMode::Strict => {
+                    eprintln!("🛑 [AutoMemory Lock] COLLISION PREVENTED in Strict mode.");
+                    HandlerOutput {
+                        decision: GateDecision::Deny,
+                        reason: format!(
+                            "Collision prevented: '{}' is locked by agent '{}' (Goal: '{}', {}s remaining)",
+                            conflict.scope,
+                            conflict.holder_agent,
+                            conflict.goal,
+                            conflict.remaining_seconds
+                        ),
+                    }
+                }
+                AutopilotMode::Review => HandlerOutput {
+                    decision: GateDecision::Ask,
+                    reason: format!(
+                        "Resource '{}' is leased by {} for: '{}'. Proceed with overwrite?",
+                        conflict.scope, conflict.holder_agent, conflict.goal
+                    ),
+                },
+                _ => HandlerOutput::allow(),
+            }
+        }
+        _ => HandlerOutput::allow(),
+    }
+}
 
-    let tool_args = tool_info
-        .and_then(|t| t.input.as_ref())
-        .unwrap_or(raw_payload);
-
-    let evaluator = GuardrailEvaluator::new(Some(db));
-    let decision = evaluator.evaluate(tool_name, tool_args, project_id, autopilot_mode);
-
+/// Built-in `guardrail` handler: AST/tokenizer evaluation of the planned tool.
+/// Critical blocks exit the process, preserving the pre-pipeline contract.
+fn builtin_guardrail(
+    db: &Database,
+    ctx: &PipelineCtx<'_>,
+    project_id: Option<&str>,
+    autopilot_mode: AutopilotMode,
+) -> HandlerOutput {
+    let decision = GuardrailEvaluator::new(Some(db)).evaluate(
+        ctx.tool,
+        ctx.args,
+        project_id,
+        autopilot_mode,
+    );
     match decision.action {
         GuardrailAction::Block => {
             eprintln!(
@@ -147,25 +267,61 @@ fn evaluate_pre_tool_guardrail(
             if let Some(hint) = &decision.mitigation_hint {
                 eprintln!("   💡 Mitigation: {}", hint);
             }
-            println!("{}", serde_json::to_string(&decision)?);
-            if decision.severity == GuardrailSeverity::Critical {
-                std::process::exit(1);
+            HandlerOutput {
+                decision: GateDecision::Deny,
+                reason: format!("{}: {}", decision.title, decision.risk_summary),
             }
-            Ok(false)
         }
         GuardrailAction::Warn => {
             eprintln!("⚠️ [AutoMemory Guardrail Warning]: {}", decision.title);
             if let Some(hint) = &decision.mitigation_hint {
                 eprintln!("   💡 Tip: {}", hint);
             }
-            println!("{}", serde_json::to_string(&decision)?);
-            Ok(true)
+            HandlerOutput {
+                decision: if decision.requires_confirmation {
+                    GateDecision::Ask
+                } else {
+                    GateDecision::Allow
+                },
+                reason: format!("{}: {}", decision.title, decision.risk_summary),
+            }
         }
-        GuardrailAction::Allow => {
-            println!("{}", json!({"decision": "allow", "action": "allow"}));
-            Ok(true)
-        }
+        GuardrailAction::Allow => HandlerOutput::allow(),
     }
+}
+
+/// Staged (to-be-committed) files for PreCommit lease-overlap checks.
+fn staged_files(root_path: &str) -> Vec<String> {
+    let dir = if root_path.is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    } else {
+        std::path::PathBuf::from(root_path)
+    };
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["diff", "--cached", "--name-only"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Project-level hooks file; pairs with the global `~/.automemory/hooks.toml`.
+fn project_hooks_path(project_ref: &ProjectRef) -> std::path::PathBuf {
+    let dir = if project_ref.root_path.is_empty() {
+        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+    } else {
+        std::path::PathBuf::from(&project_ref.root_path)
+    };
+    dir.join(".automemory").join("hooks.toml")
 }
 
 /// Constructs a `NormalizedEvent` from parsed parameters and sanitized raw payload.
@@ -309,6 +465,7 @@ fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Opt
         .or_else(|| raw.get("tool_call"))
         .or_else(|| {
             if raw.get("toolName").is_some()
+                || raw.get("tool_name").is_some()
                 || raw.get("name").is_some()
                 || raw.get("tool").is_some()
             {
@@ -322,6 +479,8 @@ fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Opt
         let raw_name = tc
             .get("name")
             .or_else(|| tc.get("toolName"))
+            .or_else(|| tc.get("tool_name"))
+            .or_else(|| tc.get("tool"))
             .and_then(|v| v.as_str())
             .unwrap_or("tool");
 
@@ -338,13 +497,20 @@ fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Opt
             other => ("custom", other),
         };
 
-        let raw_args = tc.get("args").or_else(|| tc.get("toolArgs"));
+        let raw_args = tc
+            .get("args")
+            .or_else(|| tc.get("toolArgs"))
+            .or_else(|| tc.get("tool_input"))
+            .or_else(|| tc.get("arguments"))
+            .or_else(|| tc.get("input"));
         let normalized_args = normalize_args(raw_args);
 
         let result_val = tc
             .get("result")
+            .or_else(|| tc.get("output"))
             .or_else(|| raw.get("toolResult"))
-            .or_else(|| raw.get("result"));
+            .or_else(|| raw.get("result"))
+            .or_else(|| raw.get("output"));
 
         let status = if event.contains("fail") {
             "failed".to_string()
@@ -395,4 +561,86 @@ fn normalize_args(args: Option<&Value>) -> Value {
         }
     }
     Value::Object(map)
+}
+
+/// Extracts target file paths and symbols from normalized tool arguments.
+fn extract_target_paths_and_symbols(
+    _tool_name: &str,
+    tool_args: &Value,
+) -> (Vec<String>, Vec<String>) {
+    let mut paths = Vec::new();
+    let mut symbols = Vec::new();
+
+    let path_keys = [
+        "file_path",
+        "filePath",
+        "path",
+        "file",
+        "TargetFile",
+        "AbsolutePath",
+        "relative_path",
+        "filename",
+        "files",
+        "paths",
+    ];
+
+    for key in path_keys {
+        if let Some(val) = tool_args.get(key) {
+            if let Some(s) = val.as_str() {
+                if !s.is_empty() {
+                    paths.push(s.to_string());
+                }
+            } else if let Some(arr) = val.as_array() {
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        if !s.is_empty() {
+                            paths.push(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let symbol_keys = [
+        "symbol",
+        "symbols",
+        "symbol_name",
+        "function_name",
+        "target_symbol",
+    ];
+
+    for key in symbol_keys {
+        if let Some(val) = tool_args.get(key) {
+            if let Some(s) = val.as_str() {
+                if !s.is_empty() {
+                    symbols.push(s.to_string());
+                }
+            } else if let Some(arr) = val.as_array() {
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        if !s.is_empty() {
+                            symbols.push(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    (paths, symbols)
+}
+
+/// Returns true if the tool modifies, overwrites, or deletes files or symbols.
+fn is_mutation_tool(tool_name: &str) -> bool {
+    let lower = tool_name.to_lowercase();
+    lower.contains("edit")
+        || lower.contains("write")
+        || lower.contains("replace")
+        || lower.contains("modify")
+        || lower.contains("patch")
+        || lower.contains("delete")
+        || lower.contains("remove")
+        || lower.contains("apply")
+        || lower.contains("save")
 }

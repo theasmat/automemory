@@ -26,15 +26,6 @@ pub struct GraphEdge {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GraphQuery {
-    pub project_id: Option<String>,
-    pub entity_type: Option<String>,
-    pub name_pattern: Option<String>,
-    pub path_prefix: Option<String>,
-    pub limit: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpactReport {
     pub target_entity: GraphEntity,
     pub affected_entities: Vec<GraphEntity>,

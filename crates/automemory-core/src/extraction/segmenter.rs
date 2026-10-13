@@ -40,11 +40,6 @@ impl<'a> ImplicitTaskSegmenter<'a> {
         }
     }
 
-    pub fn with_idle_threshold(mut self, seconds: i64) -> Self {
-        self.idle_threshold_seconds = seconds;
-        self
-    }
-
     /// Evaluates a session's events and partitions them into coherent implicit task segments
     /// based on git commits, test passes, behavior shifts, and temporal idle gaps.
     pub fn segment_session_events(&self, events: &[NormalizedEvent]) -> Vec<TaskSegment> {

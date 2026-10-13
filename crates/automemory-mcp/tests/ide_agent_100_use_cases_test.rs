@@ -1855,13 +1855,312 @@ fn test_suite_10_failure_catalog_and_mcp_suite() {
 }
 
 // ============================================================================
-// MASTER EXECUTIVE RUNNER: 108 USE CASES WITH SCOREBOARD REPORT
+// SUITE 11: MULTI-AGENT LOCKS, LEASES & COLLISION PREVENTION (UC-109 to UC-115)
 // ============================================================================
 #[test]
-fn test_master_108_ide_agent_use_cases_runner() {
+pub fn test_suite_11_multi_agent_locks_and_leases() {
+    let (db, _project) = setup_test_db("proj-multi-agent");
+    let server = McpServer::new(Arc::clone(&db));
+
+    // UC-109: MCP lock.acquire grants a new file lease with next_action
+    let acquire_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(109)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.acquire",
+            "arguments": {
+                "project_id": "proj-multi-agent",
+                "scope": "src/auth/session.rs",
+                "goal": "Refactoring session validation logic",
+                "agent": "agent-alpha",
+                "session_id": "session-alpha",
+                "ttl_seconds": 300
+            }
+        })),
+    };
+    let resp = server.handle_request(acquire_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "granted", "UC-109: Lease status granted");
+    assert!(parsed["next_action"].as_str().unwrap().contains("lock.release"));
+
+    // UC-110: MCP lock.acquire renews lease when called by same session
+    let renew_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(110)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.acquire",
+            "arguments": {
+                "project_id": "proj-multi-agent",
+                "scope": "src/auth/session.rs",
+                "goal": "Refactoring session validation logic part 2",
+                "agent": "agent-alpha",
+                "session_id": "session-alpha",
+                "ttl_seconds": 400
+            }
+        })),
+    };
+    let resp = server.handle_request(renew_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "renewed", "UC-110: Same session renews lease");
+
+    // UC-111: MCP lock.acquire detects collision from different session
+    let conflict_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(111)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.acquire",
+            "arguments": {
+                "project_id": "proj-multi-agent",
+                "scope": "src/auth/session.rs",
+                "goal": "Concurrent edit attempt",
+                "agent": "agent-beta",
+                "session_id": "session-beta",
+                "ttl_seconds": 300
+            }
+        })),
+    };
+    let resp = server.handle_request(conflict_req.clone()).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "conflict", "UC-111: Collision detected");
+    assert_eq!(parsed["conflict"]["holder_agent"], "agent-alpha");
+    assert!(parsed["next_action"].as_str().unwrap().contains("Wait for lease"));
+
+    // UC-112: MCP lock.acquire detects glob collision overlap
+    let glob_conflict_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(112)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.acquire",
+            "arguments": {
+                "project_id": "proj-multi-agent",
+                "scope": "src/auth/*.rs",
+                "scope_type": "glob",
+                "goal": "Attempting wide lock over existing file lease",
+                "agent": "agent-gamma",
+                "session_id": "session-gamma",
+                "ttl_seconds": 300
+            }
+        })),
+    };
+    let resp = server.handle_request(glob_conflict_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "conflict", "UC-112: Glob vs file collision detected");
+
+    // UC-113: MCP lock.status lists active leases with TTL
+    let status_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(113)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.status",
+            "arguments": {
+                "project_id": "proj-multi-agent"
+            }
+        })),
+    };
+    let resp = server.handle_request(status_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["count"], 1, "UC-113: One active lease reported");
+
+    // UC-114: Direct collision check helper
+    let collision = db.check_collision(
+        Some("proj-multi-agent"),
+        "session-beta",
+        &["src/auth/session.rs".to_string()],
+        &[]
+    ).unwrap();
+    assert!(collision.is_some(), "UC-114: Collision check reports collision");
+    assert_eq!(collision.unwrap().holder_agent, "agent-alpha");
+
+    // UC-115: MCP lock.release releases lease and allows agent-beta to acquire
+    let release_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(115)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "lock.release",
+            "arguments": {
+                "session_id": "session-alpha"
+            }
+        })),
+    };
+    let resp = server.handle_request(release_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "released", "UC-115: Lease released");
+
+    // Now beta can acquire
+    let beta_retry = server.handle_request(conflict_req).unwrap();
+    let res_obj = beta_retry.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "granted", "UC-115: Agent-beta acquired after release");
+}
+
+// ============================================================================
+// SUITE 12: ARCHITECTURAL DECISIONS & TRUST TIERS (UC-116 to UC-122)
+// ============================================================================
+#[test]
+fn test_suite_12_decisions_and_trust_tiers() {
+    let (db, _project) = setup_test_db("proj-decisions-12");
+    let server = McpServer::new(db.clone());
+
+    // UC-116: MCP decision.record logs architectural decision with rationale, alternatives, and dissent
+    let record_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(116)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "decision.record",
+            "arguments": {
+                "project_id": "proj-decisions-12",
+                "topic": "state_storage",
+                "decision": "Use SQLite in WAL mode with rusqlite",
+                "reason": "Single-binary embedded storage with zero external daemon dependency",
+                "alternatives": ["PostgreSQL", "RocksDB", "DuckDB"],
+                "dissent": "Concurrency limited to single-writer without replication",
+                "agent": "claude-code",
+                "symbols": ["db::connection", "db::schema"],
+                "evidence": ["ADR-001", "TEST-BENCH-WAL"]
+            }
+        })),
+    };
+    let resp = server.handle_request(record_req).unwrap();
+    let res_obj = resp.result.unwrap();
+    let content = res_obj["content"][0]["text"].as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
+    assert_eq!(parsed["status"], "recorded", "UC-116: Decision recorded successfully");
+    assert_eq!(parsed["decision"]["topic"], "state_storage");
+    assert!(parsed["next_action"].as_str().unwrap().contains("decision.get"));
+
+    let d1_id = parsed["decision"]["id"].as_str().unwrap().to_string();
+
+    // UC-117: Supersede active decision on same topic; prior decision marked superseded
+    let supersede_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(117)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "decision.record",
+            "arguments": {
+                "project_id": "proj-decisions-12",
+                "topic": "state_storage",
+                "decision": "Use SQLite in WAL mode with connection pooling and PRAGMA user_version migrations",
+                "reason": "Adds automated migrations and connection re-use under high read load",
+                "alternatives": ["Custom binary format"],
+                "dissent": "Additional mutex locking complexity",
+                "agent": "antigravity",
+                "symbols": ["db::connection", "db::pool"],
+                "evidence": ["ADR-002"]
+            }
+        })),
+    };
+    let resp2 = server.handle_request(supersede_req).unwrap();
+    let res_obj2 = resp2.result.unwrap();
+    let content2 = res_obj2["content"][0]["text"].as_str().unwrap();
+    let parsed2: serde_json::Value = serde_json::from_str(content2).unwrap();
+    assert_eq!(parsed2["status"], "recorded", "UC-117: Superseding decision recorded");
+    let d2_id = parsed2["decision"]["id"].as_str().unwrap().to_string();
+
+    // UC-118: Query decision via MCP decision.get; active decision is d2, history contains d1 with preserved dissent
+    let get_req = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(json!(118)),
+        method: "tools/call".to_string(),
+        params: Some(json!({
+            "name": "decision.get",
+            "arguments": {
+                "project_id": "proj-decisions-12",
+                "topic": "state_storage"
+            }
+        })),
+    };
+    let resp_get = server.handle_request(get_req).unwrap();
+    let res_obj_get = resp_get.result.unwrap();
+    let content_get = res_obj_get["content"][0]["text"].as_str().unwrap();
+    let parsed_get: serde_json::Value = serde_json::from_str(content_get).unwrap();
+
+    assert_eq!(parsed_get["active"]["id"], d2_id, "UC-118: Active decision is d2");
+    assert_eq!(parsed_get["history"].as_array().unwrap().len(), 1, "UC-118: History contains 1 prior decision");
+    assert_eq!(parsed_get["history"][0]["id"], d1_id);
+    assert_eq!(parsed_get["history"][0]["status"], "superseded");
+    assert_eq!(parsed_get["history"][0]["superseded_by"], d2_id);
+    assert_eq!(parsed_get["history"][0]["dissent"], "Concurrency limited to single-writer without replication");
+
+    // UC-119: Automatic sync of decision into canonical memory engine as Tier 2 Verified fact
+    let memories = db.list_memories(Some("proj-decisions-12"), Some(MemoryStatus::Active), Some(MemoryType::Decision), 5).unwrap();
+    assert!(!memories.is_empty(), "UC-119: Memory automatically created for decision");
+    assert_eq!(memories[0].trust_tier(), TrustTier::Verified, "UC-119: Decision memory is Tier 2 Verified");
+
+    // UC-120: Human control pin_memory sets trust tier to Pinned (Tier 1) and status to Pinned
+    let target_mem_id = &memories[0].id;
+    let pinned = db.pin_memory(target_mem_id).unwrap();
+    assert!(pinned, "UC-120: Memory pinned");
+    let fetched_pinned = db.get_memory_by_id(target_mem_id).unwrap().unwrap();
+    assert_eq!(fetched_pinned.status, MemoryStatus::Pinned, "UC-120: Status is Pinned");
+    assert_eq!(fetched_pinned.trust_tier(), TrustTier::Pinned, "UC-120: TrustTier is Pinned (1)");
+    assert_eq!(fetched_pinned.confidence, 1.0, "UC-120: Confidence is 1.0");
+
+    // UC-121: Human control veto_memory invalidates memory with reason preserved
+    let vetoed = db.veto_memory(target_mem_id, Some("Violates multi-region policy")).unwrap();
+    assert!(vetoed, "UC-121: Memory vetoed");
+    let fetched_veto = db.get_memory_by_id(target_mem_id).unwrap().unwrap();
+    assert_eq!(fetched_veto.status, MemoryStatus::Invalid, "UC-121: Status is Invalid");
+    assert_eq!(fetched_veto.confidence, 0.0, "UC-121: Confidence reduced to 0.0");
+    let versions = db.get_memory_versions(target_mem_id).unwrap();
+    assert!(versions.iter().any(|v| v.reason.as_deref() == Some("Violates multi-region policy")), "UC-121: Audit trail preserved in versions");
+
+    // UC-122: Human control revoke_memories bulk-archives memories by session or agent
+    let new_mem = Memory {
+        id: "mem-rev-test".to_string(),
+        scope: MemoryScope::Project,
+        project_id: Some("proj-decisions-12".to_string()),
+        memory_type: MemoryType::Fact,
+        content: "Temporary session scratch fact".to_string(),
+        summary: "Scratch fact".to_string(),
+        confidence: 0.8,
+        importance: 0.5,
+        freshness: 1.0,
+        status: MemoryStatus::Active,
+        source_kind: MemorySourceKind::Agent,
+        version: Some(1),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_recalled_at: None,
+        tags: vec!["scratch".to_string()],
+        entities: vec![],
+        metadata: json!({"session_id": "sess-rogue-99", "agent": "bot-x"}),
+    };
+    db.save_memory(&new_mem).unwrap();
+    let revoked_count = db.revoke_memories(None, Some("sess-rogue-99"), None).unwrap();
+    assert_eq!(revoked_count, 1, "UC-122: 1 memory revoked by session");
+    let fetched_rev = db.get_memory_by_id("mem-rev-test").unwrap().unwrap();
+    assert_eq!(fetched_rev.status, MemoryStatus::Archived, "UC-122: Status changed to archived");
+}
+
+// ============================================================================
+// MASTER EXECUTIVE RUNNER: 122 USE CASES WITH SCOREBOARD REPORT
+// ============================================================================
+#[test]
+fn test_master_122_ide_agent_use_cases_runner() {
     let start_all = Instant::now();
     println!("\n================================================================================");
-    println!("          AutoMemory IDE & Agent Engine — 108 Comprehensive Use Cases           ");
+    println!("          AutoMemory IDE & Agent Engine — 122 Comprehensive Use Cases           ");
     println!("================================================================================\n");
 
     let t1 = Instant::now();
@@ -1919,10 +2218,18 @@ fn test_master_108_ide_agent_use_cases_runner() {
     test_suite_10_failure_catalog_and_mcp_suite();
     println!("  [PASS] Suite 10: Failure Catalog, Resolution & MCP Protocol Suite (UC-099 - UC-108) in {:.2?}", t10.elapsed());
 
+    let t11 = Instant::now();
+    test_suite_11_multi_agent_locks_and_leases();
+    println!("  [PASS] Suite 11: Multi-Agent Resource Leases & Lock Coordination (UC-109 - UC-115) in {:.2?}", t11.elapsed());
+
+    let t12 = Instant::now();
+    test_suite_12_decisions_and_trust_tiers();
+    println!("  [PASS] Suite 12: Architectural Decisions & Trust Tiers (UC-116 - UC-122) in {:.2?}", t12.elapsed());
+
     let total_time = start_all.elapsed();
     println!("\n================================================================================");
     println!(
-        "  VERIFICATION SCOREBOARD: 108 / 108 Use Cases PASSED (0 Failed) in {:.2?}",
+        "  VERIFICATION SCOREBOARD: 122 / 122 Use Cases PASSED (0 Failed) in {:.2?}",
         total_time
     );
     println!("================================================================================\n");

@@ -76,15 +76,6 @@ impl Database {
         Ok(list)
     }
 
-    pub fn invalidate_trace(&self, id: &str) -> Result<bool> {
-        let conn = self.conn();
-        let rows = conn.execute(
-            "UPDATE success_traces SET status = 'invalid', updated_at = ?1 WHERE id = ?2",
-            params![Utc::now().to_rfc3339(), id],
-        )?;
-        Ok(rows > 0)
-    }
-
     fn row_to_trace(row: &rusqlite::Row) -> rusqlite::Result<SuccessTrace> {
         let id: String = row.get(0)?;
         let project_id: Option<String> = row.get(1)?;

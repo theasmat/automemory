@@ -77,26 +77,146 @@ impl Database {
 }
 
 fn run_migrations(conn: &Connection) {
-    let _ = conn.execute(
-        "ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT",
-        [],
-    );
-    let _ = conn.execute(
-        "ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT",
-        [],
-    );
+    let version: i32 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    if version < 2 {
+        let _ = conn.execute(
+            "ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_events_timestamp ON tool_events(timestamp)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tool_events_proj_time ON tool_events(project_id, timestamp)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_scope_summary ON memories(scope, summary, project_id)",
+            [],
+        );
+        // Deduplicate existing redundant active memories in the same scope
+        let _ = conn.execute(
+            r#"
+            DELETE FROM memories WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY COALESCE(project_id, ''), scope, summary
+                        ORDER BY updated_at DESC, created_at DESC
+                    ) as rn
+                    FROM memories
+                    WHERE status = 'active'
+                ) WHERE rn = 1
+            ) AND status = 'active'
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 2", []);
+    }
+
+    if version < 3 {
+        let _ = conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS leases (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                agent TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                scope_type TEXT NOT NULL DEFAULT 'file',
+                goal TEXT NOT NULL,
+                ttl_seconds INTEGER NOT NULL DEFAULT 300,
+                acquired_at TEXT NOT NULL,
+                heartbeat_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_leases_scope ON leases(project_id, scope);
+            CREATE INDEX IF NOT EXISTS idx_leases_expires ON leases(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_leases_session ON leases(session_id);
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 3", []);
+    }
+
+    if version < 4 {
+        let _ = conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS decisions (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                topic TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                alternatives TEXT NOT NULL DEFAULT '[]',
+                dissent TEXT,
+                agent TEXT NOT NULL,
+                symbols TEXT NOT NULL DEFAULT '[]',
+                evidence TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'active',
+                superseded_by TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_decisions_topic ON decisions(project_id, topic);
+            CREATE INDEX IF NOT EXISTS idx_decisions_status ON decisions(status);
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 4", []);
+    }
+
+    if version < 5 {
+        let _ = conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS batons (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                from_session TEXT NOT NULL,
+                to_session TEXT,
+                agent TEXT NOT NULL,
+                packet TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_batons_pickup ON batons(project_id, to_session, created_at);
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 5", []);
+    }
+
+    if version < 6 {
+        for ddl in [
+            "ALTER TABLE tasks ADD COLUMN spec TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN symbols TEXT NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tasks ADD COLUMN owner_session TEXT",
+            "ALTER TABLE tasks ADD COLUMN result TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_session)",
+        ] {
+            let _ = conn.execute(ddl, []);
+        }
+        let _ = conn.execute("PRAGMA user_version = 6", []);
+    }
 }
 
 #[cfg(test)]

@@ -46,7 +46,7 @@ enum Commands {
         #[arg(long)]
         agent: String,
 
-        /// Event name (e.g. boot, pre-tool, post-tool, post-tool-fail, task-done, stop)
+        /// Event name (e.g. boot, pre-tool, post-tool, post-tool-fail, pre-commit, post-commit, task-done, stop)
         #[arg(long)]
         event: String,
 
@@ -118,6 +118,12 @@ enum Commands {
         command: GuardrailCommands,
     },
 
+    /// Run the local eval suites (retrieval, stale flags, leases, hook latency)
+    Eval {
+        #[command(subcommand)]
+        command: EvalCommands,
+    },
+
     /// Manage synthesized procedural playbooks and agent skills
     Skill {
         #[command(subcommand)]
@@ -128,6 +134,171 @@ enum Commands {
     Proposal {
         #[command(subcommand)]
         command: ProposalCommands,
+    },
+
+    /// View and inspect active multi-agent file and symbol locks
+    Locks {
+        /// Optional project slug or ID filter
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+
+    /// Release or override an active resource lock
+    Unlock {
+        /// Resource scope (file path, glob pattern, or symbol)
+        scope: String,
+
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Force unlock regardless of session
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+
+    /// Manage architectural decisions log with dissent and history
+    Decision {
+        #[command(subcommand)]
+        command: DecisionCommands,
+    },
+
+    /// Pin a memory as an immutable Tier 1 invariant (human control)
+    Pin {
+        /// Memory ID to pin
+        id: String,
+    },
+
+    /// Veto and reject a candidate memory or mark invalid (human control)
+    Veto {
+        /// Memory ID to veto
+        id: String,
+        /// Reason for veto
+        #[arg(short, long)]
+        reason: Option<String>,
+    },
+
+    /// Revoke and archive memories by ID, session, or agent (human control)
+    Revoke {
+        /// Specific memory ID to revoke
+        #[arg(long)]
+        id: Option<String>,
+        /// Revoke all memories produced by this session ID
+        #[arg(long)]
+        session: Option<String>,
+        /// Revoke all memories produced by this agent name
+        #[arg(long)]
+        agent: Option<String>,
+    },
+
+    /// Agent-to-agent handoff baton management (<400-token ledger-grounded packets)
+    Baton {
+        #[command(subcommand)]
+        command: BatonCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum BatonCommands {
+    /// Hand off work to another session by generating a ledger-grounded baton packet
+    Pass {
+        /// Passing session ID
+        #[arg(short, long)]
+        session: String,
+
+        /// Target receiving session ID (omit to broadcast)
+        #[arg(short, long)]
+        to: Option<String>,
+
+        /// Passing agent name
+        #[arg(short, long, default_value = "agent")]
+        agent: String,
+
+        /// Next step guidance or handover note
+        #[arg(short, long)]
+        note: Option<String>,
+
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+
+    /// Pick up the latest handoff baton packet (direct first, then broadcast)
+    Pickup {
+        /// Receiving session ID
+        #[arg(short, long)]
+        session: Option<String>,
+
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DecisionCommands {
+    /// Record an architectural decision (supersedes prior decision on same topic)
+    Record {
+        /// Architectural topic or domain (e.g. auth, cache, db)
+        #[arg(short, long)]
+        topic: String,
+
+        /// Exact decision made
+        #[arg(short, long)]
+        decision: String,
+
+        /// Technical rationale and justification
+        #[arg(short, long)]
+        reason: String,
+
+        /// Considered alternatives that were rejected
+        #[arg(short, long)]
+        alternatives: Vec<String>,
+
+        /// Dissenting opinions or known trade-offs
+        #[arg(long)]
+        dissent: Option<String>,
+
+        /// Agent or human recording the decision
+        #[arg(long, default_value = "human")]
+        agent: String,
+
+        /// Affected symbols or code modules
+        #[arg(short, long)]
+        symbols: Vec<String>,
+
+        /// Supporting evidence or ADR references
+        #[arg(short, long)]
+        evidence: Vec<String>,
+
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+
+    /// Get the active decision and preserved history/dissent for a topic
+    Get {
+        /// Topic to query (e.g. auth)
+        topic: String,
+
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+
+    /// List recorded architectural decisions
+    List {
+        /// Optional project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Optional status filter (active, superseded)
+        #[arg(short, long)]
+        status: Option<String>,
+
+        /// Limit number of decisions returned
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
     },
 }
 
@@ -296,8 +467,17 @@ enum RuleCommands {
 }
 
 #[derive(Subcommand)]
-enum GuardrailCommands {
-    /// Evaluate a shell command against guardrail rules without executing it (exit 0 allow, 1 warn, 2 block)
+enum EvalCommands {
+    /// Run all local suites; exit 0 if every suite passes, 1 otherwise
+    Run {
+        /// Emit the full report as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum GuardrailCommands {    /// Evaluate a shell command against guardrail rules without executing it (exit 0 allow, 1 warn, 2 block)
     Test {
         /// Shell command to evaluate
         #[arg(long)]
@@ -393,6 +573,12 @@ enum ProjectCommands {
 
 #[derive(Subcommand)]
 enum MemoryCommands {
+    /// Read a specific memory record in detail
+    Get {
+        /// Memory ID
+        id: String,
+    },
+
     /// List memories
     List {
         #[arg(short, long)]
@@ -400,6 +586,25 @@ enum MemoryCommands {
 
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
+
+        /// Group output by field ('type' or 'scope')
+        #[arg(short = 'g', long)]
+        group_by: Option<String>,
+    },
+
+    /// Generate an activity and progress digest for a specific time span
+    Digest {
+        /// Time span window (e.g. 15m, 30m, 1h, 2h, 4h, 24h, today) [default: 1h]
+        #[arg(short, long)]
+        span: Option<String>,
+
+        /// Optional project filter
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Persist synthesized digest as a durable milestone checkpoint memory
+        #[arg(long, default_value_t = false)]
+        save: bool,
     },
 
     /// Search memories using FTS5 or zero-knowledge semantic vector search
@@ -438,6 +643,22 @@ enum MemoryCommands {
         /// Project ID or slug
         #[arg(short, long)]
         project: Option<String>,
+
+        /// Knowledge domain category (architecture, bugfix, feature, decision, lesson)
+        #[arg(short = 'c', long)]
+        category: Option<String>,
+
+        /// Specific achievements reached
+        #[arg(long = "achieved")]
+        achieved: Vec<String>,
+
+        /// Specific failures or blockers resolved
+        #[arg(long = "failed")]
+        failed: Vec<String>,
+
+        /// Comma-separated list of affected file paths
+        #[arg(long = "files")]
+        files: Option<String>,
     },
 
     /// Archive a memory
@@ -634,8 +855,22 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Memory { command } => match command {
-            MemoryCommands::List { project, limit } => {
-                commands::memory::list(project, limit)?;
+            MemoryCommands::Get { id } => {
+                commands::memory::get(&id)?;
+            }
+            MemoryCommands::List {
+                project,
+                limit,
+                group_by,
+            } => {
+                commands::memory::list(project, limit, group_by)?;
+            }
+            MemoryCommands::Digest {
+                span,
+                project,
+                save,
+            } => {
+                commands::memory::digest(span, project, save)?;
             }
             MemoryCommands::Search {
                 query,
@@ -651,8 +886,22 @@ async fn main() -> Result<()> {
                 mem_type,
                 scope,
                 project,
+                category,
+                achieved,
+                failed,
+                files,
             } => {
-                commands::memory::save(&content, &summary, mem_type, scope, project)?;
+                commands::memory::save(commands::memory::MemorySaveArgs {
+                    content,
+                    summary,
+                    mem_type,
+                    scope,
+                    project_id: project,
+                    category,
+                    achieved,
+                    failed,
+                    files,
+                })?;
             }
             MemoryCommands::Archive { id } => {
                 commands::memory::archive(&id)?;
@@ -717,6 +966,9 @@ async fn main() -> Result<()> {
                 mode,
                 project,
             } => commands::guardrail::test_command(&command, mode, project)?,
+        },
+        Commands::Eval { command } => match command {
+            EvalCommands::Run { json } => commands::eval::run(json)?,
         },
         Commands::Doc { command } => match command {
             DocCommands::Track {
@@ -789,6 +1041,84 @@ async fn main() -> Result<()> {
                 project,
             } => {
                 commands::proposal::reject_all(proposal_type, project)?;
+            }
+        },
+        Commands::Locks { project } => commands::lock::list_locks(project.as_deref())?,
+        Commands::Unlock {
+            scope,
+            project,
+            force,
+        } => commands::lock::unlock(&scope, project.as_deref(), force)?,
+        Commands::Decision { command } => match command {
+            DecisionCommands::Record {
+                topic,
+                decision,
+                reason,
+                alternatives,
+                dissent,
+                agent,
+                symbols,
+                evidence,
+                project,
+            } => {
+                commands::decision::record_decision(commands::decision::DecisionRecordCliArgs {
+                    topic: &topic,
+                    decision: &decision,
+                    reason: &reason,
+                    alternatives: &alternatives,
+                    dissent: dissent.as_deref(),
+                    agent: &agent,
+                    symbols: &symbols,
+                    evidence: &evidence,
+                    project_arg: project.as_deref(),
+                })?;
+            }
+            DecisionCommands::Get { topic, project } => {
+                commands::decision::get_decision(&topic, project.as_deref())?;
+            }
+            DecisionCommands::List {
+                project,
+                status,
+                limit,
+            } => {
+                commands::decision::list_decisions(
+                    project.as_deref(),
+                    status.as_deref(),
+                    limit,
+                )?;
+            }
+        },
+        Commands::Pin { id } => {
+            commands::governance::pin_memory(&id)?;
+        }
+        Commands::Veto { id, reason } => {
+            commands::governance::veto_memory(&id, reason.as_deref())?;
+        }
+        Commands::Revoke { id, session, agent } => {
+            commands::governance::revoke_memories(
+                id.as_deref(),
+                session.as_deref(),
+                agent.as_deref(),
+            )?;
+        }
+        Commands::Baton { command } => match command {
+            BatonCommands::Pass {
+                session,
+                to,
+                agent,
+                note,
+                project,
+            } => {
+                commands::baton::pass(
+                    &session,
+                    to.as_deref(),
+                    &agent,
+                    note.as_deref(),
+                    project.as_deref(),
+                )?;
+            }
+            BatonCommands::Pickup { session, project } => {
+                commands::baton::pickup(session.as_deref(), project.as_deref())?;
             }
         },
     }

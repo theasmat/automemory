@@ -8,17 +8,17 @@
 
 This comprehensive technical report is structured into four core chapters:
 
-1. **[What We Are Building](file:///Users/as/Dev/Projects/opensources/automemory/.report/what_we_are_building.md)**
+1. **[What We Are Building](what_we_are_building.md)**
    - Executive Summary, Core Vision, and Philosophy.
    - The 4 Pillars: Active Safety Guardrails, Evidence-Preserving Distillation, Procedural Skills & Constitution, and Temporal Memory Decay.
    - The Problem Space: Why traditional vector databases and dumb KV stores fail autonomous coding agents.
 
-2. **[How It Works (Lifecycle & Workflows)](file:///Users/as/Dev/Projects/opensources/automemory/.report/how_it_works.md)**
+2. **[How It Works (Lifecycle & Workflows)](how_it_works.md)**
    - The Autonomous Agent Lifecycle (Boot $\rightarrow$ Pre-Tool Interception $\rightarrow$ Post-Tool Recording $\rightarrow$ Distillation $\rightarrow$ Playbook Synthesis).
    - Sequence Diagrams & Real-Time Event Replay.
    - Autopilot Operational Modes: **Vibe Mode**, **Strict Mode**, and **Review Mode**.
 
-3. **[Technical Specifications & Deep Architecture](file:///Users/as/Dev/Projects/opensources/automemory/.report/technical_specifications.md)**
+3. **[Technical Specifications & Deep Architecture](technical_specifications.md)**
    - Rust Crate Architecture (`automemory-core`, `automemory-cli`, `automemory-mcp`).
    - SQLite WAL Database Engine, Schema ERD, and FTS5 BM25 Triggers.
    - AST Shell Tokenizer & Subshell Unwrapping Algorithm.
@@ -26,11 +26,17 @@ This comprehensive technical report is structured into four core chapters:
    - 23-Tool Model Context Protocol (MCP) Catalog & Protocol Mapping.
    - Embedded Nuxt 3 SPA Web Dashboard with WebSocket JSON-RPC Pulse.
 
-4. **[Targets, SLAs & Competitive Benchmarks](file:///Users/as/Dev/Projects/opensources/automemory/.report/targets_and_benchmarks.md)**
+4. **[Targets, SLAs & Competitive Benchmarks](targets_and_benchmarks.md)**
    - Target Personas & Ecosystem Distribution (Antigravity, Claude Code, Cursor, Cline).
    - Measured Performance SLAs vs. Targets (Sub-2ms Interception, 100:1 Compression, 72.4% Token Reduction).
    - In-Depth Competitive Comparison Matrix: **AutoMemory vs. Mem0 vs. Zep vs. LangMem vs. Plain Vector DBs**.
    - Strategic Engineering Roadmap & Milestone Timeline.
+
+5. **[Multi-Agent Coding Ecosystem Needs & Architecture](research/multi_agent_ecosystem_needs.md)**
+   - Deep Research: Polyglot Agent Stacks (Cursor, Claude Code, Antigravity, Aider, Devin).
+   - The 6 Fatal Multi-Agent Bottlenecks: Context Islands, Concurrency Collision, and Handoff Friction.
+   - The 6-Tier Memory Architecture: Blackboard, Time-Span Ledger, and Baton Handoff Protocol.
+   - Strategic Phased Implementation Roadmap for Multi-Agent Support.
 
 ---
 

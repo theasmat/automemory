@@ -36,10 +36,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     session_id TEXT NOT NULL,
     project_id TEXT,
     title TEXT NOT NULL,
+    spec TEXT NOT NULL DEFAULT '',
+    symbols TEXT NOT NULL DEFAULT '[]',
+    owner_session TEXT,
+    result TEXT,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_session);
 
 CREATE TABLE IF NOT EXISTS tool_events (
     event_id TEXT PRIMARY KEY,
@@ -67,6 +74,8 @@ CREATE TABLE IF NOT EXISTS tool_events (
 CREATE INDEX IF NOT EXISTS idx_tool_events_processed ON tool_events(processed, timestamp);
 CREATE INDEX IF NOT EXISTS idx_tool_events_session ON tool_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool_events_project ON tool_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_tool_events_timestamp ON tool_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_tool_events_proj_time ON tool_events(project_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS memories (
     id TEXT PRIMARY KEY,
@@ -314,3 +323,56 @@ CREATE TABLE IF NOT EXISTS procedural_skills (
 );
 
 CREATE INDEX IF NOT EXISTS idx_procedural_skills_proj ON procedural_skills(project_id);
+
+-- Multi-Agent Coordination Leases and Resource Locks
+CREATE TABLE IF NOT EXISTS leases (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    agent TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    scope_type TEXT NOT NULL DEFAULT 'file',
+    goal TEXT NOT NULL,
+    ttl_seconds INTEGER NOT NULL DEFAULT 300,
+    acquired_at TEXT NOT NULL,
+    heartbeat_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_leases_scope ON leases(project_id, scope);
+CREATE INDEX IF NOT EXISTS idx_leases_expires ON leases(expires_at);
+CREATE INDEX IF NOT EXISTS idx_leases_session ON leases(session_id);
+
+-- Architecture Decisions (Binding records with alternatives, reasons, and dissent)
+CREATE TABLE IF NOT EXISTS decisions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    topic TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    alternatives TEXT NOT NULL DEFAULT '[]',
+    dissent TEXT,
+    agent TEXT NOT NULL,
+    symbols TEXT NOT NULL DEFAULT '[]',
+    evidence TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active',
+    superseded_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_topic ON decisions(project_id, topic);
+CREATE INDEX IF NOT EXISTS idx_decisions_status ON decisions(status);
+
+-- Agent-to-Agent Handoff Batons (<400-token packets built from the ledger)
+CREATE TABLE IF NOT EXISTS batons (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    from_session TEXT NOT NULL,
+    to_session TEXT,
+    agent TEXT NOT NULL,
+    packet TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_batons_pickup ON batons(project_id, to_session, created_at);

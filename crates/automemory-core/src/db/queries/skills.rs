@@ -82,12 +82,6 @@ impl Database {
         Ok(list)
     }
 
-    pub fn delete_skill(&self, id: &str) -> Result<bool> {
-        let conn = self.conn();
-        let rows = conn.execute("DELETE FROM procedural_skills WHERE id = ?1", params![id])?;
-        Ok(rows > 0)
-    }
-
     fn row_to_skill(row: &rusqlite::Row) -> rusqlite::Result<ProceduralSkill> {
         let id: String = row.get(0)?;
         let project_id: Option<String> = row.get(1)?;

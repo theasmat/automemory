@@ -4,7 +4,7 @@
 # https://github.com/theasmat/automemory
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/theasmat/automemory/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.sh | bash
 # ==============================================================================
 
 set -euo pipefail
@@ -33,7 +33,8 @@ log_error() {
     printf "${RED}✗ Error:${RESET} %s\n" "$1" >&2
 }
 
-REPO="theasmat/automemory"
+REPO="theasmat/automemory-bin"
+SRC_REPO="theasmat/automemory"
 BINARY_NAME="automemory"
 INSTALL_DIR="${HOME}/.cargo/bin"
 
@@ -59,7 +60,7 @@ case "${OS}" in
         TARGET_OS="unknown-linux-gnu"
         ;;
     *)
-        log_error "Unsupported OS: ${OS}. On Windows, use PowerShell: irm https://raw.githubusercontent.com/theasmat/automemory/main/install.ps1 | iex"
+        log_error "Unsupported OS: ${OS}. On Windows, use PowerShell: irm https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.ps1 | iex"
         exit 1
         ;;
 esac
@@ -82,19 +83,21 @@ log_info "Detected Platform: ${OS} (${ARCH}) -> Target: ${TARGET_TRIPLE}"
 
 INSTALLED=false
 
-# 2. Check if running inside repository clone
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
-if [ -f "${SCRIPT_DIR}/Cargo.toml" ] && grep -q 'automemory' "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null; then
-    log_info "Detected local repository clone at ${SCRIPT_DIR}"
-    if [ -f "${SCRIPT_DIR}/target/release/${BINARY_NAME}" ]; then
-        log_info "Using existing local release binary..."
-        cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        INSTALLED=true
-    elif command -v cargo >/dev/null 2>&1; then
-        log_info "Building release binary with Cargo..."
-        (cd "${SCRIPT_DIR}" && cargo build --release)
-        cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        INSTALLED=true
+# 2. Check if running directly inside a local repository clone (file execution only)
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
+    if [ -f "${SCRIPT_DIR}/Cargo.toml" ] && grep -q 'automemory' "${SCRIPT_DIR}/Cargo.toml" 2>/dev/null; then
+        log_info "Detected local repository clone at ${SCRIPT_DIR}"
+        if [ -f "${SCRIPT_DIR}/target/release/${BINARY_NAME}" ]; then
+            log_info "Using existing local release binary..."
+            cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+            INSTALLED=true
+        elif command -v cargo >/dev/null 2>&1; then
+            log_info "Building release binary with Cargo..."
+            (cd "${SCRIPT_DIR}" && cargo build --release)
+            cp "${SCRIPT_DIR}/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+            INSTALLED=true
+        fi
     fi
 fi
 
@@ -104,12 +107,16 @@ if [ "${INSTALLED}" = false ]; then
     TEMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'automemory-install')"
     trap 'rm -rf "${TEMP_DIR}"' EXIT
 
-    log_info "Attempting to download pre-built release from GitHub..."
+    log_info "Attempting to download pre-built release from GitHub (${REPO})..."
     if curl -fsSL -o "${TEMP_DIR}/automemory.tar.gz" "${RELEASE_URL}" 2>/dev/null; then
         tar -xzf "${TEMP_DIR}/automemory.tar.gz" -C "${TEMP_DIR}"
         if [ -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
             chmod +x "${TEMP_DIR}/${BINARY_NAME}"
             mv "${TEMP_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+            if [ "${OS}" = "darwin" ]; then
+                # Remove quarantine attribute on macOS to prevent Gatekeeper "Apple cannot verify" prompt
+                xattr -d com.apple.quarantine "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
+            fi
             INSTALLED=true
             log_success "Downloaded pre-built binary for ${TARGET_TRIPLE}"
         fi
@@ -119,12 +126,16 @@ fi
 # 4. If release binary download failed, fallback to cargo install
 if [ "${INSTALLED}" = false ]; then
     if command -v cargo >/dev/null 2>&1; then
-        log_info "Release asset not available for ${TARGET_TRIPLE}. Building via cargo install..."
-        cargo install --git "https://github.com/${REPO}.git" --bin automemory
-        INSTALLED=true
-    else
-        log_error "Could not download pre-built binary and Rust/Cargo is not installed."
-        log_info "To install Rust and Cargo, run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        log_info "Release asset not available for ${TARGET_TRIPLE}. Attempting fallback via cargo install..."
+        if cargo install --git "https://github.com/${SRC_REPO}.git" --bin automemory 2>/dev/null; then
+            INSTALLED=true
+        fi
+    fi
+
+    if [ "${INSTALLED}" = false ]; then
+        log_error "Could not download pre-built binary for ${TARGET_TRIPLE} from https://github.com/${REPO}/releases"
+        log_info "Please check that a release asset exists for your architecture (${TARGET_TRIPLE})."
+        log_info "If building from source, ensure you have repository access and run: cargo build --release"
         exit 1
     fi
 fi

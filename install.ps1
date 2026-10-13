@@ -1,9 +1,9 @@
 # ==============================================================================
 # AutoMemory Universal Windows Installer (PowerShell)
-# https://github.com/theasmat/automemory
+# https://github.com/theasmat/automemory-bin
 #
 # Usage (run in PowerShell):
-#   irm https://raw.githubusercontent.com/theasmat/automemory/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.ps1 | iex
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +15,8 @@ Write-Host "  Persistent Intelligence & Guardrails for AI Agents    "
 Write-Host "========================================================" -ForegroundColor Yellow
 Write-Host ""
 
-$repo = "theasmat/automemory"
+$repo = "theasmat/automemory-bin"
+$srcRepo = "theasmat/automemory"
 $binaryName = "automemory.exe"
 
 # Target installation directory
@@ -59,13 +60,15 @@ if (-not $installed) {
     $tempZip = [System.IO.Path]::GetTempFileName() + ".zip"
     $tempExtract = Join-Path ([System.IO.Path]::GetTempPath()) "automemory_install_$(Get-Random)"
 
-    Write-Host "==> Attempting to download pre-built release from GitHub..." -ForegroundColor Cyan
+    Write-Host "==> Attempting to download pre-built release from GitHub ($repo)..." -ForegroundColor Cyan
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 30
         Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
         if (Test-Path "$tempExtract\$binaryName") {
             Copy-Item "$tempExtract\$binaryName" "$installDir\$binaryName" -Force
+            # Unblock binary on Windows to prevent security prompt
+            Unblock-File -Path "$installDir\$binaryName" -ErrorAction SilentlyContinue
             $installed = $true
             Write-Host "✓ Downloaded pre-built binary for $targetTriple" -ForegroundColor Green
         }
@@ -81,10 +84,16 @@ if (-not $installed) {
 if (-not $installed) {
     if (Get-Command cargo -ErrorAction SilentlyContinue) {
         Write-Host "==> Building from source via cargo install..." -ForegroundColor Cyan
-        cargo install --git "https://github.com/$repo.git" --bin automemory
-        $installed = $true
-    } else {
-        Write-Error "Pre-built binary download was unavailable and Rust/Cargo is not installed. Please install Rust from https://rustup.rs"
+        try {
+            cargo install --git "https://github.com/$srcRepo.git" --bin automemory
+            $installed = $true
+        } catch {
+            Write-Warning "cargo install failed: $($_.Exception.Message)"
+        }
+    }
+    
+    if (-not $installed) {
+        Write-Error "Could not install automemory: Pre-built binary download was unavailable for $targetTriple. Please check https://github.com/$repo/releases"
         exit 1
     }
 }

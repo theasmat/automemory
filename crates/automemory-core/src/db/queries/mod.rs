@@ -1,12 +1,16 @@
+pub mod batons;
+pub mod decisions;
 pub mod documents;
 pub mod events;
 pub mod failures;
 pub mod graph;
 pub mod guardrails;
+pub mod leases;
 pub mod memories;
 pub mod preferences;
 pub mod projects;
 pub mod proposals;
 pub mod skills;
 pub mod stats;
+pub mod tasks;
 pub mod traces;

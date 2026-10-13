@@ -4,6 +4,7 @@ use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
+use automemory_core::verify::{DecayVerifier, Verifier};
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::str::FromStr;
@@ -91,6 +92,19 @@ impl ToolRegistry {
                     "type": "object",
                     "properties": {
                         "project_id": { "type": "string" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "memory.digest".to_string(),
+                description: "Generate an activity and progress digest for a specific time span (e.g. '15m', '30m', '1h', '2h', '4h', 'today', 'session'), including editing metrics, files modified, achievements, and failures.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" },
+                        "span": { "type": "string", "description": "Time span window: '15m', '30m', '1h', '2h', '4h', '24h', 'today', or 'session' (default '1h')" },
+                        "session_id": { "type": "string", "description": "Session ID (used if span is 'session')" },
+                        "auto_save": { "type": "boolean", "description": "Whether to automatically save this digest as a durable checkpoint milestone memory (default false)" }
                     }
                 }),
             },
@@ -207,8 +221,13 @@ impl ToolRegistry {
                         "type": { "type": "string", "enum": ["fact", "decision", "lesson", "pattern", "warning", "observation", "preference", "skill"] },
                         "scope": { "type": "string", "enum": ["global", "project"] },
                         "project_id": { "type": "string" },
+                        "category": { "type": "string", "description": "Domain category: architecture, decision, feature, bugfix, lesson, milestone" },
+                        "achievements": { "type": "array", "items": { "type": "string" }, "description": "List of milestones achieved" },
+                        "failures_resolved": { "type": "array", "items": { "type": "string" }, "description": "List of errors diagnosed and resolved" },
+                        "files_modified": { "type": "array", "items": { "type": "string" }, "description": "Codebase files affected" },
                         "tags": { "type": "array", "items": { "type": "string" } },
-                        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                        "metadata": { "type": "object", "description": "Arbitrary extra metadata" }
                     },
                     "required": ["content", "summary"]
                 }),
@@ -481,6 +500,154 @@ impl ToolRegistry {
                     }
                 }),
             },
+            ToolDefinition {
+                name: "lock.acquire".to_string(),
+                description: "Acquire or renew a cooperative multi-agent lease on a file, glob pattern, or symbol to prevent collisions".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "scope": { "type": "string", "description": "Target resource: file path (e.g. 'src/auth/session.ts'), glob ('src/models/*.rs'), or symbol ('auth::login')" },
+                        "goal": { "type": "string", "description": "Clear explanation of what is being modified and why" },
+                        "scope_type": { "type": "string", "enum": ["file", "glob", "symbol"], "description": "Scope granularity (default 'file')" },
+                        "ttl_seconds": { "type": "integer", "description": "Lease duration in seconds (default 300)" },
+                        "agent": { "type": "string", "description": "Agent name or harness (e.g. 'claude-code', 'antigravity')" },
+                        "session_id": { "type": "string", "description": "Unique session identifier (default 'default-session')" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["scope", "goal"]
+                }),
+            },
+            ToolDefinition {
+                name: "lock.release".to_string(),
+                description: "Release a held resource lease, or all leases held by a session".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Session ID that holds the lease" },
+                        "scope": { "type": "string", "description": "Specific scope to release (if omitted, all leases held by session are released)" }
+                    },
+                    "required": ["session_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "lock.status".to_string(),
+                description: "List currently active multi-agent resource leases and their remaining TTLs".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "decision.record".to_string(),
+                description: "Record an architectural decision with rationale, alternatives, and dissent. Supersedes prior active decision on the same topic while preserving history.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "topic": { "type": "string", "description": "Subject or architectural topic (e.g. 'auth', 'database', 'caching')" },
+                        "decision": { "type": "string", "description": "The exact decision adopted" },
+                        "reason": { "type": "string", "description": "Technical rationale and justification" },
+                        "alternatives": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Considered alternatives that were rejected"
+                        },
+                        "dissent": { "type": "string", "description": "Documented counterarguments or dissenting view points" },
+                        "agent": { "type": "string", "description": "Agent or user recording the decision" },
+                        "symbols": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Affected symbols or modules (e.g. ['auth::jwt', 'api::login'])"
+                        },
+                        "evidence": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Supporting evidence IDs or ADR references"
+                        },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["topic", "decision", "reason"]
+                }),
+            },
+            ToolDefinition {
+                name: "decision.get".to_string(),
+                description: "Fetch the active architectural decision for a topic along with full history and preserved dissent".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "topic": { "type": "string", "description": "Subject or architectural topic (e.g. 'auth')" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["topic"]
+                }),
+            },
+            ToolDefinition {
+                name: "baton.pass".to_string(),
+                description: "Hand off work to another agent session: builds a sub-400-token packet from ledger facts (tool calls, files, leases, decisions, blockers) and stores it for pickup".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Passing session ID (source)" },
+                        "to_session": { "type": "string", "description": "Receiving session ID (omit to broadcast)" },
+                        "note": { "type": "string", "description": "Next step for the receiving agent" },
+                        "agent": { "type": "string", "description": "Passing agent name" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["session_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "baton.pickup".to_string(),
+                description: "Pick up the latest handoff packet for a session (direct first, then broadcast)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Receiving session ID" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "task.create".to_string(),
+                description: "Enqueue a work item with spec and symbol scope for agents to claim".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Creating session ID" },
+                        "title": { "type": "string", "description": "Short task title" },
+                        "spec": { "type": "string", "description": "What needs doing" },
+                        "symbols": { "type": "array", "items": { "type": "string" }, "description": "Affected symbols or modules" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["session_id", "title"]
+                }),
+            },
+            ToolDefinition {
+                name: "task.next".to_string(),
+                description: "Claim the oldest open work item (FIFO), or resume the one this session already holds".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "string", "description": "Claiming session ID" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["session_id"]
+                }),
+            },
+            ToolDefinition {
+                name: "task.submit".to_string(),
+                description: "Hand claimed work to review with a result note. Only the owning session can submit".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "description": "Task ID" },
+                        "session_id": { "type": "string", "description": "Owning session ID" },
+                        "result": { "type": "string", "description": "What was done / review notes" }
+                    },
+                    "required": ["id", "session_id"]
+                }),
+            },
         ]
     }
 
@@ -499,12 +666,17 @@ impl ToolRegistry {
 
                 match self.db.search_memories_fts(query, project_id, limit) {
                     Ok(results) => {
+                        let verifier = DecayVerifier::default();
                         let formatted: Vec<_> = results
                             .into_iter()
                             .map(|(m, rank)| {
+                                let verify_status = verifier.verify(&m).to_string();
                                 json!({
                                     "id": m.id,
                                     "type": m.memory_type.to_string(),
+                                    "trust_tier": m.trust_tier().as_u8(),
+                                    "status": m.status.to_string(),
+                                    "verify_status": verify_status,
                                     "summary": m.summary,
                                     "content": m.content,
                                     "confidence": m.confidence,
@@ -628,6 +800,53 @@ impl ToolRegistry {
                     "traces_count": traces.len(),
                     "proposals": prop_summary
                 }))
+            }
+
+            "memory.digest" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let span_str = arguments
+                    .get("span")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("1h");
+                let auto_save = arguments
+                    .get("auto_save")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let engine = automemory_core::extraction::TimeSpanDigestEngine::new(&self.db);
+                let digest_res = if span_str.eq_ignore_ascii_case("session") {
+                    if let Some(session_id) = arguments.get("session_id").and_then(|v| v.as_str()) {
+                        engine.generate_session_digest(session_id)
+                    } else {
+                        return ToolCallResult::error(
+                            "Missing parameter: session_id is required when span is 'session'",
+                        );
+                    }
+                } else {
+                    match automemory_core::models::timespan::parse_time_span_str(span_str) {
+                        Ok((start, end)) => engine.generate_digest(project_id, start, end),
+                        Err(e) => return ToolCallResult::error(format!("Invalid span format: {}", e)),
+                    }
+                };
+
+                match digest_res {
+                    Ok(digest) => {
+                        let mut saved_memory_id = None;
+                        if auto_save {
+                            if let Ok(mem) = engine.synthesize_milestone_memory(&digest, None) {
+                                if self.db.save_memory(&mem).is_ok() {
+                                    saved_memory_id = Some(mem.id);
+                                }
+                            }
+                        }
+                        ToolCallResult::json(&json!({
+                            "digest": digest,
+                            "executive_summary": digest.executive_summary,
+                            "saved_memory_id": saved_memory_id
+                        }))
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to generate time span digest: {}", e)),
+                }
             }
 
             "trace.list" => {
@@ -793,6 +1012,25 @@ impl ToolRegistry {
                     })
                     .unwrap_or_default();
 
+                let mut metadata_map = serde_json::Map::new();
+                if let Some(cat) = arguments.get("category").and_then(|v| v.as_str()) {
+                    metadata_map.insert("category".to_string(), json!(cat));
+                }
+                if let Some(ach) = arguments.get("achievements") {
+                    metadata_map.insert("achievements".to_string(), ach.clone());
+                }
+                if let Some(fail) = arguments.get("failures_resolved") {
+                    metadata_map.insert("failures_resolved".to_string(), fail.clone());
+                }
+                if let Some(fls) = arguments.get("files_modified") {
+                    metadata_map.insert("files_modified".to_string(), fls.clone());
+                }
+                if let Some(custom_meta) = arguments.get("metadata").and_then(|v| v.as_object()) {
+                    for (k, v) in custom_meta {
+                        metadata_map.insert(k.clone(), v.clone());
+                    }
+                }
+
                 let mem = Memory {
                     id: Uuid::now_v7().to_string(),
                     scope,
@@ -811,7 +1049,7 @@ impl ToolRegistry {
                     last_recalled_at: None,
                     tags,
                     entities: Vec::new(),
-                    metadata: json!({}),
+                    metadata: Value::Object(metadata_map),
                 };
 
                 match self.db.save_memory(&mem) {
@@ -1252,6 +1490,361 @@ impl ToolRegistry {
                         target
                     )),
                     Err(e) => ToolCallResult::error(format!("Impact analysis failed: {}", e)),
+                }
+            }
+
+            // ==========================================
+            // Multi-Agent Lock & Lease Coordination Tools
+            // ==========================================
+            "lock.acquire" => {
+                let scope = match arguments.get("scope").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: scope"),
+                };
+                let goal = match arguments.get("goal").and_then(|v| v.as_str()) {
+                    Some(g) => g,
+                    None => return ToolCallResult::error("Missing required parameter: goal"),
+                };
+                let scope_type = arguments
+                    .get("scope_type")
+                    .and_then(|v| v.as_str())
+                    .map(LeaseScopeType::from)
+                    .unwrap_or(LeaseScopeType::File);
+                let ttl_seconds = arguments
+                    .get("ttl_seconds")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(300);
+                let agent = arguments
+                    .get("agent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("agent");
+                let session_id = arguments
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default-session");
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                match self.db.acquire_lease(LeaseAcquireArgs {
+                    project_id,
+                    agent,
+                    session_id,
+                    scope,
+                    scope_type,
+                    goal,
+                    ttl_seconds,
+                }) {
+                    Ok(LeaseAcquireResult::Acquired { lease }) => {
+                        let result_payload = json!({
+                            "status": "granted",
+                            "lease_id": lease.id,
+                            "scope": lease.scope,
+                            "scope_type": lease.scope_type.to_string(),
+                            "ttl_seconds": lease.ttl_seconds,
+                            "expires_at": lease.expires_at.to_rfc3339(),
+                            "next_action": format!("Lease granted on '{}'. Proceed with edits, then call lock.release when finished.", lease.scope)
+                        });
+                        ToolCallResult::json(&result_payload)
+                    }
+                    Ok(LeaseAcquireResult::Renewed { lease }) => {
+                        let result_payload = json!({
+                            "status": "renewed",
+                            "lease_id": lease.id,
+                            "scope": lease.scope,
+                            "ttl_seconds": lease.ttl_seconds,
+                            "expires_at": lease.expires_at.to_rfc3339(),
+                            "next_action": format!("Lease renewed on '{}'. Continue your task.", lease.scope)
+                        });
+                        ToolCallResult::json(&result_payload)
+                    }
+                    Ok(LeaseAcquireResult::Conflict { conflict }) => {
+                        let result_payload = json!({
+                            "status": "conflict",
+                            "message": format!("Resource '{}' is currently leased by another agent.", conflict.scope),
+                            "conflict": {
+                                "holder_agent": conflict.holder_agent,
+                                "holder_session_id": conflict.holder_session_id,
+                                "goal": conflict.goal,
+                                "remaining_seconds": conflict.remaining_seconds,
+                                "expires_at": conflict.expires_at.to_rfc3339(),
+                            },
+                            "next_action": format!("Wait for lease to expire ({}s remaining), or switch to another task.", conflict.remaining_seconds)
+                        });
+                        ToolCallResult::json(&result_payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to acquire lease: {}", e)),
+                }
+            }
+
+            "lock.release" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let scope = arguments.get("scope").and_then(|v| v.as_str());
+
+                match self.db.release_leases(session_id, scope) {
+                    Ok(count) => {
+                        let result_payload = json!({
+                            "status": "released",
+                            "released_count": count,
+                            "scope": scope,
+                            "next_action": "Lease released. Other agents may now modify this resource."
+                        });
+                        ToolCallResult::json(&result_payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to release lease: {}", e)),
+                }
+            }
+
+            "lock.status" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                match self.db.list_active_leases(project_id) {
+                    Ok(leases) => {
+                        let now = Utc::now();
+                        let items: Vec<_> = leases
+                            .into_iter()
+                            .map(|l| {
+                                let rem = l.remaining_seconds(now);
+                                json!({
+                                    "id": l.id,
+                                    "scope": l.scope,
+                                    "scope_type": l.scope_type.to_string(),
+                                    "agent": l.agent,
+                                    "session_id": l.session_id,
+                                    "goal": l.goal,
+                                    "remaining_seconds": rem,
+                                    "expires_at": l.expires_at.to_rfc3339(),
+                                })
+                            })
+                            .collect();
+
+                        let result_payload = json!({
+                            "active_leases": items,
+                            "count": items.len(),
+                            "next_action": "Use lock.acquire to lease a file/symbol before modifying it, or lock.release to yield."
+                        });
+                        ToolCallResult::json(&result_payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to list active leases: {}", e)),
+                }
+            }
+
+            "decision.record" => {
+                let topic = match arguments.get("topic").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => return ToolCallResult::error("Missing required parameter: topic"),
+                };
+                let decision = match arguments.get("decision").and_then(|v| v.as_str()) {
+                    Some(d) => d,
+                    None => return ToolCallResult::error("Missing required parameter: decision"),
+                };
+                let reason = match arguments.get("reason").and_then(|v| v.as_str()) {
+                    Some(r) => r,
+                    None => return ToolCallResult::error("Missing required parameter: reason"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent");
+                let dissent = arguments.get("dissent").and_then(|v| v.as_str());
+
+                let alternatives: Vec<String> = arguments
+                    .get("alternatives")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let symbols: Vec<String> = arguments
+                    .get("symbols")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let evidence: Vec<String> = arguments
+                    .get("evidence")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                match self.db.record_decision(DecisionRecordArgs {
+                    project_id,
+                    topic,
+                    decision,
+                    reason,
+                    alternatives: &alternatives,
+                    dissent,
+                    agent,
+                    symbols: &symbols,
+                    evidence: &evidence,
+                }) {
+                    Ok(rec) => {
+                        let payload = json!({
+                            "status": "recorded",
+                            "decision": rec,
+                            "next_action": format!("Decision for '{}' recorded. Call decision.get(\"{}\") to retrieve active policy and dissent.", rec.topic, rec.topic)
+                        });
+                        ToolCallResult::json(&payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to record decision: {}", e)),
+                }
+            }
+
+            "decision.get" => {
+                let topic = match arguments.get("topic").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => return ToolCallResult::error("Missing required parameter: topic"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                match self.db.get_decision(project_id, topic) {
+                    Ok(res) => {
+                        let next_action = match &res.active {
+                            Some(act) => format!("Follow active decision for '{}': {}. Proceed with implementation.", act.topic, act.decision),
+                            None => format!("No active decision found for '{}'. Use decision.record to establish policy.", topic),
+                        };
+                        let payload = json!({
+                            "topic": res.topic,
+                            "active": res.active,
+                            "history": res.history,
+                            "next_action": next_action
+                        });
+                        ToolCallResult::json(&payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to get decision: {}", e)),
+                }
+            }
+
+            "baton.pass" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let to_session = arguments.get("to_session").and_then(|v| v.as_str());
+                let note = arguments.get("note").and_then(|v| v.as_str());
+                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent");
+
+                match automemory_core::baton::pass_baton(
+                    &self.db,
+                    project_id,
+                    session_id,
+                    to_session,
+                    agent,
+                    note,
+                ) {
+                    Ok(baton) => {
+                        let payload = json!({
+                            "status": "passed",
+                            "baton": baton,
+                            "next_action": "Tell the receiving agent to call baton.pickup with its session_id, then memory.context for full context."
+                        });
+                        ToolCallResult::json(&payload)
+                    }
+                    Err(e) => ToolCallResult::error(format!("Failed to pass baton: {}", e)),
+                }
+            }
+
+            "baton.pickup" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str());
+
+                match self.db.latest_baton(project_id, session_id) {
+                    Ok(Some(baton)) => {
+                        let payload = json!({
+                            "baton": baton,
+                            "next_action": "Call memory.context for full project context, then continue with the packet's next step."
+                        });
+                        ToolCallResult::json(&payload)
+                    }
+                    Ok(None) => ToolCallResult::error("No handoff baton found for this session"),
+                    Err(e) => ToolCallResult::error(format!("Failed to pick up baton: {}", e)),
+                }
+            }
+
+            "task.create" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let title = match arguments.get("title").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: title"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let spec = arguments.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+                let symbols: Vec<String> = arguments
+                    .get("symbols")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(ToString::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                match self.db.create_task(session_id, project_id, title, spec, &symbols) {
+                    Ok(task) => ToolCallResult::json(&json!({
+                        "status": "created",
+                        "task": task,
+                        "next_action": "Another agent can now claim it with task.next."
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Failed to create task: {}", e)),
+                }
+            }
+
+            "task.next" => {
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                match self.db.claim_next_task(project_id, session_id) {
+                    Ok(Some(task)) => {
+                        let next_action = if task.symbols.is_empty() {
+                            "Implement the spec, then call task.submit with the result.".to_string()
+                        } else {
+                            format!("Call lock.acquire for {:?}, implement the spec, then call task.submit.", task.symbols)
+                        };
+                        ToolCallResult::json(&json!({ "task": task, "next_action": next_action }))
+                    }
+                    Ok(None) => ToolCallResult::error("No open tasks for this project"),
+                    Err(e) => ToolCallResult::error(format!("Failed to claim task: {}", e)),
+                }
+            }
+
+            "task.submit" => {
+                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: id"),
+                };
+                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
+                    Some(s) => s,
+                    None => return ToolCallResult::error("Missing required parameter: session_id"),
+                };
+                let result = arguments.get("result").and_then(|v| v.as_str());
+
+                match self.db.submit_task(id, session_id, result) {
+                    Ok(true) => ToolCallResult::json(&json!({
+                        "status": "submitted",
+                        "id": id,
+                        "next_action": "Call lock.release for symbols you leased, then baton.pass to hand context on."
+                    })),
+                    Ok(false) => ToolCallResult::error(
+                        "Submit refused: task is not claimed by this session",
+                    ),
+                    Err(e) => ToolCallResult::error(format!("Failed to submit task: {}", e)),
                 }
             }
 

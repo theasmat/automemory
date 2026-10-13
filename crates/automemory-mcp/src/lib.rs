@@ -95,4 +95,109 @@ mod tests {
         let content_text = &recall_resp.result.unwrap()["content"][0]["text"];
         assert!(content_text.as_str().unwrap().contains("DB pool size 25"));
     }
+
+    #[test]
+    fn test_mcp_baton_pass_and_pickup() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+
+        let pass_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(20)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "baton.pass",
+                "arguments": {
+                    "session_id": "sess-a",
+                    "to_session": "sess-b",
+                    "note": "finish the auth refactor",
+                    "agent": "claude-code"
+                }
+            })),
+        };
+        let pass_resp = server.handle_request(pass_req).unwrap();
+        let pass_text = pass_resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(pass_text.contains("finish the auth refactor"));
+        assert!(pass_text.contains("next_action"));
+
+        let pickup_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(21)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "baton.pickup",
+                "arguments": { "session_id": "sess-b" }
+            })),
+        };
+        let pickup_resp = server.handle_request(pickup_req).unwrap();
+        let pickup_text = &pickup_resp.result.unwrap()["content"][0]["text"];
+        assert!(pickup_text.as_str().unwrap().contains("sess-a"));
+    }
+
+    #[test]
+    fn test_mcp_task_create_next_submit() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+
+        let call = |id: i64, name: &str, arguments: serde_json::Value| {
+            server
+                .handle_request(JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(json!(id)),
+                    method: "tools/call".to_string(),
+                    params: Some(json!({ "name": name, "arguments": arguments })),
+                })
+                .unwrap()
+                .result
+                .unwrap()["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        let created = call(
+            30,
+            "task.create",
+            json!({ "session_id": "lead", "title": "migrate auth", "symbols": ["auth::login"] }),
+        );
+        assert!(created.contains("created"));
+
+        let claimed = call(31, "task.next", json!({ "session_id": "worker-1" }));
+        assert!(claimed.contains("migrate auth"));
+        assert!(claimed.contains("lock.acquire"));
+
+        let refused_text = server
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: Some(json!(32)),
+                method: "tools/call".to_string(),
+                params: Some(json!({
+                    "name": "task.submit",
+                    "arguments": { "id": "task-nope", "session_id": "worker-1" }
+                })),
+            })
+            .unwrap()
+            .result
+            .unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(refused_text.contains("refused"));
+
+        let task_id: String = serde_json::from_str::<serde_json::Value>(&claimed)
+            .unwrap()["task"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let submitted = call(
+            33,
+            "task.submit",
+            json!({ "id": task_id, "session_id": "worker-1", "result": "done" }),
+        );
+        assert!(submitted.contains("submitted"));
+        assert!(submitted.contains("baton.pass"));
+    }
 }

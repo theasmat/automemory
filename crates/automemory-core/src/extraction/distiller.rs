@@ -291,7 +291,7 @@ impl<'a> TrajectoryDistiller<'a> {
             category,
             status: "active".to_string(),
             preconditions: vec!["Workspace repository initialized".to_string()],
-            steps: key_steps,
+            steps: key_steps.clone(),
             reproducibility_score,
             caveats: if failed_tools.is_empty() {
                 Vec::new()
@@ -328,10 +328,54 @@ impl<'a> TrajectoryDistiller<'a> {
         };
 
         let summary = format!("Execution outcome for: {}", task_title);
-        let content = format!(
-            "Session `{}` completed task: {}.\nModified files: {}.\nDistilled {} raw actions into clean verified trajectory.",
-            session_id, task_title, modified_files_str, total_raw_events
-        );
+
+        let mut retrospective_lines = Vec::new();
+        retrospective_lines.push(format!("### 🎯 Task: {}", task_title));
+        retrospective_lines.push(format!("- **Session**: `{}` | **Agent**: `{}`", session_id, adapter_id));
+        retrospective_lines.push(format!(
+            "- **Trajectory Quality**: Distilled {} raw events into {} golden verified steps (reproducibility: {:.2}).",
+            total_raw_events, key_steps.len(), reproducibility_score
+        ));
+
+        retrospective_lines.push(format!("\n#### 🛠️ What Was Done\n- Modified files: {}.", modified_files_str));
+        if !key_steps.is_empty() {
+            let key_actions = key_steps
+                .iter()
+                .take(4)
+                .map(|s| s.action.as_str())
+                .collect::<Vec<_>>()
+                .join("; ");
+            retrospective_lines.push(format!("- Key operations: {}.", key_actions));
+        }
+
+        retrospective_lines.push("\n#### 🏆 What Was Achieved".to_string());
+        if failed_tools.is_empty() {
+            retrospective_lines.push(format!(
+                "- Successfully completed all {} procedural steps with zero unhandled errors.",
+                key_steps.len()
+            ));
+        } else {
+            retrospective_lines.push(format!(
+                "- Successfully achieved task outcome after resolving errors in: {}.",
+                failed_tools.join(", ")
+            ));
+        }
+
+        if !resolved_failures.is_empty() {
+            retrospective_lines.push("\n#### ⚠️ What Went Wrong & How It Was Resolved".to_string());
+            for f in &resolved_failures {
+                retrospective_lines.push(format!("- **Issue**: {}", f.task_title));
+                retrospective_lines.push(format!(
+                    "  • Error: {}",
+                    f.error_message.lines().next().unwrap_or("error")
+                ));
+                if let Some(ref fix) = f.fix_applied {
+                    retrospective_lines.push(format!("  • Fix: {}", fix));
+                }
+            }
+        }
+
+        let content = retrospective_lines.join("\n");
 
         let synthesized_memory = Memory {
             id: Uuid::now_v7().to_string(),

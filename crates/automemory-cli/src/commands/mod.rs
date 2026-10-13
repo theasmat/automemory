@@ -1,10 +1,15 @@
+pub mod baton;
 pub mod connect;
+pub mod decision;
 pub mod doc;
 pub mod doctor;
+pub mod eval;
+pub mod governance;
 pub mod guardrail;
 pub mod hook;
 pub mod init;
 pub mod link;
+pub mod lock;
 pub mod mcp;
 pub mod memory;
 pub mod mode;

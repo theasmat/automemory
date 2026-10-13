@@ -10,6 +10,28 @@ use std::str::FromStr;
 
 impl Database {
     pub fn save_memory(&self, mem: &Memory) -> Result<()> {
+        // Scope-Aware Deduplication: Check if active memory with same summary exists in this scope
+        let existing_id: Option<String> = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT id FROM memories WHERE scope = ?1 AND (project_id IS ?2) AND LOWER(TRIM(summary)) = LOWER(TRIM(?3)) AND status = 'active' LIMIT 1",
+                params![mem.scope.to_string(), mem.project_id, mem.summary],
+                |r| r.get(0),
+            ).ok()
+        };
+
+        if let Some(eid) = existing_id {
+            let mut updated = mem.clone();
+            updated.id = eid;
+            return self.update_memory(&updated, Some("In-place update for existing scope memory"), &[]);
+        }
+
+        self.save_memory_direct(mem)
+    }
+
+    /// Directly inserts or overwrites by ID without checking for summary duplicates in scope.
+    /// Useful for raw imports or testing consolidation proposal generation.
+    pub fn save_memory_direct(&self, mem: &Memory) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             r#"
@@ -95,10 +117,11 @@ impl Database {
                 freshness = ?5,
                 status = ?6,
                 updated_at = ?7,
-                tags = ?8,
-                entities = ?9,
-                metadata = ?10
-            WHERE id = ?11
+                last_recalled_at = ?8,
+                tags = ?9,
+                entities = ?10,
+                metadata = ?11
+            WHERE id = ?12
             "#,
             params![
                 mem.content,
@@ -108,6 +131,7 @@ impl Database {
                 mem.freshness,
                 mem.status.to_string(),
                 mem.updated_at.to_rfc3339(),
+                mem.last_recalled_at.map(|dt| dt.to_rfc3339()),
                 serde_json::to_string(&mem.tags)?,
                 serde_json::to_string(&mem.entities)?,
                 mem.metadata.to_string(),
@@ -270,6 +294,66 @@ impl Database {
         Ok(rows > 0)
     }
 
+    /// Pin a memory as an immutable Tier 1 invariant (human control)
+    pub fn pin_memory(&self, id: &str) -> Result<bool> {
+        if let Some(mut mem) = self.get_memory_by_id(id)? {
+            mem.status = MemoryStatus::Pinned;
+            mem.confidence = 1.0;
+            mem.set_trust_tier(crate::models::TrustTier::Pinned);
+            mem.updated_at = Utc::now();
+            self.update_memory(&mem, Some("Pinned as Tier 1 invariant by human"), &[])?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Veto/reject a candidate memory or mark invalid (human control)
+    pub fn veto_memory(&self, id: &str, reason: Option<&str>) -> Result<bool> {
+        if let Some(mut mem) = self.get_memory_by_id(id)? {
+            mem.status = MemoryStatus::Invalid;
+            mem.confidence = 0.0;
+            mem.updated_at = Utc::now();
+            let veto_reason = reason.unwrap_or("Vetoed/rejected by human");
+            self.update_memory(&mem, Some(veto_reason), &[])?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Revoke memories created by a session, agent, or specific memory ID
+    pub fn revoke_memories(
+        &self,
+        id: Option<&str>,
+        session_id: Option<&str>,
+        agent: Option<&str>,
+    ) -> Result<usize> {
+        let conn = self.conn();
+        let now = Utc::now().to_rfc3339();
+        let mut count = 0;
+
+        if let Some(mid) = id {
+            count += conn.execute(
+                "UPDATE memories SET status = 'archived', updated_at = ?1 WHERE id = ?2 AND status != 'archived'",
+                params![now, mid],
+            )?;
+        }
+        if let Some(sess) = session_id {
+            count += conn.execute(
+                "UPDATE memories SET status = 'archived', updated_at = ?1 WHERE (json_extract(metadata, '$.session_id') = ?2 OR tags LIKE ?3) AND status != 'archived'",
+                params![now, sess, format!("%\"{}\"%", sess)],
+            )?;
+        }
+        if let Some(ag) = agent {
+            count += conn.execute(
+                "UPDATE memories SET status = 'archived', updated_at = ?1 WHERE (json_extract(metadata, '$.agent') = ?2 OR tags LIKE ?3) AND status != 'archived'",
+                params![now, ag, format!("%\"{}\"%", ag)],
+            )?;
+        }
+        Ok(count)
+    }
+
     pub fn get_memory_versions(&self, memory_id: &str) -> Result<Vec<MemoryVersion>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
@@ -300,57 +384,6 @@ impl Database {
             list.push(v?);
         }
         Ok(list)
-    }
-
-    pub fn link_memories(&self, source_id: &str, target_id: &str, relation: &str) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
-            "INSERT OR REPLACE INTO memory_links (source_memory_id, target_memory_id, relation_type, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![source_id, target_id, relation, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    pub fn save_memory_embedding(
-        &self,
-        memory_id: &str,
-        embedding: &[f32],
-        model: &str,
-    ) -> Result<()> {
-        let conn = self.conn();
-        let blob = VectorEngine::to_blob(embedding);
-        conn.execute(
-            r#"
-            INSERT INTO memory_embeddings (memory_id, embedding, dimensions, model, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
-            ON CONFLICT(memory_id) DO UPDATE SET
-                embedding = excluded.embedding,
-                dimensions = excluded.dimensions,
-                model = excluded.model,
-                updated_at = excluded.updated_at
-            "#,
-            params![
-                memory_id,
-                blob,
-                embedding.len() as i32,
-                model,
-                Utc::now().to_rfc3339(),
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn get_memory_embedding(&self, memory_id: &str) -> Result<Option<Vec<f32>>> {
-        let conn = self.conn();
-        let mut stmt =
-            conn.prepare("SELECT embedding FROM memory_embeddings WHERE memory_id = ?1")?;
-        let mut rows = stmt.query(params![memory_id])?;
-        if let Some(row) = rows.next()? {
-            let blob: Vec<u8> = row.get(0)?;
-            Ok(Some(VectorEngine::from_blob(&blob)))
-        } else {
-            Ok(None)
-        }
     }
 
     pub fn search_memories_vector(
@@ -456,5 +489,134 @@ impl Database {
             entities,
             metadata,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_save_memory_deduplication_in_same_scope() {
+        let db = Database::open_in_memory().expect("open db");
+        let mem1 = Memory {
+            id: Uuid::now_v7().to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("calc-proj".to_string()),
+            memory_type: MemoryType::Decision,
+            content: "Initial decision: use Raylib 5.0".to_string(),
+            summary: "Use Raylib 5.0 for UI".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec!["raylib".to_string()],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+
+        db.save_memory(&mem1).expect("save mem1");
+        let count1 = db
+            .list_memories(Some("calc-proj"), Some(MemoryStatus::Active), None, 10)
+            .expect("list");
+        assert_eq!(count1.len(), 1);
+
+        // Save second memory with DIFFERENT UUID but SAME summary & project_id
+        let mem2 = Memory {
+            id: Uuid::now_v7().to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("calc-proj".to_string()),
+            memory_type: MemoryType::Decision,
+            content: "Updated decision: use Raylib 5.0 with Cocoa framework on macOS".to_string(),
+            summary: "Use Raylib 5.0 for UI".to_string(),
+            confidence: 0.95,
+            importance: 0.85,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec!["raylib".to_string(), "macos".to_string()],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+
+        db.save_memory(&mem2).expect("save mem2");
+
+        // There must still be EXACTLY 1 active memory in this scope, NOT 2!
+        let count2 = db
+            .list_memories(Some("calc-proj"), Some(MemoryStatus::Active), None, 10)
+            .expect("list");
+        assert_eq!(count2.len(), 1);
+        assert_eq!(count2[0].id, mem1.id);
+        assert!(count2[0].content.contains("Cocoa framework on macOS"));
+
+        // Verify version history tracked the previous version
+        let versions = db.get_memory_versions(&mem1.id).expect("versions");
+        assert!(versions.len() >= 2);
+    }
+
+    #[test]
+    fn test_pin_veto_revoke_memories() {
+        let db = Database::open_in_memory().expect("in-memory db open");
+
+        let mem = Memory {
+            id: "mem-pin-test".to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("proj-test".to_string()),
+            memory_type: MemoryType::Fact,
+            content: "Never allow plain-text secrets in git".to_string(),
+            summary: "Secret security rule".to_string(),
+            confidence: 0.9,
+            importance: 0.9,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec!["security".to_string(), "secrets".to_string()],
+            entities: vec![],
+            metadata: serde_json::json!({
+                "agent": "claude-code",
+                "session_id": "sess-42"
+            }),
+        };
+
+        db.save_memory(&mem).expect("save memory");
+
+        // 1. Test pin
+        let pinned = db.pin_memory(&mem.id).expect("pin memory");
+        assert!(pinned);
+        let fetched = db.get_memory_by_id(&mem.id).expect("get").expect("exists");
+        assert_eq!(fetched.status, MemoryStatus::Pinned);
+        assert_eq!(fetched.trust_tier(), crate::models::TrustTier::Pinned);
+        assert_eq!(fetched.confidence, 1.0);
+
+        // 2. Test veto
+        let vetoed = db
+            .veto_memory(&mem.id, Some("Violates updated policy"))
+            .expect("veto memory");
+        assert!(vetoed);
+        let fetched_veto = db.get_memory_by_id(&mem.id).expect("get").expect("exists");
+        assert_eq!(fetched_veto.status, MemoryStatus::Invalid);
+        assert_eq!(fetched_veto.confidence, 0.0);
+
+        // 3. Test revoke by session
+        let revoked = db
+            .revoke_memories(None, Some("sess-42"), None)
+            .expect("revoke");
+        assert_eq!(revoked, 1);
+        let fetched_revoked = db.get_memory_by_id(&mem.id).expect("get").expect("exists");
+        assert_eq!(fetched_revoked.status, MemoryStatus::Archived);
     }
 }
