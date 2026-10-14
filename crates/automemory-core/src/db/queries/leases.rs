@@ -54,7 +54,12 @@ impl Database {
 
         // 3. Check for conflict or existing lease for same session
         for existing in active_leases {
-            if scopes_conflict(&existing.scope, &existing.scope_type, args.scope, &args.scope_type) {
+            if scopes_conflict(
+                &existing.scope,
+                &existing.scope_type,
+                args.scope,
+                &args.scope_type,
+            ) {
                 if existing.session_id == args.session_id {
                     // Same session: renew the lease
                     let new_expires = now + Duration::seconds(args.ttl_seconds);
@@ -67,7 +72,13 @@ impl Database {
                              heartbeat_at = ?3,
                              expires_at = ?4
                          WHERE id = ?5",
-                        params![args.goal, args.ttl_seconds, now_str, new_expires_str, existing.id],
+                        params![
+                            args.goal,
+                            args.ttl_seconds,
+                            now_str,
+                            new_expires_str,
+                            existing.id
+                        ],
                     )
                     .context("Failed to renew lease")?;
 
@@ -232,6 +243,15 @@ impl Database {
         let count = conn.execute(
             "DELETE FROM leases WHERE (project_id IS ?1 OR project_id IS NULL OR ?1 IS NULL) AND scope = ?2",
             params![project_id, scope],
+        )?;
+        Ok(count)
+    }
+
+    /// Kill-switch: releases every active lease regardless of holder.
+    pub fn release_all_leases(&self, project_id: Option<&str>) -> Result<usize> {
+        let count = self.conn().execute(
+            "DELETE FROM leases WHERE (?1 IS NULL OR project_id = ?1 OR project_id IS NULL)",
+            params![project_id],
         )?;
         Ok(count)
     }

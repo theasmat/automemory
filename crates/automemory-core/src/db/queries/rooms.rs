@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::models::{PostKind, Room, RoomPost, RoomState};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use std::str::FromStr;
@@ -121,12 +121,10 @@ impl Database {
         let room = self
             .get_room(room_id)?
             .ok_or_else(|| anyhow!("room not found"))?;
-        let expected = PostKind::expected_in(room.state)
-            .ok_or_else(|| anyhow!("room is decided"))?;
+        let expected =
+            PostKind::expected_in(room.state).ok_or_else(|| anyhow!("room is decided"))?;
         if kind != expected {
-            return Err(anyhow!(
-                "room expects {expected}, not {kind}"
-            ));
+            return Err(anyhow!("room expects {expected}, not {kind}"));
         }
         if room.turn_holder.as_deref() != Some(author_session) {
             return Err(anyhow!("not your turn"));
@@ -205,8 +203,7 @@ impl Database {
                     id: row.get(0)?,
                     room_id: row.get(1)?,
                     author_session: row.get(2)?,
-                    kind: PostKind::from_str(&kind_str)
-                        .unwrap_or(PostKind::Propose),
+                    kind: PostKind::from_str(&kind_str).unwrap_or(PostKind::Propose),
                     body: row.get(4)?,
                     evidence: serde_json::from_str(&ev_str).unwrap_or_default(),
                     created_at: DateTime::parse_from_rfc3339(&created_str)
@@ -303,30 +300,79 @@ mod tests {
         db.join_room(&room.id, "sess-b").unwrap();
 
         // Wrong turn and wrong kind are refused.
-        assert!(db.post_to_room(&room.id, "sess-b", PostKind::Propose, "x", std::slice::from_ref(&ev)).is_err());
-        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Critique, "x", std::slice::from_ref(&ev)).is_err());
+        assert!(db
+            .post_to_room(
+                &room.id,
+                "sess-b",
+                PostKind::Propose,
+                "x",
+                std::slice::from_ref(&ev)
+            )
+            .is_err());
+        assert!(db
+            .post_to_room(
+                &room.id,
+                "sess-a",
+                PostKind::Critique,
+                "x",
+                std::slice::from_ref(&ev)
+            )
+            .is_err());
         // Dangling evidence is refused.
-        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Propose, "x", &["missing".to_string()]).is_err());
+        assert!(db
+            .post_to_room(
+                &room.id,
+                "sess-a",
+                PostKind::Propose,
+                "x",
+                &["missing".to_string()]
+            )
+            .is_err());
         // Propose without evidence is refused.
-        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Propose, "x", &[]).is_err());
+        assert!(db
+            .post_to_room(&room.id, "sess-a", PostKind::Propose, "x", &[])
+            .is_err());
 
-        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "JWT plan", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(
+            &room.id,
+            "sess-a",
+            PostKind::Propose,
+            "JWT plan",
+            std::slice::from_ref(&ev),
+        )
+        .unwrap();
         let r = db.get_room(&room.id).unwrap().unwrap();
         assert_eq!(r.state, RoomState::Critique);
         assert_eq!(r.turn_holder.as_deref(), Some("sess-b"));
 
-        db.post_to_room(&room.id, "sess-b", PostKind::Critique, "rotation?", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(
+            &room.id,
+            "sess-b",
+            PostKind::Critique,
+            "rotation?",
+            std::slice::from_ref(&ev),
+        )
+        .unwrap();
         let r = db.get_room(&room.id).unwrap().unwrap();
         assert_eq!(r.state, RoomState::Revise);
         assert_eq!(r.turn_holder.as_deref(), Some("sess-a"));
 
-        db.post_to_room(&room.id, "sess-a", PostKind::Revise, "JWT + rotation", &[ev]).unwrap();
+        db.post_to_room(
+            &room.id,
+            "sess-a",
+            PostKind::Revise,
+            "JWT + rotation",
+            &[ev],
+        )
+        .unwrap();
         let r = db.get_room(&room.id).unwrap().unwrap();
         assert_eq!(r.state, RoomState::Decided);
         assert_eq!(r.turn_holder, None);
 
         // Decided rooms reject posts and joins.
-        assert!(db.post_to_room(&room.id, "sess-b", PostKind::Critique, "late", &[]).is_err());
+        assert!(db
+            .post_to_room(&room.id, "sess-b", PostKind::Critique, "late", &[])
+            .is_err());
         assert!(db.join_room(&room.id, "sess-c").is_err());
         assert_eq!(db.room_posts(&room.id).unwrap().len(), 3);
     }
@@ -342,7 +388,8 @@ mod tests {
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0].id, r1.id);
 
-        db.post_to_room(&r2.id, "sess-b", PostKind::Propose, "p", &[ev]).unwrap();
+        db.post_to_room(&r2.id, "sess-b", PostKind::Propose, "p", &[ev])
+            .unwrap();
         // r2 now waits on sess-b itself (solo rotation); sess-a sees only r1.
         let mine = db.pending_rooms(None, Some("sess-a")).unwrap();
         assert_eq!(mine.len(), 1);

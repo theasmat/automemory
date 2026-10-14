@@ -1,15 +1,19 @@
 use crate::db::Database;
+use crate::guardrails::{GuardrailAction, GuardrailEvaluator};
+use crate::models::AutopilotMode;
+use crate::ports::{HandlerEnv, HookHandler};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Canonical hook events (PRD §7.2). Native agent event names map onto these
 /// via [`CanonicalEvent::from_cli`], so new agent adapters need no core change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CanonicalEvent {
     SessionStart,
+    UserPromptSubmit,
     PreToolUse,
     PostToolUse,
     PreCommit,
@@ -23,6 +27,7 @@ impl CanonicalEvent {
     pub fn from_cli(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().replace('-', "_").as_str() {
             "boot" | "session_boot" | "sessionstart" | "session_start" => Some(Self::SessionStart),
+            "user_prompt_submit" | "userpromptsubmit" => Some(Self::UserPromptSubmit),
             "pre_tool" | "pretooluse" | "pre_tool_use" => Some(Self::PreToolUse),
             "post_tool" | "post_tool_fail" | "posttooluse" | "post_tool_use" => {
                 Some(Self::PostToolUse)
@@ -37,6 +42,7 @@ impl CanonicalEvent {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::SessionStart => "SessionStart",
+            Self::UserPromptSubmit => "UserPromptSubmit",
             Self::PreToolUse => "PreToolUse",
             Self::PostToolUse => "PostToolUse",
             Self::PreCommit => "PreCommit",
@@ -117,8 +123,14 @@ pub struct HandlerSpec {
     pub on_failure: FailureMode,
     #[serde(default)]
     pub shadow: bool,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     #[serde(default)]
     pub exec: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_priority() -> u8 {
@@ -146,6 +158,7 @@ impl HooksConfig {
                     latency_budget_ms: 20,
                     on_failure: FailureMode::Open,
                     shadow: false,
+                    enabled: true,
                     exec: None,
                 },
                 HandlerSpec {
@@ -155,6 +168,7 @@ impl HooksConfig {
                     latency_budget_ms: 20,
                     on_failure: FailureMode::Open,
                     shadow: false,
+                    enabled: true,
                     exec: None,
                 },
             ],
@@ -215,17 +229,17 @@ pub struct HandlerResult {
 
 /// Runs handlers ordered by (priority, id). Failures resolve via the
 /// handler's own `on_failure` mode; `shadow` downgrades any non-allow to an
-/// observed allow. Budgets are measured and logged, not preemptive:
-/// ponytail: kill-on-timeout deferred until an async runner exists; agent
-/// surfaces already bound hook execution time (e.g. agy `timeout: 5`).
+/// observed allow. Latency budgets are enforced by kill for `exec`
+/// handlers; built-ins are measured and logged (they cannot be preempted).
 pub fn run_pipeline(
     specs: &[HandlerSpec],
     ctx: &PipelineCtx<'_>,
-    run_builtin: &dyn Fn(&str, &PipelineCtx<'_>) -> HandlerOutput,
+    env: &crate::ports::HandlerEnv<'_>,
+    handlers: &[&dyn crate::ports::HookHandler],
 ) -> Vec<HandlerResult> {
     let mut ordered: Vec<&HandlerSpec> = specs
         .iter()
-        .filter(|s| s.events.is_empty() || s.events.contains(&ctx.event))
+        .filter(|s| s.enabled && (s.events.is_empty() || s.events.contains(&ctx.event)))
         .collect();
     ordered.sort_by(|a, b| (a.priority, &a.id).cmp(&(b.priority, &b.id)));
 
@@ -233,7 +247,7 @@ pub fn run_pipeline(
     for spec in ordered {
         let start = Instant::now();
         let (mut out, failed) = if let Some(cmd) = spec.exec.as_deref() {
-            match run_exec(cmd, ctx) {
+            match run_exec(cmd, ctx, Duration::from_millis(spec.latency_budget_ms)) {
                 Ok(o) => (o, false),
                 Err(e) => (
                     HandlerOutput {
@@ -244,9 +258,16 @@ pub fn run_pipeline(
                 ),
             }
         } else {
-            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_builtin(&spec.id, ctx)
-            }));
+            let found = handlers.iter().find(|h| h.handler_id() == spec.id);
+            let out = match found {
+                Some(h) => {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| h.handle(ctx, env)))
+                }
+                None => Ok(HandlerOutput {
+                    decision: GateDecision::Allow,
+                    reason: format!("unknown built-in '{}'", spec.id),
+                }),
+            };
             match out {
                 Ok(o) => (o, false),
                 Err(_) => (
@@ -342,6 +363,113 @@ pub fn expand_scope_via_graph(
     (all_paths, all_symbols)
 }
 
+/// Built-in `lock-check` handler: lease collision check for mutation tools.
+/// Strict denies, Review asks, Vibe warns on stderr only (defers to guardrail).
+/// File targets expand to their indexed symbols (and vice versa) so symbol
+/// leases collide with file edits even when the agent names only the file.
+pub struct LockCheckHandler;
+
+impl HookHandler for LockCheckHandler {
+    fn handler_id(&self) -> &str {
+        "lock-check"
+    }
+
+    fn handle(&self, ctx: &PipelineCtx<'_>, env: &HandlerEnv<'_>) -> HandlerOutput {
+        let db = env.db;
+        let project_id = env.project_id;
+        let autopilot_mode = env.mode;
+        if (ctx.paths.is_empty() && ctx.symbols.is_empty()) || !ctx.is_mutation {
+            return HandlerOutput::allow();
+        }
+        let (paths, symbols) = expand_scope_via_graph(db, project_id, ctx.paths, ctx.symbols);
+        match db.check_collision(project_id, ctx.session_id, &paths, &symbols) {
+            Ok(Some(conflict)) => {
+                eprintln!(
+                    "⚠️ [AutoMemory Lock Warning]: Target resource '{}' is actively locked by {} (Session: {}).",
+                    conflict.scope, conflict.holder_agent, conflict.holder_session_id
+                );
+                eprintln!("   🔒 Holder Goal: {}", conflict.goal);
+                eprintln!("   ⏳ Lease Expires In: {}s", conflict.remaining_seconds);
+                match autopilot_mode {
+                    AutopilotMode::Strict => {
+                        eprintln!("🛑 [AutoMemory Lock] COLLISION PREVENTED in Strict mode.");
+                        HandlerOutput {
+                            decision: GateDecision::Deny,
+                            reason: format!(
+                                "Collision prevented: '{}' is locked by agent '{}' (Goal: '{}', {}s remaining)",
+                                conflict.scope,
+                                conflict.holder_agent,
+                                conflict.goal,
+                                conflict.remaining_seconds
+                            ),
+                        }
+                    }
+                    AutopilotMode::Review => HandlerOutput {
+                        decision: GateDecision::Ask,
+                        reason: format!(
+                            "Resource '{}' is leased by {} for: '{}'. Proceed with overwrite?",
+                            conflict.scope, conflict.holder_agent, conflict.goal
+                        ),
+                    },
+                    _ => HandlerOutput::allow(),
+                }
+            }
+            _ => HandlerOutput::allow(),
+        }
+    }
+}
+
+/// Built-in `guardrail` handler: AST/tokenizer evaluation of the planned tool.
+/// Critical blocks exit the process, preserving the pre-pipeline contract.
+pub struct GuardrailHandler;
+
+impl HookHandler for GuardrailHandler {
+    fn handler_id(&self) -> &str {
+        "guardrail"
+    }
+
+    fn handle(&self, ctx: &PipelineCtx<'_>, env: &HandlerEnv<'_>) -> HandlerOutput {
+        let db = env.db;
+        let decision = GuardrailEvaluator::new(Some(db)).evaluate(
+            ctx.tool,
+            ctx.args,
+            env.project_id,
+            env.mode,
+        );
+        match decision.action {
+            GuardrailAction::Block => {
+                eprintln!(
+                    "🛑 [AutoMemory Guardrail] CRITICAL STOP: {}",
+                    decision.title
+                );
+                eprintln!("   Reason: {}", decision.risk_summary);
+                if let Some(hint) = &decision.mitigation_hint {
+                    eprintln!("   💡 Mitigation: {}", hint);
+                }
+                HandlerOutput {
+                    decision: GateDecision::Deny,
+                    reason: format!("{}: {}", decision.title, decision.risk_summary),
+                }
+            }
+            GuardrailAction::Warn => {
+                eprintln!("⚠️ [AutoMemory Guardrail Warning]: {}", decision.title);
+                if let Some(hint) = &decision.mitigation_hint {
+                    eprintln!("   💡 Tip: {}", hint);
+                }
+                HandlerOutput {
+                    decision: if decision.requires_confirmation {
+                        GateDecision::Ask
+                    } else {
+                        GateDecision::Allow
+                    },
+                    reason: format!("{}: {}", decision.title, decision.risk_summary),
+                }
+            }
+            GuardrailAction::Allow => HandlerOutput::allow(),
+        }
+    }
+}
+
 /// Strictest decision wins; the reason comes from the strictest handler.
 pub fn merge_decision(results: &[HandlerResult]) -> HandlerOutput {
     let mut best = HandlerOutput::allow();
@@ -354,7 +482,7 @@ pub fn merge_decision(results: &[HandlerResult]) -> HandlerOutput {
     best
 }
 
-fn run_exec(cmd: &str, ctx: &PipelineCtx<'_>) -> Result<HandlerOutput, String> {
+fn run_exec(cmd: &str, ctx: &PipelineCtx<'_>, budget: Duration) -> Result<HandlerOutput, String> {
     let stdin_json = serde_json::json!({
         "event": ctx.event.as_str(),
         "agent": ctx.agent,
@@ -365,23 +493,85 @@ fn run_exec(cmd: &str, ctx: &PipelineCtx<'_>) -> Result<HandlerOutput, String> {
         "symbols": ctx.symbols,
         "mutation": ctx.is_mutation,
     });
-    let mut child = Command::new("sh")
+    let mut spawn = spawn_command(cmd)
+        .spawn()
+        .map_err(|e| format!("spawn failed: {e}"))?;
+    if let Some(stdin) = spawn.stdin.take() {
+        let _ = write_json_stdin(stdin, &stdin_json);
+    }
+    let start = Instant::now();
+    loop {
+        match spawn.try_wait().map_err(|e| format!("wait failed: {e}"))? {
+            Some(status) => {
+                let mut stdout = Vec::new();
+                if let Some(mut out) = spawn.stdout.take() {
+                    use std::io::Read as _;
+                    let _ = out.read_to_end(&mut stdout);
+                }
+                if !status.success() {
+                    return Err(format!("exited with {status}"));
+                }
+                return parse_handler_output(&stdout);
+            }
+            None if start.elapsed() > budget => {
+                kill_process_group(spawn.id());
+                let _ = spawn.kill();
+                let _ = spawn.wait();
+                return Err(format!("exceeded {}ms budget (killed)", budget.as_millis()));
+            }
+            None => std::thread::sleep(Duration::from_millis(1)),
+        }
+    }
+}
+
+/// Kills the handler's whole process group so grandchildren holding the
+/// stdout pipe die with it (plain `Child::kill` leaves them orphaned and
+/// the pipe read would block). Unix-only; elsewhere the direct kill above
+/// is the whole enforcement.
+fn kill_process_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .arg("-KILL")
+            .arg(format!("-{pid}"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+    }
+}
+
+#[cfg(unix)]
+fn spawn_command(cmd: &str) -> Command {
+    use std::os::unix::process::CommandExt as _;
+    let mut command = Command::new("sh");
+    command
         .arg("-c")
         .arg(cmd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("spawn failed: {e}"))?;
-    if let Some(stdin) = child.stdin.take() {
-        let _ = write_json_stdin(stdin, &stdin_json);
-    }
-    let output = child.wait_with_output().map_err(|e| format!("wait failed: {e}"))?;
-    if !output.status.success() {
-        return Err(format!("exited with {}", output.status));
-    }
+        .process_group(0);
+    command
+}
+
+#[cfg(not(unix))]
+fn spawn_command(cmd: &str) -> Command {
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg(cmd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    command
+}
+fn parse_handler_output(stdout: &[u8]) -> Result<HandlerOutput, String> {
     let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| format!("bad JSON: {e}"))?;
+        serde_json::from_slice(stdout).map_err(|e| format!("bad JSON: {e}"))?;
     let decision = parsed
         .get("decision")
         .and_then(|v| v.as_str())
@@ -407,6 +597,34 @@ fn write_json_stdin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::AutopilotMode;
+    use crate::ports::{HandlerEnv, HookHandler};
+
+    struct Stub {
+        id: &'static str,
+        decision: GateDecision,
+        reason: &'static str,
+    }
+
+    impl HookHandler for Stub {
+        fn handler_id(&self) -> &str {
+            self.id
+        }
+        fn handle(&self, _ctx: &PipelineCtx<'_>, _env: &HandlerEnv<'_>) -> HandlerOutput {
+            HandlerOutput {
+                decision: self.decision,
+                reason: self.reason.to_string(),
+            }
+        }
+    }
+
+    fn test_env(db: &Database) -> HandlerEnv<'_> {
+        HandlerEnv {
+            db,
+            project_id: None,
+            mode: AutopilotMode::Vibe,
+        }
+    }
 
     fn ctx() -> PipelineCtx<'static> {
         // Leaked empties keep the borrowed slices alive for the test.
@@ -443,6 +661,10 @@ mod tests {
             CanonicalEvent::from_cli("pre-commit"),
             Some(CanonicalEvent::PreCommit)
         );
+        assert_eq!(
+            CanonicalEvent::from_cli("user-prompt-submit"),
+            Some(CanonicalEvent::UserPromptSubmit)
+        );
         assert_eq!(CanonicalEvent::from_cli("bogus"), None);
     }
 
@@ -456,6 +678,7 @@ mod tests {
                 latency_budget_ms: 100,
                 on_failure: FailureMode::Open,
                 shadow: false,
+                enabled: true,
                 exec: None,
             },
             HandlerSpec {
@@ -465,21 +688,24 @@ mod tests {
                 latency_budget_ms: 100,
                 on_failure: FailureMode::Open,
                 shadow: false,
+                enabled: true,
                 exec: None,
             },
         ];
         let c = ctx();
-        let run = |id: &str, _: &PipelineCtx<'_>| match id {
-            "a" => HandlerOutput {
-                decision: GateDecision::Warn,
-                reason: "w".to_string(),
-            },
-            _ => HandlerOutput {
-                decision: GateDecision::Ask,
-                reason: "a".to_string(),
-            },
+        let db = Database::open_in_memory().unwrap();
+        let env = test_env(&db);
+        let a = Stub {
+            id: "a",
+            decision: GateDecision::Warn,
+            reason: "w",
         };
-        let results = run_pipeline(&specs, &c, &run);
+        let b = Stub {
+            id: "b",
+            decision: GateDecision::Ask,
+            reason: "a",
+        };
+        let results = run_pipeline(&specs, &c, &env, &[&a, &b]);
         assert_eq!(results[0].id, "a");
         assert_eq!(results[1].id, "b");
         let merged = merge_decision(&results);
@@ -496,14 +722,16 @@ mod tests {
             latency_budget_ms: 100,
             on_failure: mode,
             shadow: false,
+            enabled: true,
             exec: Some("/nonexistent-automemory-handler-xyz".to_string()),
         };
         let c = ctx();
-        let never = |_: &str, _: &PipelineCtx<'_>| HandlerOutput::allow();
-        let open = run_pipeline(&[mk(FailureMode::Open)], &c, &never);
+        let db = Database::open_in_memory().unwrap();
+        let env = test_env(&db);
+        let open = run_pipeline(&[mk(FailureMode::Open)], &c, &env, &[]);
         assert_eq!(open[0].decision, GateDecision::Allow);
         assert!(open[0].failed);
-        let closed = run_pipeline(&[mk(FailureMode::Closed)], &c, &never);
+        let closed = run_pipeline(&[mk(FailureMode::Closed)], &c, &env, &[]);
         assert_eq!(closed[0].decision, GateDecision::Deny);
     }
 
@@ -516,14 +744,18 @@ mod tests {
             latency_budget_ms: 100,
             on_failure: FailureMode::Open,
             shadow: true,
+            enabled: true,
             exec: None,
         }];
         let c = ctx();
-        let run = |_: &str, _: &PipelineCtx<'_>| HandlerOutput {
+        let db = Database::open_in_memory().unwrap();
+        let env = test_env(&db);
+        let strict = Stub {
+            id: "strict",
             decision: GateDecision::Deny,
-            reason: "would block".to_string(),
+            reason: "would block",
         };
-        let results = run_pipeline(&specs, &c, &run);
+        let results = run_pipeline(&specs, &c, &env, &[&strict]);
         assert_eq!(results[0].decision, GateDecision::Allow);
         assert!(results[0].shadowed);
     }
@@ -561,11 +793,13 @@ mod tests {
             latency_budget_ms: 5000,
             on_failure: FailureMode::Closed,
             shadow: false,
+            enabled: true,
             exec: Some("printf '{\"decision\":\"warn\",\"reason\":\"custom\"}'".to_string()),
         }];
         let c = ctx();
-        let never = |_: &str, _: &PipelineCtx<'_>| HandlerOutput::allow();
-        let results = run_pipeline(&specs, &c, &never);
+        let db = Database::open_in_memory().unwrap();
+        let env = test_env(&db);
+        let results = run_pipeline(&specs, &c, &env, &[]);
         assert_eq!(results[0].decision, GateDecision::Warn);
         assert_eq!(results[0].reason, "custom");
     }
@@ -591,18 +825,12 @@ mod tests {
         .unwrap();
 
         // File edit discovers the symbol defined inside it.
-        let (_, syms) = expand_scope_via_graph(
-            &db,
-            None,
-            &["src/auth/login.ts".to_string()],
-            &[],
-        );
+        let (_, syms) = expand_scope_via_graph(&db, None, &["src/auth/login.ts".to_string()], &[]);
         assert!(syms.contains(&"auth.login".to_string()));
 
         // Symbol lease in either spelling discovers the file.
         for spelling in ["auth::login", "auth.login"] {
-            let (paths, _) =
-                expand_scope_via_graph(&db, None, &[], &[spelling.to_string()]);
+            let (paths, _) = expand_scope_via_graph(&db, None, &[], &[spelling.to_string()]);
             assert!(
                 paths.contains(&"src/auth/login.ts".to_string()),
                 "spelling {spelling}"
@@ -611,13 +839,33 @@ mod tests {
 
         // Empty index expands nothing.
         let empty = Database::open_in_memory().unwrap();
-        let (p, s) = expand_scope_via_graph(
-            &empty,
-            None,
-            &["x.ts".to_string()],
-            &["y".to_string()],
-        );
+        let (p, s) =
+            expand_scope_via_graph(&empty, None, &["x.ts".to_string()], &["y".to_string()]);
         assert_eq!(p, vec!["x.ts".to_string()]);
         assert_eq!(s, vec!["y".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn over_budget_exec_is_killed_and_fails_per_mode() {
+        let spec = |mode| HandlerSpec {
+            id: "slow".to_string(),
+            events: vec![],
+            priority: 1,
+            latency_budget_ms: 50,
+            on_failure: mode,
+            shadow: false,
+            enabled: true,
+            exec: Some("sleep 5".to_string()),
+        };
+        let c = ctx();
+        let db = Database::open_in_memory().unwrap();
+        let env = test_env(&db);
+        let open = run_pipeline(&[spec(FailureMode::Open)], &c, &env, &[]);
+        assert_eq!(open[0].decision, GateDecision::Allow);
+        assert!(open[0].failed);
+        assert!(open[0].elapsed_ms < 4000);
+        let closed = run_pipeline(&[spec(FailureMode::Closed)], &c, &env, &[]);
+        assert_eq!(closed[0].decision, GateDecision::Deny);
     }
 }

@@ -42,7 +42,10 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
         evidence: args.evidence,
     })?;
 
-    println!("✓ Recorded architectural decision '{}' for topic '{}'", recorded.id, recorded.topic);
+    println!(
+        "✓ Recorded architectural decision '{}' for topic '{}'",
+        recorded.id, recorded.topic
+    );
     println!("  Decision:     {}", recorded.decision);
     println!("  Rationale:    {}", recorded.reason);
     if !recorded.alternatives.is_empty() {
@@ -102,16 +105,13 @@ pub fn get_decision(topic: &str, project_arg: Option<&str>) -> Result<()> {
     }
 
     if !res.history.is_empty() {
-        println!("\n📜 Superseded History ({} prior decisions):", res.history.len());
+        println!(
+            "\n📜 Superseded History ({} prior decisions):",
+            res.history.len()
+        );
         println!("{:-<70}", "");
         for (i, h) in res.history.iter().enumerate() {
-            println!(
-                "[{}] {} - {} (by {})",
-                i + 1,
-                h.id,
-                h.decision,
-                h.agent
-            );
+            println!("[{}] {} - {} (by {})", i + 1, h.id, h.decision, h.agent);
             println!("    Rationale:     {}", h.reason);
             if let Some(ref d) = h.dissent {
                 println!("    Dissent:       {}", d);

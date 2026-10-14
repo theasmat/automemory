@@ -1,11 +1,10 @@
 use crate::db::Database;
-use crate::hooks::{
-    CanonicalEvent, HandlerOutput, HooksConfig, PipelineCtx, merge_decision, run_pipeline,
-};
+use crate::hooks::{merge_decision, run_pipeline, CanonicalEvent, HooksConfig, PipelineCtx};
 use crate::models::{
     LeaseAcquireArgs, LeaseAcquireResult, LeaseScopeType, Memory, MemoryScope, MemorySourceKind,
     MemoryStatus, MemoryType,
 };
+use crate::ports::HandlerEnv;
 use crate::retrieval::MemoryDecayScorer;
 use crate::verify::{DecayVerifier, Verifier, VerifyStatus};
 use chrono::{Duration, Utc};
@@ -66,7 +65,13 @@ pub fn run_local_suites() -> EvalReport {
     EvalReport { checks }
 }
 
-fn seed_memory(db: &Database, summary: &str, content: &str, updated_days_ago: i64, confidence: f64) {
+fn seed_memory(
+    db: &Database,
+    summary: &str,
+    content: &str,
+    updated_days_ago: i64,
+    confidence: f64,
+) {
     let at = Utc::now() - Duration::days(updated_days_ago);
     let mem = Memory {
         id: Uuid::now_v7().to_string(),
@@ -110,7 +115,11 @@ fn stale_flag_precision(db: &Database) -> EvalCheck {
             true_stale += ((Utc::now() - m.updated_at).num_days() > 60) as usize;
         }
     }
-    let precision = if flagged == 0 { 0.0 } else { true_stale as f64 / flagged as f64 };
+    let precision = if flagged == 0 {
+        0.0
+    } else {
+        true_stale as f64 / flagged as f64
+    };
     EvalCheck {
         name: "stale-flag precision".to_string(),
         passed: precision >= 0.9 && flagged == 4,
@@ -119,19 +128,31 @@ fn stale_flag_precision(db: &Database) -> EvalCheck {
 }
 
 fn recall_precision_at_3(db: &Database) -> EvalCheck {
-    seed_memory(db, "auth uses JWT", "Authentication uses JWT in cookies", 0, 0.9);
+    seed_memory(
+        db,
+        "auth uses JWT",
+        "Authentication uses JWT in cookies",
+        0,
+        0.9,
+    );
     seed_memory(db, "auth expiry", "JWT expiry is 30 minutes", 0, 0.9);
     seed_memory(db, "pool size", "DB pool max is 25", 0, 0.9);
     seed_memory(db, "retry policy", "Backoff is exponential", 0, 0.9);
-    let hits = db.search_memories_fts("JWT auth", None, 3).unwrap_or_default();
+    let hits = db
+        .search_memories_fts("JWT auth", None, 3)
+        .unwrap_or_default();
     let relevant = hits
         .iter()
         .filter(|(m, _)| m.summary.contains("auth") || m.summary.contains("JWT"))
         .count();
-    let precision = if hits.is_empty() { 0.0 } else { relevant as f64 / hits.len() as f64 };
-    let top_ok = hits.first().is_some_and(|(m, _)| {
-        m.summary.contains("auth") || m.summary.contains("JWT")
-    });
+    let precision = if hits.is_empty() {
+        0.0
+    } else {
+        relevant as f64 / hits.len() as f64
+    };
+    let top_ok = hits
+        .first()
+        .is_some_and(|(m, _)| m.summary.contains("auth") || m.summary.contains("JWT"));
     EvalCheck {
         name: "recall precision@3".to_string(),
         passed: top_ok && precision >= 0.66,
@@ -141,9 +162,14 @@ fn recall_precision_at_3(db: &Database) -> EvalCheck {
 
 fn contradiction_detection() -> EvalCheck {
     let scorer = MemoryDecayScorer::default();
-    let (hit, _) =
-        scorer.detect_contradiction("We use Vue 2 Options API", &["package.json: \"vue\": \"^3.5\""]);
-    let (miss, _) = scorer.detect_contradiction("We use JWT in cookies", &["package.json: \"vue\": \"^3.5\""]);
+    let (hit, _) = scorer.detect_contradiction(
+        "We use Vue 2 Options API",
+        &["package.json: \"vue\": \"^3.5\""],
+    );
+    let (miss, _) = scorer.detect_contradiction(
+        "We use JWT in cookies",
+        &["package.json: \"vue\": \"^3.5\""],
+    );
     EvalCheck {
         name: "contradiction detect".to_string(),
         passed: hit && !miss,
@@ -165,10 +191,7 @@ fn lease_collision_race(db: &Database) -> EvalCheck {
         })
     };
     let first = matches!(acquire("a", "s-a"), Ok(LeaseAcquireResult::Acquired { .. }));
-    let conflict = matches!(
-        acquire("b", "s-b"),
-        Ok(LeaseAcquireResult::Conflict { .. })
-    );
+    let conflict = matches!(acquire("b", "s-b"), Ok(LeaseAcquireResult::Conflict { .. }));
     let _ = db.release_leases("s-a", None);
     let after = matches!(acquire("b", "s-b"), Ok(LeaseAcquireResult::Acquired { .. }));
     EvalCheck {
@@ -194,11 +217,16 @@ fn hook_pipeline_latency() -> EvalCheck {
         symbols: &empty_symbols,
         is_mutation: false,
     };
-    let allow = |_: &str, _: &PipelineCtx<'_>| HandlerOutput::allow();
+    let db = Database::open_in_memory().expect("eval db");
+    let env = HandlerEnv {
+        db: &db,
+        project_id: None,
+        mode: crate::models::AutopilotMode::Vibe,
+    };
     let mut elapsed: Vec<u128> = (0..200)
         .map(|_| {
             let start = Instant::now();
-            let results = run_pipeline(&specs.handler, &ctx, &allow);
+            let results = run_pipeline(&specs.handler, &ctx, &env, &[]);
             let _ = merge_decision(&results);
             start.elapsed().as_micros()
         })

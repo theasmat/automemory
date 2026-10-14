@@ -187,8 +187,8 @@ mod tests {
             .to_string();
         assert!(refused_text.contains("refused"));
 
-        let task_id: String = serde_json::from_str::<serde_json::Value>(&claimed)
-            .unwrap()["task"]["id"]
+        let task_id: String = serde_json::from_str::<serde_json::Value>(&claimed).unwrap()["task"]
+            ["id"]
             .as_str()
             .unwrap()
             .to_string();
@@ -223,39 +223,55 @@ mod tests {
         };
 
         // Author queues; author cannot review their own diff.
-        call(40, "review.submit", json!({
-            "session_id": "author-1", "diff": "diff --git a/f", "title": "fix leak",
-            "test_command": "cargo test"
-        }));
+        call(
+            40,
+            "review.submit",
+            json!({
+                "session_id": "author-1", "diff": "diff --git a/f", "title": "fix leak",
+                "test_command": "cargo test"
+            }),
+        );
         let own_empty = call(41, "review.next", json!({ "session_id": "author-1" }));
         assert!(own_empty.contains("No pending reviews"));
 
         // Reviewer approves with green tests → approved.
         let job = call(42, "review.next", json!({ "session_id": "reviewer-1" }));
         assert!(job.contains("fix leak"));
-        let rev_id: String = serde_json::from_str::<serde_json::Value>(&job)
-            .unwrap()["review"]["id"]
+        let rev_id: String = serde_json::from_str::<serde_json::Value>(&job).unwrap()["review"]
+            ["id"]
             .as_str()
             .unwrap()
             .to_string();
-        let verdict = call(43, "review.post", json!({
-            "id": rev_id, "session_id": "reviewer-1",
-            "approved": true, "tests_passed": true
-        }));
+        let verdict = call(
+            43,
+            "review.post",
+            json!({
+                "id": rev_id, "session_id": "reviewer-1",
+                "approved": true, "tests_passed": true
+            }),
+        );
         assert!(verdict.contains("approved"));
 
         // Approval with red tests → rejected: tests judge.
-        call(44, "review.submit", json!({ "session_id": "author-2", "diff": "diff2" }));
+        call(
+            44,
+            "review.submit",
+            json!({ "session_id": "author-2", "diff": "diff2" }),
+        );
         let job2 = call(45, "review.next", json!({ "session_id": "reviewer-1" }));
-        let rev2: String = serde_json::from_str::<serde_json::Value>(&job2)
-            .unwrap()["review"]["id"]
+        let rev2: String = serde_json::from_str::<serde_json::Value>(&job2).unwrap()["review"]
+            ["id"]
             .as_str()
             .unwrap()
             .to_string();
-        let verdict2 = call(46, "review.post", json!({
-            "id": rev2, "session_id": "reviewer-1",
-            "approved": true, "tests_passed": false
-        }));
+        let verdict2 = call(
+            46,
+            "review.post",
+            json!({
+                "id": rev2, "session_id": "reviewer-1",
+                "approved": true, "tests_passed": false
+            }),
+        );
         assert!(verdict2.contains("rejected"));
     }
 
@@ -280,34 +296,53 @@ mod tests {
                 .to_string()
         };
 
-        let saved = call(50, "memory.save", json!({
-            "content": "JWT in cookie", "summary": "auth fact"
-        }));
-        let ev: String = serde_json::from_str::<serde_json::Value>(&saved)
-            .unwrap()["id"]
+        let saved = call(
+            50,
+            "memory.save",
+            json!({
+                "content": "JWT in cookie", "summary": "auth fact"
+            }),
+        );
+        let ev: String = serde_json::from_str::<serde_json::Value>(&saved).unwrap()["id"]
             .as_str()
             .unwrap()
             .to_string();
 
-        let joined = call(51, "room.join", json!({ "session_id": "a", "topic": "auth" }));
-        let room_id: String = serde_json::from_str::<serde_json::Value>(&joined)
-            .unwrap()["room"]["id"]
+        let joined = call(
+            51,
+            "room.join",
+            json!({ "session_id": "a", "topic": "auth" }),
+        );
+        let room_id: String = serde_json::from_str::<serde_json::Value>(&joined).unwrap()["room"]
+            ["id"]
             .as_str()
             .unwrap()
             .to_string();
-        call(52, "room.join", json!({ "session_id": "b", "room_id": room_id }));
+        call(
+            52,
+            "room.join",
+            json!({ "session_id": "b", "room_id": room_id }),
+        );
 
         let post = |id: i64, sess: &str, kind: &str, body: &str| {
-            call(id, "room.post", json!({
-                "room_id": room_id, "session_id": sess,
-                "kind": kind, "body": body, "evidence": [ev]
-            }))
+            call(
+                id,
+                "room.post",
+                json!({
+                    "room_id": room_id, "session_id": sess,
+                    "kind": kind, "body": body, "evidence": [ev]
+                }),
+            )
         };
         // Out-of-turn post is refused.
-        let refused = call(53, "room.post", json!({
-            "room_id": room_id, "session_id": "b",
-            "kind": "propose", "body": "nope", "evidence": [ev]
-        }));
+        let refused = call(
+            53,
+            "room.post",
+            json!({
+                "room_id": room_id, "session_id": "b",
+                "kind": "propose", "body": "nope", "evidence": [ev]
+            }),
+        );
         assert!(refused.contains("not your turn"));
 
         post(54, "a", "propose", "JWT plan");
@@ -317,8 +352,67 @@ mod tests {
         assert!(last.contains("decision.record"));
 
         let status = call(57, "room.status", json!({ "room_id": room_id }));
-        let status: serde_json::Value =
-            serde_json::from_str(&status).unwrap();
+        let status: serde_json::Value = serde_json::from_str(&status).unwrap();
         assert_eq!(status["room"]["state"], "decided");
+    }
+
+    #[test]
+    fn test_mcp_prd_alias_tools() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+
+        let call = |id: i64, name: &str, arguments: serde_json::Value| {
+            server
+                .handle_request(JsonRpcRequest {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(json!(id)),
+                    method: "tools/call".to_string(),
+                    params: Some(json!({ "name": name, "arguments": arguments })),
+                })
+                .unwrap()
+                .result
+                .unwrap()["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        // ask aliases recall.
+        let saved = call(
+            60,
+            "memory.save",
+            json!({
+                "content": "JWT in cookie", "summary": "auth fact", "tags": ["auth"]
+            }),
+        );
+        assert!(saved.contains("saved"));
+        let asked = call(61, "memory.ask", json!({ "query": "JWT" }));
+        assert!(asked.contains("auth fact"));
+
+        // topics lists the tag.
+        let topics = call(62, "memory.topics", json!({}));
+        assert!(topics.contains("auth"));
+
+        // about answers for the tag target.
+        let about = call(63, "memory.about", json!({ "target": "auth" }));
+        assert!(about.contains("auth fact"));
+
+        // propose without provenance is rejected; with it, queued as candidate.
+        let refused = call(
+            64,
+            "memory.propose",
+            json!({
+                "content": "x", "summary": "y", "evidence": []
+            }),
+        );
+        assert!(refused.contains("provenance"));
+        let queued = call(
+            65,
+            "memory.propose",
+            json!({
+                "content": "Use rotation", "summary": "rotate it", "evidence": ["manual"]
+            }),
+        );
+        assert!(queued.contains("proposed"));
     }
 }

@@ -19,9 +19,13 @@ pub fn list(project: Option<String>, limit: usize, group_by: Option<String>) -> 
     if let Some(group_field) = group_by.as_deref() {
         match group_field.to_lowercase().as_str() {
             "type" | "category" => {
-                let mut grouped: std::collections::BTreeMap<String, Vec<&Memory>> = std::collections::BTreeMap::new();
+                let mut grouped: std::collections::BTreeMap<String, Vec<&Memory>> =
+                    std::collections::BTreeMap::new();
                 for m in &memories {
-                    grouped.entry(m.memory_type.to_string()).or_default().push(m);
+                    grouped
+                        .entry(m.memory_type.to_string())
+                        .or_default()
+                        .push(m);
                 }
                 for (mtype, mems) in grouped {
                     println!("\n🏷️  [{}] ({} memories)", mtype.to_uppercase(), mems.len());
@@ -33,7 +37,8 @@ pub fn list(project: Option<String>, limit: usize, group_by: Option<String>) -> 
                 return Ok(());
             }
             "scope" => {
-                let mut grouped: std::collections::BTreeMap<String, Vec<&Memory>> = std::collections::BTreeMap::new();
+                let mut grouped: std::collections::BTreeMap<String, Vec<&Memory>> =
+                    std::collections::BTreeMap::new();
                 for m in &memories {
                     grouped.entry(m.scope.to_string()).or_default().push(m);
                 }
@@ -81,7 +86,7 @@ pub async fn search(
 
     if semantic {
         let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
-        let vector_engine = automemory_core::retrieval::vector::VectorEngine::default();
+        let vector_engine = automemory_core::retrieval::vector::VectorEngine;
         let query_vector = vector_engine.embed_text(query)?;
 
         if let Some(ref endpoint) = global_cfg.cloud.endpoint {
@@ -336,7 +341,10 @@ pub fn digest(span_str: Option<String>, project: Option<String>, save: bool) -> 
         let mem = engine.synthesize_milestone_memory(&digest, None)?;
         db.save_memory(&mem)?;
         println!();
-        println!("💾 Saved checkpoint memory: '{}' (ID: {})", mem.summary, mem.id);
+        println!(
+            "💾 Saved checkpoint memory: '{}' (ID: {})",
+            mem.summary, mem.id
+        );
     }
 
     Ok(())
@@ -379,7 +387,10 @@ pub fn save(args: MemorySaveArgs) -> Result<()> {
         metadata_map.insert("achievements".to_string(), serde_json::json!(args.achieved));
     }
     if !args.failed.is_empty() {
-        metadata_map.insert("failures_resolved".to_string(), serde_json::json!(args.failed));
+        metadata_map.insert(
+            "failures_resolved".to_string(),
+            serde_json::json!(args.failed),
+        );
     }
     if let Some(ref fls) = args.files {
         let fls_vec: Vec<String> = fls

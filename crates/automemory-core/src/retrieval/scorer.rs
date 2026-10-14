@@ -31,10 +31,6 @@ impl Default for HybridScorer {
 }
 
 impl HybridScorer {
-    pub fn new(k: f64, alpha: f64, beta: f64) -> Self {
-        Self { k, alpha, beta }
-    }
-
     /// Fuses FTS lexical search results and Vector semantic search results via Reciprocal Rank Fusion (RRF).
     pub fn fuse_and_rank(
         &self,

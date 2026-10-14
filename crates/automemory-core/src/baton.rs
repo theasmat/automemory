@@ -25,9 +25,9 @@ pub fn build_packet(
         let failed = recent
             .iter()
             .filter(|e| {
-                e.tool.as_ref().is_some_and(|t| {
-                    t.status != "success" || t.exit_code.is_some_and(|c| c != 0)
-                })
+                e.tool
+                    .as_ref()
+                    .is_some_and(|t| t.status != "success" || t.exit_code.is_some_and(|c| c != 0))
             })
             .count();
         let mut files: Vec<String> = Vec::new();
@@ -46,7 +46,10 @@ pub fn build_packet(
             failed
         ));
         if !files.is_empty() {
-            lines.push(format!("files: {}", files.iter().take(8).cloned().collect::<Vec<_>>().join(", ")));
+            lines.push(format!(
+                "files: {}",
+                files.iter().take(8).cloned().collect::<Vec<_>>().join(", ")
+            ));
         }
         let mut outcomes: Vec<String> = recent
             .iter()
@@ -79,7 +82,9 @@ pub fn build_packet(
     for d in decisions {
         lines.push(format!("decision[{}]: {}", d.topic, d.decision));
     }
-    let blockers = db.list_failures(project_id, Some("unresolved"), 3).unwrap_or_default();
+    let blockers = db
+        .list_failures(project_id, Some("unresolved"), 3)
+        .unwrap_or_default();
     for f in blockers {
         lines.push(format!("blocker: {}", f.task_title));
     }
@@ -170,14 +175,8 @@ mod tests {
     #[test]
     fn packet_caps_at_budget_and_carries_note() {
         let db = Database::open_in_memory().unwrap();
-        let packet = build_packet(
-            &db,
-            None,
-            "sess-a",
-            "claude-code",
-            Some(&"x".repeat(5000)),
-        )
-        .unwrap();
+        let packet =
+            build_packet(&db, None, "sess-a", "claude-code", Some(&"x".repeat(5000))).unwrap();
         assert!(packet.len() <= BATON_CHAR_BUDGET + 20);
         assert!(packet.contains("baton from sess-a"));
         assert!(packet.contains("next:"));

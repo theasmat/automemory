@@ -1,12 +1,12 @@
 use anyhow::Result;
 use automemory_core::config::Config;
 use automemory_core::db::Database;
-use automemory_core::guardrails::{GuardrailAction, GuardrailEvaluator};
-use automemory_core::models::*;
 use automemory_core::hooks::{
-    CanonicalEvent, GateDecision, HandlerOutput, HooksConfig, PipelineCtx, expand_scope_via_graph,
-    merge_decision, run_pipeline,
+    merge_decision, run_pipeline, CanonicalEvent, GateDecision, GuardrailHandler, HooksConfig,
+    LockCheckHandler, PipelineCtx,
 };
+use automemory_core::models::*;
+use automemory_core::ports::{HandlerEnv, HookHandler};
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -85,6 +85,15 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         }
     }
 
+    // ── Pending-work nudge: only speaks when something is assigned ─────────
+    if canonical == Some(CanonicalEvent::UserPromptSubmit) {
+        if let Some(nudge) = pending_work_nudge(&db, effective_project_id, &session_id) {
+            println!("{}", json!({ "nudge": nudge }));
+        } else {
+            println!("{{}}");
+        }
+        return Ok(());
+    }
     // ── Ordered Gate Pipeline (lock check → guardrail → custom exec) ──────────
     // Strictest decision wins, so a catastrophic command is denied even when a
     // lease check merely asks. Hot-reloaded: hooks.toml is re-read every call.
@@ -125,14 +134,15 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             &config.home_dir.join("hooks.toml"),
             &project_hooks_path(&project_ref),
         );
-        let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &|id, c| match id {
-            "lock-check" => builtin_lock_check(&db, c, effective_project_id, autopilot_mode),
-            "guardrail" => builtin_guardrail(&db, c, effective_project_id, autopilot_mode),
-            other => {
-                eprintln!("[AutoMemory Hook] unknown built-in '{other}'; allowing");
-                HandlerOutput::allow()
-            }
-        });
+        let env = HandlerEnv {
+            db: &db,
+            project_id: effective_project_id,
+            mode: autopilot_mode,
+        };
+        let lock_check = LockCheckHandler;
+        let guardrail = GuardrailHandler;
+        let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
+        let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
         let merged = merge_decision(&results);
         if merged.reason.is_empty() {
             println!("{}", json!({"decision": merged.decision.as_str()}));
@@ -172,9 +182,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                 .or_else(|| i.get("command"))
                 .and_then(|v| v.as_str())
         })
-        .is_some_and(|cmd| {
-            cmd.contains("git commit") || cmd.contains("git merge")
-        });
+        .is_some_and(|cmd| cmd.contains("git commit") || cmd.contains("git merge"));
 
     if canonical == Some(CanonicalEvent::Stop)
         || canonical == Some(CanonicalEvent::PostCommit)
@@ -210,100 +218,38 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     Ok(())
 }
 
-/// Built-in `lock-check` handler: lease collision check for mutation tools.
-/// Strict denies, Review asks, Vibe warns on stderr only (defers to guardrail).
-/// File targets expand to their indexed symbols (and vice versa) so symbol
-/// leases collide with file edits even when the agent names only the file.
-fn builtin_lock_check(
-    db: &Database,
-    ctx: &PipelineCtx<'_>,
-    project_id: Option<&str>,
-    autopilot_mode: AutopilotMode,
-) -> HandlerOutput {
-    if (ctx.paths.is_empty() && ctx.symbols.is_empty()) || !ctx.is_mutation {
-        return HandlerOutput::allow();
+/// Pending-work nudge for UserPromptSubmit: returns `Some` only when this
+/// session holds a claimed task, has an addressed baton, or owes a review.
+fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str) -> Option<String> {
+    let mut items = Vec::new();
+    if let Ok(tasks) = db.list_tasks(project_id, Some(TaskState::Claimed), 10) {
+        if let Some(t) = tasks
+            .into_iter()
+            .find(|t| t.owner_session.as_deref() == Some(session_id))
+        {
+            items.push(format!("claimed task: {}", t.title));
+        }
     }
-    let (paths, symbols) = expand_scope_via_graph(db, project_id, ctx.paths, ctx.symbols);
-    match db.check_collision(project_id, ctx.session_id, &paths, &symbols) {
-        Ok(Some(conflict)) => {
-            eprintln!(
-                "⚠️ [AutoMemory Lock Warning]: Target resource '{}' is actively locked by {} (Session: {}).",
-                conflict.scope, conflict.holder_agent, conflict.holder_session_id
-            );
-            eprintln!("   🔒 Holder Goal: {}", conflict.goal);
-            eprintln!("   ⏳ Lease Expires In: {}s", conflict.remaining_seconds);
-            match autopilot_mode {
-                AutopilotMode::Strict => {
-                    eprintln!("🛑 [AutoMemory Lock] COLLISION PREVENTED in Strict mode.");
-                    HandlerOutput {
-                        decision: GateDecision::Deny,
-                        reason: format!(
-                            "Collision prevented: '{}' is locked by agent '{}' (Goal: '{}', {}s remaining)",
-                            conflict.scope,
-                            conflict.holder_agent,
-                            conflict.goal,
-                            conflict.remaining_seconds
-                        ),
-                    }
-                }
-                AutopilotMode::Review => HandlerOutput {
-                    decision: GateDecision::Ask,
-                    reason: format!(
-                        "Resource '{}' is leased by {} for: '{}'. Proceed with overwrite?",
-                        conflict.scope, conflict.holder_agent, conflict.goal
-                    ),
-                },
-                _ => HandlerOutput::allow(),
-            }
-        }
-        _ => HandlerOutput::allow(),
+    if db
+        .latest_baton(project_id, Some(session_id))
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        items.push("a handoff baton awaits pickup (baton.pickup)".to_string());
     }
-}
-
-/// Built-in `guardrail` handler: AST/tokenizer evaluation of the planned tool.
-/// Critical blocks exit the process, preserving the pre-pipeline contract.
-fn builtin_guardrail(
-    db: &Database,
-    ctx: &PipelineCtx<'_>,
-    project_id: Option<&str>,
-    autopilot_mode: AutopilotMode,
-) -> HandlerOutput {
-    let decision = GuardrailEvaluator::new(Some(db)).evaluate(
-        ctx.tool,
-        ctx.args,
-        project_id,
-        autopilot_mode,
-    );
-    match decision.action {
-        GuardrailAction::Block => {
-            eprintln!(
-                "🛑 [AutoMemory Guardrail] CRITICAL STOP: {}",
-                decision.title
-            );
-            eprintln!("   Reason: {}", decision.risk_summary);
-            if let Some(hint) = &decision.mitigation_hint {
-                eprintln!("   💡 Mitigation: {}", hint);
-            }
-            HandlerOutput {
-                decision: GateDecision::Deny,
-                reason: format!("{}: {}", decision.title, decision.risk_summary),
-            }
-        }
-        GuardrailAction::Warn => {
-            eprintln!("⚠️ [AutoMemory Guardrail Warning]: {}", decision.title);
-            if let Some(hint) = &decision.mitigation_hint {
-                eprintln!("   💡 Tip: {}", hint);
-            }
-            HandlerOutput {
-                decision: if decision.requires_confirmation {
-                    GateDecision::Ask
-                } else {
-                    GateDecision::Allow
-                },
-                reason: format!("{}: {}", decision.title, decision.risk_summary),
-            }
-        }
-        GuardrailAction::Allow => HandlerOutput::allow(),
+    if db
+        .next_review(project_id, Some(session_id))
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        items.push("a diff awaits your review (review.next)".to_string());
+    }
+    if items.is_empty() {
+        None
+    } else {
+        Some(format!("Pending work: {}.", items.join("; ")))
     }
 }
 
@@ -314,7 +260,10 @@ fn staged_files(root_path: &str) -> Vec<String> {
 
 /// Files touched by HEAD for PostCommit staleness marking.
 fn commit_files(root_path: &str) -> Vec<String> {
-    git_files(root_path, &["show", "--pretty=format:", "--name-only", "HEAD"])
+    git_files(
+        root_path,
+        &["show", "--pretty=format:", "--name-only", "HEAD"],
+    )
 }
 
 fn git_files(root_path: &str, args: &[&str]) -> Vec<String> {

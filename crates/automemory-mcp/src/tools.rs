@@ -2,6 +2,7 @@ use crate::protocol::{ToolCallResult, ToolDefinition};
 use automemory_core::db::Database;
 use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
+use automemory_core::ports::CodeIntel;
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
 use automemory_core::verify::{DecayVerifier, Verifier};
@@ -34,6 +35,57 @@ impl ToolRegistry {
                         "limit": { "type": "integer", "description": "Max results to return (default 5)" }
                     },
                     "required": ["query"]
+                }),
+            },
+            ToolDefinition {
+                name: "memory.ask".to_string(),
+                description: "PRD alias for memory.recall: ranked short entries with ids, status and provenance".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Search query" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" },
+                        "limit": { "type": "integer", "description": "Max results to return (default 5)" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            ToolDefinition {
+                name: "memory.about".to_string(),
+                description: "Everything known about a file or symbol: graph entities, callers, and linked memories".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "description": "File path or symbol name" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["target"]
+                }),
+            },
+            ToolDefinition {
+                name: "memory.topics".to_string(),
+                description: "What is queryable: active decision topics plus distinct memory tags".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
+                name: "memory.propose".to_string(),
+                description: "Write a candidate memory. Rejected without provenance (evidence)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "content": { "type": "string", "description": "Detailed explanation" },
+                        "summary": { "type": "string", "description": "Concise 1-line summary" },
+                        "evidence": { "type": "array", "items": { "type": "string" }, "description": "Provenance: memory/trace/failure IDs or references (required)" },
+                        "type": { "type": "string", "enum": ["fact", "decision", "lesson", "pattern", "warning", "observation", "preference", "skill"] },
+                        "project_id": { "type": "string" },
+                        "tags": { "type": "array", "items": { "type": "string" } }
+                    },
+                    "required": ["content", "summary", "evidence"]
                 }),
             },
             ToolDefinition {
@@ -749,7 +801,7 @@ impl ToolRegistry {
             // ==========================================
             // Read Tools
             // ==========================================
-            "memory.recall" => {
+            "memory.recall" | "memory.ask" => {
                 let query = match arguments.get("query").and_then(|v| v.as_str()) {
                     Some(q) => q,
                     None => return ToolCallResult::error("Missing required parameter: query"),
@@ -781,6 +833,131 @@ impl ToolRegistry {
                         ToolCallResult::json(&formatted)
                     }
                     Err(e) => ToolCallResult::error(format!("Search failed: {}", e)),
+                }
+            }
+
+            "memory.about" => {
+                let target = match arguments.get("target").and_then(|v| v.as_str()) {
+                    Some(t) => t,
+                    None => return ToolCallResult::error("Missing required parameter: target"),
+                };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                let by_name = self
+                    .db
+                    .query_graph_entities(project_id, None, Some(target), None, 10)
+                    .unwrap_or_default();
+                let by_path = self
+                    .db
+                    .query_graph_entities(project_id, None, None, Some(target), 10)
+                    .unwrap_or_default();
+                let mut seen = std::collections::HashSet::new();
+                let entities: Vec<_> = by_name
+                    .into_iter()
+                    .chain(by_path)
+                    .filter(|e| seen.insert(e.id.clone()))
+                    .collect();
+                let intel = automemory_core::ports::GraphCodeIntel::new(&self.db);
+                let callers = intel.callers(project_id, target);
+                let memories = self
+                    .db
+                    .search_memories_fts(target, project_id, 5)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(m, _)| {
+                        json!({ "id": m.id, "summary": m.summary, "status": m.status.to_string() })
+                    })
+                    .collect::<Vec<_>>();
+                ToolCallResult::json(&json!({
+                    "target": target,
+                    "entities": entities,
+                    "callers": callers,
+                    "memories": memories,
+                    "next_action": "Use memory.get(id) for full detail on any entry."
+                }))
+            }
+
+            "memory.topics" => {
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                match self.db.list_topics(project_id, 50) {
+                    Ok(topics) => ToolCallResult::json(&json!({
+                        "topics": topics,
+                        "next_action": "Query any topic with memory.ask."
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Failed to list topics: {}", e)),
+                }
+            }
+
+            "memory.propose" => {
+                let content = match arguments.get("content").and_then(|v| v.as_str()) {
+                    Some(c) => redact_text(c),
+                    None => return ToolCallResult::error("Missing parameter: content"),
+                };
+                let summary = match arguments.get("summary").and_then(|v| v.as_str()) {
+                    Some(s) => redact_text(s),
+                    None => return ToolCallResult::error("Missing parameter: summary"),
+                };
+                let evidence: Vec<String> = match arguments
+                    .get("evidence")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect::<Vec<String>>()
+                    }) {
+                    Some(list) if !list.is_empty() => list,
+                    _ => {
+                        return ToolCallResult::error(
+                            "Proposal rejected without provenance: provide evidence",
+                        )
+                    }
+                };
+                let mem_type = arguments
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| MemoryType::from_str(s).ok())
+                    .unwrap_or(MemoryType::Fact);
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let tags = arguments
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let mem = Memory {
+                    id: Uuid::now_v7().to_string(),
+                    scope: MemoryScope::Project,
+                    project_id,
+                    memory_type: mem_type,
+                    content,
+                    summary,
+                    confidence: 0.5,
+                    importance: 0.8,
+                    freshness: 1.0,
+                    status: MemoryStatus::Candidate,
+                    source_kind: MemorySourceKind::Agent,
+                    version: Some(1),
+                    created_at: Utc::now(),
+                    updated_at: Utc::now(),
+                    last_recalled_at: None,
+                    tags,
+                    entities: Vec::new(),
+                    metadata: json!({ "evidence": evidence }),
+                };
+                match self.db.save_memory_direct(&mem) {
+                    Ok(_) => ToolCallResult::json(&json!({
+                        "proposed": true,
+                        "id": mem.id,
+                        "next_action": "Candidate queued; a human confirms via proposal review, pin, or veto."
+                    })),
+                    Err(e) => ToolCallResult::error(format!("Failed to propose memory: {}", e)),
                 }
             }
 
@@ -918,7 +1095,9 @@ impl ToolRegistry {
                 } else {
                     match automemory_core::models::timespan::parse_time_span_str(span_str) {
                         Ok((start, end)) => engine.generate_digest(project_id, start, end),
-                        Err(e) => return ToolCallResult::error(format!("Invalid span format: {}", e)),
+                        Err(e) => {
+                            return ToolCallResult::error(format!("Invalid span format: {}", e))
+                        }
                     }
                 };
 
@@ -938,7 +1117,9 @@ impl ToolRegistry {
                             "saved_memory_id": saved_memory_id
                         }))
                     }
-                    Err(e) => ToolCallResult::error(format!("Failed to generate time span digest: {}", e)),
+                    Err(e) => {
+                        ToolCallResult::error(format!("Failed to generate time span digest: {}", e))
+                    }
                 }
             }
 
@@ -1737,7 +1918,10 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing required parameter: reason"),
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent");
+                let agent = arguments
+                    .get("agent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("agent");
                 let dissent = arguments.get("dissent").and_then(|v| v.as_str());
 
                 let alternatives: Vec<String> = arguments
@@ -1826,15 +2010,13 @@ impl ToolRegistry {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let to_session = arguments.get("to_session").and_then(|v| v.as_str());
                 let note = arguments.get("note").and_then(|v| v.as_str());
-                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent");
+                let agent = arguments
+                    .get("agent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("agent");
 
                 match automemory_core::baton::pass_baton(
-                    &self.db,
-                    project_id,
-                    session_id,
-                    to_session,
-                    agent,
-                    note,
+                    &self.db, project_id, session_id, to_session, agent, note,
                 ) {
                     Ok(baton) => {
                         let payload = json!({
@@ -1886,7 +2068,10 @@ impl ToolRegistry {
                     })
                     .unwrap_or_default();
 
-                match self.db.create_task(session_id, project_id, title, spec, &symbols) {
+                match self
+                    .db
+                    .create_task(session_id, project_id, title, spec, &symbols)
+                {
                     Ok(task) => ToolCallResult::json(&json!({
                         "status": "created",
                         "task": task,
@@ -1934,9 +2119,9 @@ impl ToolRegistry {
                         "id": id,
                         "next_action": "Call lock.release for symbols you leased, then baton.pass to hand context on."
                     })),
-                    Ok(false) => ToolCallResult::error(
-                        "Submit refused: task is not claimed by this session",
-                    ),
+                    Ok(false) => {
+                        ToolCallResult::error("Submit refused: task is not claimed by this session")
+                    }
                     Err(e) => ToolCallResult::error(format!("Failed to submit task: {}", e)),
                 }
             }
@@ -1952,7 +2137,10 @@ impl ToolRegistry {
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let task_id = arguments.get("task_id").and_then(|v| v.as_str());
-                let title = arguments.get("title").and_then(|v| v.as_str()).unwrap_or("diff review");
+                let title = arguments
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("diff review");
                 let test_command = arguments.get("test_command").and_then(|v| v.as_str());
 
                 match self.db.submit_review(
@@ -1995,14 +2183,22 @@ impl ToolRegistry {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: session_id"),
                 };
-                let approved = arguments.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let approved = arguments
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let tests_passed = match arguments.get("tests_passed").and_then(|v| v.as_bool()) {
                     Some(t) => t,
-                    None => return ToolCallResult::error("Missing required parameter: tests_passed (test results judge the diff)"),
+                    None => return ToolCallResult::error(
+                        "Missing required parameter: tests_passed (test results judge the diff)",
+                    ),
                 };
                 let verdict = arguments.get("verdict").and_then(|v| v.as_str());
 
-                match self.db.post_review(id, session_id, approved, tests_passed, verdict) {
+                match self
+                    .db
+                    .post_review(id, session_id, approved, tests_passed, verdict)
+                {
                     Ok(Some(review)) => ToolCallResult::json(&json!({
                         "review": review,
                         "next_action": "If rejected, the author fixes and resubmits with review.submit."
@@ -2044,7 +2240,10 @@ impl ToolRegistry {
                         Err(e) => ToolCallResult::error(format!("Failed to join room: {}", e)),
                     }
                 } else {
-                    let topic = arguments.get("topic").and_then(|v| v.as_str()).unwrap_or("untitled");
+                    let topic = arguments
+                        .get("topic")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("untitled");
                     match self.db.create_room(project_id, topic, session_id) {
                         Ok(room) => ToolCallResult::json(&json!({
                             "room": room,
@@ -2070,9 +2269,11 @@ impl ToolRegistry {
                     .and_then(|s| s.parse::<automemory_core::models::PostKind>().ok())
                 {
                     Some(k) => k,
-                    None => return ToolCallResult::error(
-                        "Missing or invalid parameter: kind (propose, critique, revise)",
-                    ),
+                    None => {
+                        return ToolCallResult::error(
+                            "Missing or invalid parameter: kind (propose, critique, revise)",
+                        )
+                    }
                 };
                 let body = match arguments.get("body").and_then(|v| v.as_str()) {
                     Some(s) => s,
@@ -2088,7 +2289,10 @@ impl ToolRegistry {
                     })
                     .unwrap_or_default();
 
-                match self.db.post_to_room(room_id, session_id, kind, body, &evidence) {
+                match self
+                    .db
+                    .post_to_room(room_id, session_id, kind, body, &evidence)
+                {
                     Ok(post) => {
                         let room = self.db.get_room(room_id).ok().flatten();
                         let next_action = match room.as_ref().map(|r| r.state) {

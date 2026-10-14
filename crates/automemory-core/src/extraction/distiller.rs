@@ -331,13 +331,19 @@ impl<'a> TrajectoryDistiller<'a> {
 
         let mut retrospective_lines = Vec::new();
         retrospective_lines.push(format!("### 🎯 Task: {}", task_title));
-        retrospective_lines.push(format!("- **Session**: `{}` | **Agent**: `{}`", session_id, adapter_id));
+        retrospective_lines.push(format!(
+            "- **Session**: `{}` | **Agent**: `{}`",
+            session_id, adapter_id
+        ));
         retrospective_lines.push(format!(
             "- **Trajectory Quality**: Distilled {} raw events into {} golden verified steps (reproducibility: {:.2}).",
             total_raw_events, key_steps.len(), reproducibility_score
         ));
 
-        retrospective_lines.push(format!("\n#### 🛠️ What Was Done\n- Modified files: {}.", modified_files_str));
+        retrospective_lines.push(format!(
+            "\n#### 🛠️ What Was Done\n- Modified files: {}.",
+            modified_files_str
+        ));
         if !key_steps.is_empty() {
             let key_actions = key_steps
                 .iter()

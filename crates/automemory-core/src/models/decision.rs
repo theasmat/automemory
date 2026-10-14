@@ -8,7 +8,6 @@ pub enum DecisionStatus {
     #[default]
     Active,
     Superseded,
-    Deprecated,
 }
 
 impl std::fmt::Display for DecisionStatus {
@@ -16,7 +15,6 @@ impl std::fmt::Display for DecisionStatus {
         match self {
             Self::Active => write!(f, "active"),
             Self::Superseded => write!(f, "superseded"),
-            Self::Deprecated => write!(f, "deprecated"),
         }
     }
 }
@@ -27,7 +25,6 @@ impl std::str::FromStr for DecisionStatus {
         match s.to_lowercase().as_str() {
             "active" => Ok(Self::Active),
             "superseded" => Ok(Self::Superseded),
-            "deprecated" => Ok(Self::Deprecated),
             other => Err(format!("Unknown decision status: {other}")),
         }
     }

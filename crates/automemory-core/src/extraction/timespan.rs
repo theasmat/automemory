@@ -23,7 +23,9 @@ impl<'a> TimeSpanDigestEngine<'a> {
         start_time: DateTime<Utc>,
         end_time: DateTime<Utc>,
     ) -> Result<TimeSpanDigest> {
-        let events = self.db.get_events_between(project_id, start_time, end_time)?;
+        let events = self
+            .db
+            .get_events_between(project_id, start_time, end_time)?;
         self.digest_events(&events, project_id, start_time, end_time)
     }
 

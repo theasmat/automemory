@@ -95,6 +95,15 @@ impl<'a> GraphBuilder<'a> {
                     if is_code_or_doc {
                         let entity_id = Uuid::new_v4().to_string();
                         let entity_type = if ext == "md" { "doc" } else { "file" };
+                        // Index-time content hash grounds CodeIntel::symbol_hash.
+                        // Files over the cap are indexed without a hash.
+                        let sha256 = fs::read(&path)
+                            .ok()
+                            .filter(|bytes| bytes.len() <= 2 << 20)
+                            .map(|bytes| {
+                                use sha2::Digest as _;
+                                format!("{:x}", sha2::Sha256::digest(&bytes))
+                            });
 
                         entities.push(GraphEntity {
                             id: entity_id.clone(),
@@ -104,7 +113,7 @@ impl<'a> GraphBuilder<'a> {
                             path: rel_str.clone(),
                             line_start: None,
                             line_end: None,
-                            metadata: serde_json::json!({ "extension": ext }),
+                            metadata: serde_json::json!({ "extension": ext, "sha256": sha256 }),
                             created_at: Utc::now(),
                             updated_at: Utc::now(),
                         });
@@ -252,5 +261,35 @@ mod tests {
         let rep = impact.unwrap();
         assert_eq!(rep.target_entity.id, "file-auth");
         assert_eq!(rep.affected_files, vec!["src/main.rs".to_string()]);
+    }
+
+    #[test]
+    fn test_scan_records_file_content_hash() {
+        use sha2::Digest as _;
+        let root =
+            std::env::temp_dir().join(format!("automemory-graph-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("a.rs"), "fn a() {}").unwrap();
+        // Unindexed extensions are skipped, not hashed.
+        std::fs::write(root.join("src").join("big.bin"), "binary").unwrap();
+
+        let db = Database::open_in_memory().expect("in-memory db open failed");
+        let builder = GraphBuilder::new(&db);
+        let (entities, _) = builder
+            .scan_and_index_project("proj-1", &root.to_string_lossy())
+            .unwrap();
+        assert_eq!(entities, 1);
+
+        let hits = db
+            .query_graph_entities(Some("proj-1"), Some("file"), Some("a.rs"), None, 5)
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        let expected = format!("{:x}", sha2::Sha256::digest(b"fn a() {}"));
+        assert_eq!(
+            hits[0].metadata.get("sha256").and_then(|v| v.as_str()),
+            Some(expected.as_str())
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

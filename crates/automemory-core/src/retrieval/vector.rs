@@ -3,28 +3,10 @@ use sha2::{Digest, Sha256};
 
 pub const EMBEDDING_DIM: usize = 384;
 
-#[derive(Debug, Clone)]
-pub struct VectorEngine {
-    model_name: String,
-}
-
-impl Default for VectorEngine {
-    fn default() -> Self {
-        Self::new("all-MiniLM-L6-v2-native")
-    }
-}
+#[derive(Debug, Clone, Default)]
+pub struct VectorEngine;
 
 impl VectorEngine {
-    pub fn new(model_name: &str) -> Self {
-        Self {
-            model_name: model_name.to_string(),
-        }
-    }
-
-    pub fn model_name(&self) -> &str {
-        &self.model_name
-    }
-
     /// Generates a dense 384-dimensional normalized embedding for text.
     /// Uses deterministic sub-word multi-hash projection with semantic token pooling,
     /// providing offline local semantic vector representation.
@@ -130,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_vector_embedding_and_similarity() {
-        let engine = VectorEngine::default();
+        let engine = VectorEngine;
         let e1 = engine
             .embed_text("Rust memory management and ownership rules")
             .unwrap();

@@ -46,7 +46,10 @@ pub fn revoke_memories(
     let count = db.revoke_memories(id, session_id, agent)?;
 
     if count > 0 {
-        println!("✓ Successfully revoked and archived {} memory record(s).", count);
+        println!(
+            "✓ Successfully revoked and archived {} memory record(s).",
+            count
+        );
         if let Some(sess) = session_id {
             println!("  Session filter: {}", sess);
         }

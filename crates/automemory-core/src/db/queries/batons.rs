@@ -67,7 +67,15 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         // Direct baton created first, broadcast created second (newer).
         // Direct must STILL be preferred for sess-b.
-        pass_baton(&db, None, "sess-a", Some("sess-b"), "agent-a", Some("your turn")).unwrap();
+        pass_baton(
+            &db,
+            None,
+            "sess-a",
+            Some("sess-b"),
+            "agent-a",
+            Some("your turn"),
+        )
+        .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(2));
         pass_baton(&db, None, "sess-a", None, "agent-a", Some("general note")).unwrap();
 

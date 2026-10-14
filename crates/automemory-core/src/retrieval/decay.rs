@@ -85,53 +85,73 @@ impl MemoryDecayScorer {
         }
     }
 
-    /// Scans memory content against known current codebase context to detect architectural contradictions.
+    /// Flags memories naming a different version of the same tool than the
+    /// current context does (`Vue 2` vs `vue ^3`, `python 3` vs `python 2`).
+    /// Versions are release-like only (`v`-prefixed, dotted, or short bare
+    /// numbers), so ports and years stay quiet.
     pub fn detect_contradiction(
         &self,
         memory_content: &str,
         current_context: &[&str],
     ) -> (bool, Option<String>) {
-        let content_lower = memory_content.to_lowercase();
-
-        // 1. Framework version contradiction patterns
-        let version_checks = [
-            ("vue 2", &["vue 3", "vue: ^3", "\"vue\": \"^3"][..]),
-            (
-                "react 17",
-                &[
-                    "react 18",
-                    "react 19",
-                    "\"react\": \"^18",
-                    "\"react\": \"^19",
-                ][..],
-            ),
-            ("react 18", &["react 19", "\"react\": \"^19"][..]),
-            ("nuxt 2", &["nuxt 3", "\"nuxt\": \"^3"][..]),
-            ("webpack", &["vite", "turbopack", "\"vite\": "][..]),
-            ("npm", &["pnpm", "yarn", "bun"][..]),
-            ("commonjs", &["esm", "\"type\": \"module\""][..]),
-        ];
-
-        for (legacy_term, modern_matches) in version_checks {
-            if content_lower.contains(legacy_term) {
-                for &modern in modern_matches {
-                    for ctx in current_context {
-                        if ctx.to_lowercase().contains(modern) {
-                            return (
-                                true,
-                                Some(format!(
-                                    "Memory references obsolete '{}', but project context indicates '{}'",
-                                    legacy_term, modern
-                                )),
-                            );
-                        }
+        let mentions = version_mentions(memory_content);
+        for (name, ver) in &mentions {
+            for ctx in current_context {
+                for (cname, cver) in version_mentions(ctx) {
+                    if cname == *name && cver != *ver {
+                        return (
+                            true,
+                            Some(format!(
+                                "Memory references {name} {ver}, but project context indicates {cname} {cver}"
+                            )),
+                        );
                     }
                 }
             }
         }
-
         (false, None)
     }
+}
+
+/// Adjacent `name version` pairs from free text. Names keep `+`/`#` (C++, C#).
+fn version_mentions(text: &str) -> Vec<(String, String)> {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::new();
+    for pair in tokens.windows(2) {
+        let name = pair[0]
+            .trim_matches(|c: char| !(c.is_alphanumeric() || c == '+' || c == '#'))
+            .to_lowercase();
+        let raw = pair[1]
+            .trim_matches(|c: char| !(c.is_alphanumeric() || c == '.' || c == '^' || c == '~'));
+        let Some(ver) = parse_version(raw) else {
+            continue;
+        };
+        if name.len() < 2 || !name.starts_with(|c: char| c.is_alphabetic()) {
+            continue;
+        }
+        // Bare numbers only count when short: ports (8080) and years stay out.
+        if ver.1 && (ver.0.len() > 2 || name.len() < 3) {
+            continue;
+        }
+        out.push((name, ver.0));
+    }
+    out
+}
+
+/// Returns (normalized version, is_bare_number).
+fn parse_version(raw: &str) -> Option<(String, bool)> {
+    let bare = raw.strip_prefix(['v', 'V']).unwrap_or(raw);
+    let dotted = bare.trim_start_matches(['^', '~']);
+    let parts: Vec<&str> = dotted.split('.').collect();
+    if parts.is_empty()
+        || parts
+            .iter()
+            .any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return None;
+    }
+    let is_bare = !raw.starts_with(['v', 'V']) && !dotted.contains('.');
+    Some((dotted.to_string(), is_bare))
 }
 
 #[cfg(test)]
@@ -175,5 +195,18 @@ mod tests {
         let (is_contra, reason) = scorer.detect_contradiction(mem, &current_ctx);
         assert!(is_contra);
         assert!(reason.unwrap().to_lowercase().contains("vue 2"));
+
+        // Any stack, not just the hardcoded few: bare and dotted versions.
+        let (py, _) =
+            scorer.detect_contradiction("Deploys run on python 3", &["runtime: python 2"]);
+        assert!(py);
+        let (same, _) =
+            scorer.detect_contradiction("Deploys run on python 3", &["runtime: python 3"]);
+        assert!(!same);
+        // Ports and years stay quiet.
+        let (port, _) = scorer.detect_contradiction("Serves on port 8080", &["config: port 9090"]);
+        assert!(!port);
+        let (year, _) = scorer.detect_contradiction("Roadmap for 2024", &["plan mentions 2025"]);
+        assert!(!year);
     }
 }

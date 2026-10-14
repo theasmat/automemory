@@ -199,10 +199,6 @@ impl GlobalConfig {
         None
     }
 
-    pub fn find_project_by_name(&self, name: &str) -> Option<&ProjectRegistryEntry> {
-        self.projects.iter().find(|p| p.name == name)
-    }
-
     pub fn register_project(&mut self, mut entry: ProjectRegistryEntry) -> Result<()> {
         let p = Path::new(&entry.local_dir);
         let normalized = p.canonicalize().ok().unwrap_or_else(|| p.to_path_buf());
@@ -262,11 +258,6 @@ impl Config {
             vault_dir,
             home_dir: base,
         }
-    }
-
-    pub fn with_db_path(mut self, path: PathBuf) -> Self {
-        self.db_path = path;
-        self
     }
 
     pub fn ensure_dirs(&self) -> std::io::Result<()> {

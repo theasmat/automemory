@@ -34,8 +34,10 @@ fn resolve_cloud_urls(raw_endpoint: &str) -> (String, String, String, String) {
     (push_url, pull_url, device_reg_url, blob_base)
 }
 
+/// Per-project sync file (`.automemory/config.json`); distinct from the
+/// DB-embedded `automemory_core::models::SyncConfig` mode flags.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncConfig {
+pub struct SyncFileConfig {
     pub project_id: String,
     pub endpoint: Option<String>,
     pub auth_token: Option<String>,
@@ -124,7 +126,7 @@ pub fn init(
     fs::create_dir_all(&automemory_dir)?;
 
     let config_path = automemory_dir.join("config.json");
-    let sync_cfg = SyncConfig {
+    let sync_cfg = SyncFileConfig {
         project_id: proj_id.clone(),
         endpoint,
         auth_token: token,
@@ -159,7 +161,7 @@ pub fn status(project_opt: Option<String>) -> Result<()> {
 
     let cfg_path = cwd.join(".automemory").join("config.json");
     if let Ok(content) = fs::read_to_string(&cfg_path) {
-        if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
+        if let Ok(cfg) = serde_json::from_str::<SyncFileConfig>(&content) {
             println!(
                 "  Cloud Endpoint: {}",
                 cfg.endpoint
@@ -217,35 +219,22 @@ pub fn status(project_opt: Option<String>) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 struct CloudManifestFile {
     path: String,
-    #[serde(default)]
-    category: Option<String>,
     sha256: String,
     #[serde(default)]
     nonce_base64: Option<String>,
-    #[serde(default)]
-    size_bytes: Option<usize>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 struct CloudManifest {
-    #[serde(default)]
-    version: Option<u32>,
-    #[serde(default)]
-    project_slug: Option<String>,
     #[serde(default)]
     files: Option<Vec<CloudManifestFile>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 struct CloudPullResponse {
-    #[serde(default)]
-    success: bool,
     #[serde(default)]
     manifest: Option<CloudManifest>,
     #[serde(default)]
@@ -324,7 +313,7 @@ pub async fn push(
             token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
         )
     } else if let Ok(content) = fs::read_to_string(&cfg_path) {
-        if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
+        if let Ok(cfg) = serde_json::from_str::<SyncFileConfig>(&content) {
             (cfg.endpoint, cfg.auth_token.or(token_opt))
         } else {
             (None, token_opt)
@@ -381,7 +370,7 @@ pub async fn push(
         let master_key = BlindCrypto::get_or_create_master_key(key_opt.as_deref())?;
         let index_key = BlindCrypto::derive_index_key(&master_key);
 
-        let vector_engine = automemory_core::retrieval::vector::VectorEngine::default();
+        let vector_engine = automemory_core::retrieval::vector::VectorEngine;
         let mut blind_memories = Vec::new();
         for m in &memories {
             let embedding = vector_engine
@@ -527,7 +516,7 @@ pub async fn push(
     // Update last_synced_at in .automemory/config.json
     if cfg_path.exists() {
         if let Ok(content) = fs::read_to_string(&cfg_path) {
-            if let Ok(mut cfg) = serde_json::from_str::<SyncConfig>(&content) {
+            if let Ok(mut cfg) = serde_json::from_str::<SyncFileConfig>(&content) {
                 cfg.last_synced_at = Some(Utc::now().to_rfc3339());
                 let _ = fs::write(&cfg_path, serde_json::to_string_pretty(&cfg)?);
             }
@@ -669,7 +658,7 @@ pub async fn pull(
             token_opt.or_else(|| global_cfg.cloud.auth_token.clone()),
         )
     } else if let Ok(content) = fs::read_to_string(&cfg_path) {
-        if let Ok(cfg) = serde_json::from_str::<SyncConfig>(&content) {
+        if let Ok(cfg) = serde_json::from_str::<SyncFileConfig>(&content) {
             (cfg.endpoint, cfg.auth_token.or(token_opt))
         } else {
             (None, token_opt)

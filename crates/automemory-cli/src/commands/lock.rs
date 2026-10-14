@@ -62,6 +62,24 @@ pub fn list_locks(project_arg: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Kill switch: releases every active lease regardless of holder.
+pub fn stop_all(project_arg: Option<&str>) -> Result<()> {
+    let config = Config::default_config();
+    let db = Database::open(&config.db_path)?;
+
+    let project_id = project_arg.and_then(|p| {
+        db.get_project_by_slug(p)
+            .ok()
+            .flatten()
+            .map(|proj| proj.id)
+            .or_else(|| Some(p.to_string()))
+    });
+
+    let count = db.release_all_leases(project_id.as_deref())?;
+    println!("■ Stopped: released {count} active lease(s). Multi-agent work is halted.");
+    Ok(())
+}
+
 /// Releases or overrides an active resource lease.
 pub fn unlock(scope: &str, project_arg: Option<&str>, _force: bool) -> Result<()> {
     let config = Config::default_config();
@@ -78,7 +96,10 @@ pub fn unlock(scope: &str, project_arg: Option<&str>, _force: bool) -> Result<()
     let count = db.unlock_scope(project_id.as_deref(), scope)?;
 
     if count > 0 {
-        println!("✓ Successfully released {} lease(s) for scope '{}'.", count, scope);
+        println!(
+            "✓ Successfully released {} lease(s) for scope '{}'.",
+            count, scope
+        );
     } else {
         println!("ℹ️  No active lease found matching scope '{}'.", scope);
     }

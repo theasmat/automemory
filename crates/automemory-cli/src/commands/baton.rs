@@ -39,7 +39,13 @@ pub fn pass(
     } else {
         println!("   To:         [broadcast / any agent]");
     }
-    println!("\n📦 Packet ({} bytes):\n{:-<60}\n{}\n{:-<60}", baton.packet.len(), "", baton.packet, "");
+    println!(
+        "\n📦 Packet ({} bytes):\n{:-<60}\n{}\n{:-<60}",
+        baton.packet.len(),
+        "",
+        baton.packet,
+        ""
+    );
 
     Ok(())
 }

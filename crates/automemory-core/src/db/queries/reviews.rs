@@ -96,7 +96,11 @@ impl Database {
         tests_passed: bool,
         verdict: Option<&str>,
     ) -> Result<Option<Review>> {
-        let status = if approved && tests_passed { "approved" } else { "rejected" };
+        let status = if approved && tests_passed {
+            "approved"
+        } else {
+            "rejected"
+        };
         let now = Utc::now().to_rfc3339();
         let tests_int = i32::from(tests_passed);
         let rows = self.conn().execute(
@@ -156,8 +160,15 @@ mod tests {
     use super::*;
 
     fn submit(db: &Database, author: &str, title: &str) -> Review {
-        db.submit_review(None, None, author, title, "diff --git a/x", Some("cargo test"))
-            .unwrap()
+        db.submit_review(
+            None,
+            None,
+            author,
+            title,
+            "diff --git a/x",
+            Some("cargo test"),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -187,7 +198,10 @@ mod tests {
 
         // Decided reviews leave the queue; posting twice fails.
         assert!(db.next_review(None, Some("sess-b")).unwrap().is_none());
-        assert!(db.post_review(&job2.id, "sess-d", true, true, None).unwrap().is_none());
+        assert!(db
+            .post_review(&job2.id, "sess-d", true, true, None)
+            .unwrap()
+            .is_none());
     }
 
     #[test]

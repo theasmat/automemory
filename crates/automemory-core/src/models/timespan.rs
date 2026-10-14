@@ -94,7 +94,11 @@ pub fn parse_time_span_str(s: &str) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
         "h" | "hr" | "hrs" | "hour" | "hours" => Duration::hours(val),
         "d" | "day" | "days" => Duration::days(val),
         "w" | "week" | "weeks" => Duration::weeks(val),
-        _ => return Err(anyhow!("Unknown time span unit '{unit}' in '{s}'. Use: m, h, d, w, today")),
+        _ => {
+            return Err(anyhow!(
+                "Unknown time span unit '{unit}' in '{s}'. Use: m, h, d, w, today"
+            ))
+        }
     };
 
     Ok((now - duration, now))

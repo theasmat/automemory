@@ -196,6 +196,25 @@ enum Commands {
         #[command(subcommand)]
         command: BatonCommands,
     },
+
+    /// Kill switch: release every active lease, halting multi-agent work
+    Stop {
+        /// Limit the halt to one project slug or ID
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+
+    /// Inspect and dry-run the hook pipeline (config: hooks.toml)
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommands,
+    },
+
+    /// List versioned ports and installed plugin manifests
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -477,7 +496,46 @@ enum EvalCommands {
 }
 
 #[derive(Subcommand)]
-enum GuardrailCommands {    /// Evaluate a shell command against guardrail rules without executing it (exit 0 allow, 1 warn, 2 block)
+enum HooksCommands {
+    /// List merged pipeline handlers (builtin defaults + hooks.toml layers)
+    List,
+    /// Dry-run the pipeline for an event with piped JSON input (no side effects)
+    Test {
+        /// Canonical or CLI event name (e.g. pre-tool, pre-commit)
+        #[arg(long)]
+        event: String,
+        /// JSON input: {"tool","paths","symbols","mutation","session_id","agent"}
+        #[arg(long)]
+        input: String,
+    },
+    /// Enable a handler id in the project hooks.toml
+    Enable {
+        /// Handler id
+        id: String,
+    },
+    /// Disable a handler id in the project hooks.toml
+    Disable {
+        /// Handler id
+        id: String,
+    },
+    /// Set a handler's priority in the project hooks.toml (lower runs first)
+    Move {
+        /// Handler id
+        id: String,
+        /// New priority
+        priority: u8,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginCommands {
+    /// List the 16 versioned ports and any installed plugin manifests
+    List,
+}
+
+#[derive(Subcommand)]
+enum GuardrailCommands {
+    /// Evaluate a shell command against guardrail rules without executing it (exit 0 allow, 1 warn, 2 block)
     Test {
         /// Shell command to evaluate
         #[arg(long)]
@@ -1081,11 +1139,7 @@ async fn main() -> Result<()> {
                 status,
                 limit,
             } => {
-                commands::decision::list_decisions(
-                    project.as_deref(),
-                    status.as_deref(),
-                    limit,
-                )?;
+                commands::decision::list_decisions(project.as_deref(), status.as_deref(), limit)?;
             }
         },
         Commands::Pin { id } => {
@@ -1120,6 +1174,25 @@ async fn main() -> Result<()> {
             BatonCommands::Pickup { session, project } => {
                 commands::baton::pickup(session.as_deref(), project.as_deref())?;
             }
+        },
+        Commands::Stop { project } => {
+            commands::lock::stop_all(project.as_deref())?;
+        }
+        Commands::Hooks { command } => match command {
+            HooksCommands::List => commands::hooks_admin::list()?,
+            HooksCommands::Test { event, input } => commands::hooks_admin::test(&event, &input)?,
+            HooksCommands::Enable { id } => {
+                commands::hooks_admin::set_field(&id, |h| h.enabled = true)?;
+            }
+            HooksCommands::Disable { id } => {
+                commands::hooks_admin::set_field(&id, |h| h.enabled = false)?;
+            }
+            HooksCommands::Move { id, priority } => {
+                commands::hooks_admin::set_field(&id, |h| h.priority = priority)?;
+            }
+        },
+        Commands::Plugin { command } => match command {
+            PluginCommands::List => commands::plugin::list()?,
         },
     }
 

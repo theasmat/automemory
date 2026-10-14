@@ -1,5 +1,5 @@
-pub mod bip39;
 pub mod baton;
+pub mod bip39;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -17,15 +17,14 @@ pub mod retrieval;
 pub mod sync;
 pub mod verify;
 
-pub use baton::{BATON_CHAR_BUDGET, build_packet, pass_baton};
+pub use baton::{build_packet, pass_baton, BATON_CHAR_BUDGET};
 pub use config::Config;
 pub use crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob, EncryptedDeltaWire};
 pub use db::Database;
 pub use docs::{DocumentScanner, DocumentWatcher};
 pub use extraction::{
     ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics,
-    ExtractionWorker, ImplicitTaskSegmenter, TaskBoundaryReason,
-    TaskSegment, TrajectoryDistiller,
+    ExtractionWorker, ImplicitTaskSegmenter, TaskBoundaryReason, TaskSegment, TrajectoryDistiller,
 };
 pub use graph::{GraphBuilder, GraphEdge, GraphEntity, ImpactReport};
 pub use guardrails::{
@@ -33,11 +32,15 @@ pub use guardrails::{
     GuardrailSeverity, RiskCategory,
 };
 pub use hooks::{
-    CanonicalEvent, FailureMode, GateDecision, HandlerOutput, HandlerResult, HandlerSpec,
-    HooksConfig, PipelineCtx, expand_scope_via_graph, merge_decision, run_pipeline,
+    expand_scope_via_graph, merge_decision, run_pipeline, CanonicalEvent, FailureMode,
+    GateDecision, HandlerOutput, HandlerResult, HandlerSpec, HooksConfig, PipelineCtx,
 };
 pub use models::*;
-pub use ports::{CODE_INTEL_API_VERSION, CodeIntel, GraphCodeIntel, NoneCodeIntel, Port, check_api_version};
+pub use ports::{
+    check_api_version, BuiltinTrustPolicy, CodeIntel, GraphCodeIntel, HandlerEnv, HookHandler,
+    PluginCapabilities, PluginHooks, PluginManifest, Port, PortInfo, PortStatus, TrustPolicy,
+    CODE_INTEL_API_VERSION, PORTS,
+};
 pub use redaction::{contains_secrets, redact_json, redact_text};
 pub use retrieval::{HybridScorer, RetrievalEngine, ScoredCandidate, SearchResult, VectorEngine};
 pub use sync::{AutoSyncDaemon, GitSync, VaultManager};
@@ -132,7 +135,8 @@ mod tests {
         let mut dup_mem = updated_mem.clone();
         dup_mem.id = Uuid::now_v7().to_string();
         dup_mem.confidence = 0.5;
-        db.save_memory_direct(&dup_mem).expect("save duplicate failed");
+        db.save_memory_direct(&dup_mem)
+            .expect("save duplicate failed");
 
         let consolidator = ConsolidationWorker::new(std::sync::Arc::new(db));
         let report = consolidator

@@ -1067,7 +1067,7 @@ fn test_suite_06_hybrid_search_and_temporal_decay() {
     );
 
     // UC-061: Sub-word vector embedding generation
-    let vec_engine = VectorEngine::default();
+    let vec_engine = VectorEngine;
     let emb1 = vec_engine
         .embed_text("AddressSanitizer and ASan memory safety")
         .unwrap();

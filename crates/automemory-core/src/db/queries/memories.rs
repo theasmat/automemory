@@ -23,7 +23,11 @@ impl Database {
         if let Some(eid) = existing_id {
             let mut updated = mem.clone();
             updated.id = eid;
-            return self.update_memory(&updated, Some("In-place update for existing scope memory"), &[]);
+            return self.update_memory(
+                &updated,
+                Some("In-place update for existing scope memory"),
+                &[],
+            );
         }
 
         self.save_memory_direct(mem)
@@ -210,6 +214,35 @@ impl Database {
             list.push(m?);
         }
         Ok(list)
+    }
+
+    /// What is queryable: active decision topics plus distinct tags.
+    pub fn list_topics(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<String>> {
+        let mut topics: Vec<String> = self
+            .list_decisions(
+                project_id,
+                Some(crate::models::DecisionStatus::Active),
+                limit,
+            )?
+            .into_iter()
+            .map(|d| d.topic)
+            .collect();
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT j.value FROM memories m, json_each(m.tags) j
+             WHERE m.status = 'active'
+               AND (?1 IS NULL OR m.scope = 'global' OR m.project_id = ?1)
+             LIMIT ?2",
+        )?;
+        let tags = stmt.query_map(params![project_id, limit as i64], |row| row.get(0))?;
+        for t in tags {
+            let tag: String = t?;
+            if !topics.contains(&tag) {
+                topics.push(tag);
+            }
+        }
+        topics.truncate(limit);
+        Ok(topics)
     }
 
     pub fn search_memories_fts(
@@ -701,7 +734,10 @@ mod tests {
         }])
         .expect("seed graph");
 
-        let mk = |summary: &str, entities: Vec<String>, metadata: serde_json::Value, status: MemoryStatus| {
+        let mk = |summary: &str,
+                  entities: Vec<String>,
+                  metadata: serde_json::Value,
+                  status: MemoryStatus| {
             let mem = Memory {
                 id: Uuid::now_v7().to_string(),
                 scope: MemoryScope::Project,
@@ -726,12 +762,35 @@ mod tests {
             mem.id
         };
 
-        let by_entity = mk("entity linked", vec!["auth.session.createSession".to_string()], serde_json::json!({}), MemoryStatus::Active);
-        let by_file = mk("file linked", vec![], serde_json::json!({"files_modified": ["src/auth/session.ts"]}), MemoryStatus::Active);
-        let unrelated = mk("unrelated", vec!["other.fn".to_string()], serde_json::json!({}), MemoryStatus::Active);
-        let pinned = mk("pinned linked", vec!["auth.session.createSession".to_string()], serde_json::json!({}), MemoryStatus::Pinned);
+        let by_entity = mk(
+            "entity linked",
+            vec!["auth.session.createSession".to_string()],
+            serde_json::json!({}),
+            MemoryStatus::Active,
+        );
+        let by_file = mk(
+            "file linked",
+            vec![],
+            serde_json::json!({"files_modified": ["src/auth/session.ts"]}),
+            MemoryStatus::Active,
+        );
+        let unrelated = mk(
+            "unrelated",
+            vec!["other.fn".to_string()],
+            serde_json::json!({}),
+            MemoryStatus::Active,
+        );
+        let pinned = mk(
+            "pinned linked",
+            vec!["auth.session.createSession".to_string()],
+            serde_json::json!({}),
+            MemoryStatus::Pinned,
+        );
 
-        assert!(db.flag_memories_changed_by_files(None, &[]).unwrap().is_empty());
+        assert!(db
+            .flag_memories_changed_by_files(None, &[])
+            .unwrap()
+            .is_empty());
         let flipped = db
             .flag_memories_changed_by_files(None, &["src/auth/session.ts".to_string()])
             .unwrap();

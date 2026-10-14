@@ -16,7 +16,7 @@ impl<'a> RetrievalEngine<'a> {
     pub fn new(db: &'a Database) -> Self {
         Self {
             db,
-            vec_engine: VectorEngine::default(),
+            vec_engine: VectorEngine,
             scorer: HybridScorer::default(),
             decay_scorer: MemoryDecayScorer::default(),
         }

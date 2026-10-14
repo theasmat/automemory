@@ -31,9 +31,9 @@ pub trait Verifier {
     fn verify(&self, memory: &Memory) -> VerifyStatus;
 }
 
-/// Default verifier: decay + trust-tier check.
-/// ponytail: `Changed` needs file-hash/symbol verification (stored paths +
-/// project-root resolution); not built until memories carry linked paths.
+/// Default verifier: commit linkage + decay + trust-tier check.
+/// `Changed` comes from the PostCommit marker (linkage changed); per-symbol
+/// content hashes would refine it further (see CodeIntel::symbol_hash).
 #[derive(Default)]
 pub struct DecayVerifier {
     scorer: MemoryDecayScorer,
@@ -46,6 +46,9 @@ impl Verifier for DecayVerifier {
         }
         if memory.is_quarantined() {
             return VerifyStatus::Unverifiable;
+        }
+        if memory.status == MemoryStatus::Changed {
+            return VerifyStatus::Changed;
         }
         let eval = self.scorer.evaluate(
             memory.importance,
@@ -96,7 +99,10 @@ mod tests {
     #[test]
     fn fresh_memory_verifies() {
         let v = DecayVerifier::default();
-        assert_eq!(v.verify(&mem(MemoryStatus::Active, Utc::now())), VerifyStatus::Verified);
+        assert_eq!(
+            v.verify(&mem(MemoryStatus::Active, Utc::now())),
+            VerifyStatus::Verified
+        );
     }
 
     #[test]
@@ -116,6 +122,15 @@ mod tests {
         assert_eq!(
             v.verify(&mem(MemoryStatus::Pinned, Utc::now())),
             VerifyStatus::Verified
+        );
+    }
+
+    #[test]
+    fn commit_marked_memory_reports_changed() {
+        let v = DecayVerifier::default();
+        assert_eq!(
+            v.verify(&mem(MemoryStatus::Changed, Utc::now())),
+            VerifyStatus::Changed
         );
     }
 }
