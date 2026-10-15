@@ -1,8 +1,8 @@
 pub mod adapter;
 pub mod baton;
 pub mod connect;
-pub mod disconnect;
 pub mod decision;
+pub mod disconnect;
 pub mod doc;
 pub mod doctor;
 pub mod eval;

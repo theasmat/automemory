@@ -1,5 +1,5 @@
-pub mod baton;
 pub mod auth;
+pub mod baton;
 pub mod bip39;
 pub mod config;
 pub mod crypto;
@@ -39,11 +39,12 @@ pub use hooks::{
 };
 pub use models::*;
 pub use ports::{
-    check_api_version, AdvisoryLocks, AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller,
-    EmbeddingProvider, Exporter, FtsRetriever, GitTransport, GraphCodeIntel, HandlerEnv,
-    HookHandler, LocalEmbeddings, LockStrategy, MemoryStore, NoRunner, Notifier, PcrProtocol,
-    PluginCapabilities, PluginHooks, PluginManifest, Port, PortInfo, PortStatus, Retriever,
-    RoomProtocol, RuleMatcher, Runner, StderrNotifier, SyncBackend, TrustPolicy, VaultExporter,
+    backend_for, check_api_version, exporter_for, notifier_for, trust_policy_for, verifier_for,
+    AdvisoryLocks, AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller, EmbeddingProvider,
+    Exporter, FtsRetriever, GitTransport, GraphCodeIntel, HandlerEnv, HookHandler, LocalEmbeddings,
+    LockStrategy, MemoryStore, NoRunner, Notifier, PcrProtocol, PluginCapabilities, PluginHooks,
+    PluginManifest, Port, PortInfo, PortStatus, Retriever, RoomProtocol, RuleMatcher, Runner,
+    SilentNotifier, StderrNotifier, StrictTrustPolicy, SyncBackend, TrustPolicy, VaultExporter,
     AGENT_ADAPTER_API_VERSION, CODE_INTEL_API_VERSION, DISTILLER_API_VERSION,
     EMBEDDING_API_VERSION, EXPORTER_API_VERSION, GUARDRAIL_RULE_API_VERSION,
     HOOK_HANDLER_API_VERSION, LOCK_STRATEGY_API_VERSION, MEMORY_STORE_API_VERSION,

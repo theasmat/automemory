@@ -111,6 +111,13 @@ pub struct DefaultSettings {
     /// start stays silent unless the user explicitly opts back in.
     #[serde(default)]
     pub boot_injection: bool,
+    /// Trust policy selecting recall tiers: "builtin" or "strict" (agent
+    /// claims quarantined). Unknown values are rejected, never defaulted.
+    #[serde(default = "default_trust_policy")]
+    pub trust_policy: String,
+    /// Human-turn ping channel: "stderr" or "silent".
+    #[serde(default = "default_notifier")]
+    pub notifier: String,
 }
 
 fn default_mode() -> String {
@@ -118,6 +125,12 @@ fn default_mode() -> String {
 }
 fn default_boot_budget() -> usize {
     2000
+}
+fn default_trust_policy() -> String {
+    "builtin".to_string()
+}
+fn default_notifier() -> String {
+    "stderr".to_string()
 }
 fn default_task_budget() -> usize {
     4000
@@ -130,6 +143,8 @@ impl Default for DefaultSettings {
             token_budget_boot: default_boot_budget(),
             token_budget_task: default_task_budget(),
             boot_injection: false,
+            trust_policy: default_trust_policy(),
+            notifier: default_notifier(),
         }
     }
 }

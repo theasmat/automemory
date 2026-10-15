@@ -6,7 +6,7 @@ use automemory_core::hooks::{
     LockCheckHandler, PipelineCtx,
 };
 use automemory_core::models::*;
-use automemory_core::ports::{HandlerEnv, HookHandler, Notifier};
+use automemory_core::ports::{HandlerEnv, HookHandler};
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -205,7 +205,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // told why through the Notifier port.
     if canonical == Some(CanonicalEvent::Stop) {
         if let Some(owed) = pending_work_nudge(&db, effective_project_id, &session_id) {
-            automemory_core::ports::StderrNotifier.notify("stop blocked", &owed);
+            active_notifier().notify("stop blocked", &owed);
             println!("{}", json!({"decision": "block", "reason": owed}));
             return Ok(());
         }
@@ -232,6 +232,16 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         println!("{{}}");
     }
     Ok(())
+}
+
+/// Resolves the configured notifier, failing closed to stderr on unknown
+/// names (a broken ping channel must stay loud, never silent).
+fn active_notifier() -> Box<dyn automemory_core::ports::Notifier> {
+    let name = automemory_core::config::GlobalConfig::load()
+        .map(|g| g.defaults.notifier)
+        .unwrap_or_else(|_| "stderr".to_string());
+    automemory_core::ports::notifier_for(&name)
+        .unwrap_or_else(|_| Box::new(automemory_core::ports::StderrNotifier))
 }
 
 /// Pending-work nudge for UserPromptSubmit: returns `Some` only when this

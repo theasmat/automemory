@@ -3,7 +3,6 @@ use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob};
 use automemory_core::db::Database;
 use automemory_core::models::*;
-use automemory_core::ports::{Exporter, SyncBackend};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
@@ -1061,7 +1060,7 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
         .unwrap_or(config.vault_dir);
 
     let db = Database::open(&config.db_path)?;
-    automemory_core::ports::VaultExporter::new(&db, vault_path.clone()).export()?;
+    automemory_core::ports::exporter_for("vault", &db, vault_path.clone())?.export()?;
     println!(
         "✓ Exported database to text-first vault at: {:?}",
         vault_path
@@ -1085,7 +1084,7 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
         if let Some(ref remote_url) = global_cfg.vault.remote_url {
             let _ = automemory_core::sync::GitSync::set_remote(&vault_path, "origin", remote_url);
             println!("Pushing vault updates to GitHub remote: {}...", remote_url);
-            let transport = automemory_core::ports::GitTransport;
+            let transport = automemory_core::ports::backend_for("git")?;
             if let Err(e) = transport.push(&vault_path, None, None) {
                 println!("ℹ Git push note: {}", e);
             } else {

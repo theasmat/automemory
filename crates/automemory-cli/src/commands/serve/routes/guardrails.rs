@@ -20,8 +20,7 @@ fn require_human_header(
     action: &str,
 ) -> Result<(), (StatusCode, Json<Value>)> {
     let deny = |msg: String| (StatusCode::FORBIDDEN, Json(json!({ "error": msg })));
-    let Some(hash) =
-        automemory_core::auth::stored_password_hash().filter(|h| !h.trim().is_empty())
+    let Some(hash) = automemory_core::auth::stored_password_hash().filter(|h| !h.trim().is_empty())
     else {
         eprintln!(
             "⚠ Dashboard safety write '{action}' allowed with no human password set. Run `automemory rule passwd` to lock it."

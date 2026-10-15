@@ -166,6 +166,38 @@ impl TrustPolicy for BuiltinTrustPolicy {
     }
 }
 
+/// High-trust environments: unverified agent claims are quarantined instead
+/// of merely labeled, so default recall never surfaces them.
+pub struct StrictTrustPolicy;
+
+impl Port for StrictTrustPolicy {
+    fn port_name(&self) -> &'static str {
+        "TrustPolicy"
+    }
+    fn api_version(&self) -> &'static str {
+        TRUST_POLICY_API_VERSION
+    }
+}
+
+impl TrustPolicy for StrictTrustPolicy {
+    fn tier(&self, memory: &Memory) -> TrustTier {
+        match memory.trust_tier() {
+            TrustTier::AgentClaim => TrustTier::UntrustedOrigin,
+            tier => tier,
+        }
+    }
+}
+
+/// Resolves a configured trust policy name. Unknown names error instead of
+/// silently falling back — a misspelled policy must not weaken trust.
+pub fn trust_policy_for(name: &str) -> Result<Box<dyn TrustPolicy>> {
+    match name {
+        "builtin" => Ok(Box::new(BuiltinTrustPolicy)),
+        "strict" => Ok(Box::new(StrictTrustPolicy)),
+        other => Err(anyhow!("unknown trust policy: {other}")),
+    }
+}
+
 pub const MEMORY_STORE_API_VERSION: &str = "1";
 
 /// Persistence seam (PRD §7.1 MemoryStore). The default is the SQLite WAL
@@ -469,6 +501,50 @@ pub struct StderrNotifier;
 impl Notifier for StderrNotifier {
     fn notify(&self, title: &str, body: &str) {
         eprintln!("[AutoMemory] {title}: {body}");
+    }
+}
+
+/// Quiet environments (scripts, tests): notifications are dropped.
+pub struct SilentNotifier;
+
+impl Notifier for SilentNotifier {
+    fn notify(&self, _title: &str, _body: &str) {}
+}
+
+/// Resolves a configured notifier name. Unknown names error.
+pub fn notifier_for(name: &str) -> Result<Box<dyn Notifier>> {
+    match name {
+        "stderr" => Ok(Box::new(StderrNotifier)),
+        "silent" => Ok(Box::new(SilentNotifier)),
+        other => Err(anyhow!("unknown notifier: {other}")),
+    }
+}
+
+/// Resolves a configured verifier name. Unknown names error.
+pub fn verifier_for(name: &str) -> Result<Box<dyn crate::verify::Verifier>> {
+    match name {
+        "decay" => Ok(Box::new(crate::verify::DecayVerifier::default())),
+        other => Err(anyhow!("unknown verifier: {other}")),
+    }
+}
+
+/// Resolves a configured sync backend name. Unknown names error.
+pub fn backend_for(name: &str) -> Result<Box<dyn SyncBackend>> {
+    match name {
+        "git" => Ok(Box::new(GitTransport)),
+        other => Err(anyhow!("unknown sync backend: {other}")),
+    }
+}
+
+/// Resolves a configured exporter name. Unknown names error.
+pub fn exporter_for<'a>(
+    name: &str,
+    db: &'a Database,
+    vault_path: PathBuf,
+) -> Result<Box<dyn Exporter + 'a>> {
+    match name {
+        "vault" => Ok(Box::new(VaultExporter::new(db, vault_path))),
+        other => Err(anyhow!("unknown exporter: {other}")),
     }
 }
 
@@ -1056,5 +1132,55 @@ mod tests {
     #[test]
     fn stderr_notifier_never_fails() {
         StderrNotifier.notify("test-title", "test-body");
+    }
+
+    #[test]
+    fn strict_policy_quarantines_agent_claims() {
+        use crate::models::{MemoryScope, MemorySourceKind, MemoryStatus, MemoryType};
+        let mem = Memory {
+            id: "m1".to_string(),
+            scope: MemoryScope::Project,
+            project_id: None,
+            memory_type: MemoryType::Fact,
+            content: "c".to_string(),
+            summary: "s".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+        assert_eq!(BuiltinTrustPolicy.tier(&mem), TrustTier::AgentClaim);
+        assert_eq!(StrictTrustPolicy.tier(&mem), TrustTier::UntrustedOrigin);
+        let verified = Memory {
+            confidence: 0.97,
+            ..mem.clone()
+        };
+        assert_eq!(BuiltinTrustPolicy.tier(&verified), TrustTier::Verified);
+        assert_eq!(StrictTrustPolicy.tier(&verified), TrustTier::Verified);
+    }
+
+    #[test]
+    fn selectors_resolve_known_names_and_reject_unknown() {
+        assert!(trust_policy_for("builtin").is_ok());
+        assert!(trust_policy_for("strict").is_ok());
+        assert!(trust_policy_for("bogus").is_err());
+        assert!(notifier_for("stderr").is_ok());
+        assert!(notifier_for("silent").is_ok());
+        assert!(notifier_for("bogus").is_err());
+        assert!(verifier_for("decay").is_ok());
+        assert!(verifier_for("bogus").is_err());
+        assert!(backend_for("git").is_ok());
+        assert!(backend_for("bogus").is_err());
+        let db = Database::open_in_memory().unwrap();
+        assert!(exporter_for("vault", &db, std::path::PathBuf::from("/tmp")).is_ok());
+        assert!(exporter_for("bogus", &db, std::path::PathBuf::from("/tmp")).is_err());
     }
 }

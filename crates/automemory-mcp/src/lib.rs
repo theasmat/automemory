@@ -151,6 +151,47 @@ mod tests {
     }
 
     #[test]
+    fn test_strict_policy_quarantines_claims_end_to_end() {
+        use crate::tools::recall_via;
+        use automemory_core::ports::{
+            BuiltinTrustPolicy, FtsRetriever, MemoryStore, StrictTrustPolicy,
+        };
+        use automemory_core::verify::DecayVerifier;
+
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db.clone());
+        let save_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "memory.save",
+                "arguments": {
+                    "content": "Unverified agent claim content.",
+                    "summary": "agent claim summary"
+                }
+            })),
+        };
+        assert!(server.handle_request(save_req).unwrap().result.is_some());
+
+        let store: &dyn MemoryStore = &*db;
+        let retriever = FtsRetriever::new(store);
+        let verifier = DecayVerifier::default();
+        let text_of = |policy: &dyn automemory_core::ports::TrustPolicy| {
+            let result = recall_via(&retriever, &verifier, policy, "agent claim", None, 5, true);
+            result.content[0].text.clone()
+        };
+
+        // Builtin labels the claim Tier 4; strict reports Tier 5 + unverifiable.
+        let builtin_text = text_of(&BuiltinTrustPolicy);
+        assert!(builtin_text.contains("\"trust_tier\": 4"));
+        let strict_text = text_of(&StrictTrustPolicy);
+        assert!(strict_text.contains("\"trust_tier\": 5"));
+        assert!(strict_text.contains("\"verify_status\": \"unverifiable\""));
+        assert!(!strict_text.contains("\"verify_status\": \"verified\""));
+    }
+
+    #[test]
     fn test_mcp_baton_pass_and_pickup() {
         let db = Arc::new(Database::open_in_memory().unwrap());
         let server = McpServer::new(db);

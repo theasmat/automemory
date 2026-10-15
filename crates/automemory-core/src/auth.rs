@@ -94,8 +94,7 @@ fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], rounds: u32) -> [u8; 32] {
 }
 
 fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    let mut mac =
-        HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(data);
     mac.finalize().into_bytes().into()
 }
@@ -108,7 +107,10 @@ fn prompt_secure(prompt: &str) -> Option<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let tty_in = std::fs::OpenOptions::new().read(true).open("/dev/tty").ok()?;
+    let tty_in = std::fs::OpenOptions::new()
+        .read(true)
+        .open("/dev/tty")
+        .ok()?;
     eprint!("{prompt}");
     let _ = std::io::stderr().flush();
 
@@ -124,11 +126,8 @@ fn prompt_secure(prompt: &str) -> Option<String> {
         return None;
     }
     let mut line = String::new();
-    let read_ok = std::io::BufRead::read_line(
-        &mut std::io::BufReader::new(tty_in),
-        &mut line,
-    )
-    .is_ok();
+    let read_ok =
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(tty_in), &mut line).is_ok();
     let _ = Command::new("stty")
         .arg("echo")
         .stdin(Stdio::from(
@@ -241,7 +240,10 @@ mod tests {
         assert!(verify_password("correct horse", &stored));
         assert!(!verify_password("wrong horse", &stored));
         assert!(!verify_password("correct horse", "garbage"));
-        assert!(!verify_password("correct horse", "pbkdf2-sha256$10$AAAA$AAAA"));
+        assert!(!verify_password(
+            "correct horse",
+            "pbkdf2-sha256$10$AAAA$AAAA"
+        ));
         assert!(!verify_password("", &stored));
         // Full-strength hash parses and verifies (one 600k run).
         let prod = hash_password("correct horse");

@@ -193,9 +193,7 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
         } else {
             ws(&[".hermes", "mcp.json"])
         })],
-        other => anyhow::bail!(
-            "Unknown agent: '{other}'. See `automemory adapter list`."
-        ),
+        other => anyhow::bail!("Unknown agent: '{other}'. See `automemory adapter list`."),
     };
     Ok(ops)
 }
@@ -428,7 +426,10 @@ fn apply(op: &Removal) -> Result<bool> {
                 Ok(true)
             }
             Ok(_) => {
-                println!("  ⚠ Kept edited .cursorrules (not our template): {}", p.display());
+                println!(
+                    "  ⚠ Kept edited .cursorrules (not our template): {}",
+                    p.display()
+                );
                 Ok(false)
             }
             Err(_) => Ok(false),
@@ -480,7 +481,9 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         }
     }
     if removed == 0 {
-        println!("  Nothing AutoMemory-owned found; check manual steps in hooks-configuration.md §7.");
+        println!(
+            "  Nothing AutoMemory-owned found; check manual steps in hooks-configuration.md §7."
+        );
     } else {
         println!("\n✓ Disconnected '{id}' ({removed} change(s)). Local memory data left intact.");
     }
@@ -492,7 +495,10 @@ mod tests {
     use super::*;
 
     fn sandbox(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("automemory-disconnect-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "automemory-disconnect-{name}-{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -601,7 +607,13 @@ mod tests {
         assert!(strip_continue_entry(&cpath).unwrap());
         let val: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&cpath).unwrap()).unwrap();
-        assert_eq!(val["experimental"]["modelContextProtocolServers"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            val["experimental"]["modelContextProtocolServers"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
 
         let zpath = dir.join("settings.json");
         fs::write(

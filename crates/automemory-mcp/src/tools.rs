@@ -1,9 +1,11 @@
 use crate::protocol::{ToolCallResult, ToolDefinition};
+use automemory_core::config::GlobalConfig;
 use automemory_core::db::Database;
 use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::ports::{
-    AdvisoryLocks, CodeIntel, FtsRetriever, LockStrategy, MemoryStore, Retriever,
+    trust_policy_for, AdvisoryLocks, BuiltinTrustPolicy, CodeIntel, FtsRetriever, LockStrategy,
+    MemoryStore, Retriever, TrustPolicy,
 };
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
@@ -21,14 +23,15 @@ pub struct ToolRegistry {
 /// Shared recall path: ranks through the Retriever port over the MemoryStore
 /// port, attaches verify status + trust tier, and withholds Tier 4+ unless
 /// explicitly requested (PRD trust table).
-fn recall_via(
-    store: &dyn MemoryStore,
+pub(crate) fn recall_via(
+    retriever: &dyn Retriever,
+    verifier: &dyn Verifier,
+    policy: &dyn TrustPolicy,
     query: &str,
     project_id: Option<&str>,
     limit: usize,
     include_untrusted: bool,
 ) -> ToolCallResult {
-    let retriever = FtsRetriever::new(store);
     let fetch = if include_untrusted {
         limit
     } else {
@@ -36,17 +39,23 @@ fn recall_via(
     };
     match retriever.retrieve(query, project_id, fetch) {
         Ok(results) => {
-            let verifier = DecayVerifier::default();
             let formatted: Vec<_> = results
                 .into_iter()
-                .filter(|(m, _)| include_untrusted || m.trust_tier() <= TrustTier::UserStatement)
+                .filter(|(m, _)| include_untrusted || policy.tier(m) <= TrustTier::UserStatement)
                 .take(limit)
                 .map(|(m, rank)| {
-                    let verify_status = verifier.verify(&m).to_string();
+                    let tier = policy.tier(&m);
+                    // The effective tier drives verification display too: a
+                    // policy-quarantined memory is never shown as verified.
+                    let verify_status = if tier == TrustTier::UntrustedOrigin {
+                        "unverifiable".to_string()
+                    } else {
+                        verifier.verify(&m).to_string()
+                    };
                     json!({
                         "id": m.id,
                         "type": m.memory_type.to_string(),
-                        "trust_tier": m.trust_tier().as_u8(),
+                        "trust_tier": tier.as_u8(),
                         "status": m.status.to_string(),
                         "verify_status": verify_status,
                         "summary": m.summary,
@@ -61,6 +70,14 @@ fn recall_via(
         }
         Err(e) => ToolCallResult::error(format!("Search failed: {}", e)),
     }
+}
+
+/// Resolves the configured trust policy, failing closed on unknown names.
+fn active_policy() -> Box<dyn TrustPolicy> {
+    let name = GlobalConfig::load()
+        .map(|g| g.defaults.trust_policy)
+        .unwrap_or_else(|_| "builtin".to_string());
+    trust_policy_for(&name).unwrap_or_else(|_| Box::new(BuiltinTrustPolicy))
 }
 
 impl ToolRegistry {
@@ -863,7 +880,18 @@ impl ToolRegistry {
                     .get("include_untrusted")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                recall_via(&*self.db, query, project_id, limit, include_untrusted)
+                let store: &dyn MemoryStore = &*self.db;
+                let retriever = FtsRetriever::new(store);
+                let verifier = DecayVerifier::default();
+                recall_via(
+                    &retriever,
+                    &verifier,
+                    active_policy().as_ref(),
+                    query,
+                    project_id,
+                    limit,
+                    include_untrusted,
+                )
             }
             "memory.about" => {
                 let target = match arguments.get("target").and_then(|v| v.as_str()) {
@@ -886,19 +914,20 @@ impl ToolRegistry {
                     .chain(by_path)
                     .filter(|e| seen.insert(e.id.clone()))
                     .collect();
-                let intel = automemory_core::ports::GraphCodeIntel::new(&self.db);
+                let intel: &dyn CodeIntel = &automemory_core::ports::GraphCodeIntel::new(&self.db);
                 let callers = intel.callers(project_id, target);
                 let include_untrusted = arguments
                     .get("include_untrusted")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let store: &dyn MemoryStore = &*self.db;
+                let policy = active_policy();
                 let memories = store
                     .search_memories_fts(target, project_id, 5)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|(m, _)| {
-                        include_untrusted || m.trust_tier() <= TrustTier::UserStatement
+                        include_untrusted || policy.tier(m) <= TrustTier::UserStatement
                     })
                     .map(|(m, _)| {
                         json!({ "id": m.id, "summary": m.summary, "status": m.status.to_string() })
@@ -1834,7 +1863,7 @@ impl ToolRegistry {
                     .unwrap_or("default-session");
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
 
-                let strategy = AdvisoryLocks::new(&self.db);
+                let strategy: &dyn LockStrategy = &AdvisoryLocks::new(&self.db);
                 match strategy.acquire(LeaseAcquireArgs {
                     project_id,
                     agent,
