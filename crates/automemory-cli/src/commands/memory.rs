@@ -86,8 +86,8 @@ pub async fn search(
 
     if semantic {
         let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
-        let vector_engine = automemory_core::retrieval::vector::VectorEngine;
-        let query_vector = vector_engine.embed_text(query)?;
+        let vector_engine = automemory_core::ports::LocalEmbeddings::new();
+        let query_vector = automemory_core::ports::EmbeddingProvider::embed(&vector_engine, query)?;
 
         if let Some(ref endpoint) = global_cfg.cloud.endpoint {
             let search_url = format!("{}/api/v1/vector/search", endpoint.trim_end_matches('/'));
@@ -177,7 +177,10 @@ pub async fn search(
         )?;
         let mut scored_mems = Vec::new();
         for mem in active_mems {
-            let mem_vec = vector_engine.embed_text(&format!("{} {}", mem.summary, mem.content))?;
+            let mem_vec = automemory_core::ports::EmbeddingProvider::embed(
+                &vector_engine,
+                &format!("{} {}", mem.summary, mem.content),
+            )?;
             let sim = automemory_core::retrieval::vector::VectorEngine::cosine_similarity(
                 &query_vector,
                 &mem_vec,

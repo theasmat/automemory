@@ -33,13 +33,21 @@ pub use guardrails::{
 };
 pub use hooks::{
     expand_scope_via_graph, merge_decision, run_pipeline, CanonicalEvent, FailureMode,
-    GateDecision, HandlerOutput, HandlerResult, HandlerSpec, HooksConfig, PipelineCtx,
+    GateDecision, GuardrailHandler, HandlerOutput, HandlerResult, HandlerSpec, HooksConfig,
+    LockCheckHandler, PipelineCtx,
 };
 pub use models::*;
 pub use ports::{
-    check_api_version, BuiltinTrustPolicy, CodeIntel, GraphCodeIntel, HandlerEnv, HookHandler,
-    PluginCapabilities, PluginHooks, PluginManifest, Port, PortInfo, PortStatus, TrustPolicy,
-    CODE_INTEL_API_VERSION, PORTS,
+    check_api_version, AdvisoryLocks, AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller,
+    EmbeddingProvider, Exporter, FtsRetriever, GitTransport, GraphCodeIntel, HandlerEnv,
+    HookHandler, LocalEmbeddings, LockStrategy, MemoryStore, NoRunner, Notifier, PcrProtocol,
+    PluginCapabilities, PluginHooks, PluginManifest, Port, PortInfo, PortStatus, Retriever,
+    RoomProtocol, RuleMatcher, Runner, StderrNotifier, SyncBackend, TrustPolicy, VaultExporter,
+    AGENT_ADAPTER_API_VERSION, CODE_INTEL_API_VERSION, DISTILLER_API_VERSION,
+    EMBEDDING_API_VERSION, EXPORTER_API_VERSION, GUARDRAIL_RULE_API_VERSION,
+    HOOK_HANDLER_API_VERSION, LOCK_STRATEGY_API_VERSION, MEMORY_STORE_API_VERSION,
+    NOTIFIER_API_VERSION, PORTS, RETRIEVER_API_VERSION, ROOM_PROTOCOL_API_VERSION,
+    RUNNER_API_VERSION, SYNC_BACKEND_API_VERSION, TRUST_POLICY_API_VERSION,
 };
 pub use redaction::{contains_secrets, redact_json, redact_text};
 pub use retrieval::{HybridScorer, RetrievalEngine, ScoredCandidate, SearchResult, VectorEngine};

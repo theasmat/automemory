@@ -118,20 +118,37 @@ impl Database {
         body: &str,
         evidence: &[String],
     ) -> Result<RoomPost> {
+        self.post_to_room_with(
+            &crate::ports::PcrProtocol,
+            room_id,
+            author_session,
+            kind,
+            body,
+            evidence,
+        )
+    }
+
+    /// Same as above, but the turn rules come from the injected RoomProtocol:
+    /// alternative room formats (review-only, vote) plug in here.
+    pub fn post_to_room_with(
+        &self,
+        protocol: &dyn crate::ports::RoomProtocol,
+        room_id: &str,
+        author_session: &str,
+        kind: PostKind,
+        body: &str,
+        evidence: &[String],
+    ) -> Result<RoomPost> {
         let room = self
             .get_room(room_id)?
             .ok_or_else(|| anyhow!("room not found"))?;
-        let expected =
-            PostKind::expected_in(room.state).ok_or_else(|| anyhow!("room is decided"))?;
-        if kind != expected {
-            return Err(anyhow!("room expects {expected}, not {kind}"));
-        }
-        if room.turn_holder.as_deref() != Some(author_session) {
-            return Err(anyhow!("not your turn"));
-        }
-        if kind == PostKind::Propose && evidence.is_empty() {
-            return Err(anyhow!("propose requires evidence"));
-        }
+        protocol.validate_turn(
+            room.state,
+            kind,
+            room.turn_holder.as_deref(),
+            author_session,
+            evidence.is_empty(),
+        )?;
         for id in evidence {
             if !self.evidence_resolves(id)? {
                 return Err(anyhow!("evidence does not resolve: {id}"));
@@ -407,5 +424,49 @@ mod tests {
             .unwrap();
         assert!(post.body.len() <= ROOM_BODY_BUDGET + 20);
         assert!(post.body.contains("…[truncated]"));
+    }
+
+    #[test]
+    fn custom_protocol_replaces_turn_rules() {
+        use crate::models::RoomState;
+        struct ReviewOnly;
+        impl crate::ports::RoomProtocol for ReviewOnly {
+            fn supported_kinds(&self) -> Vec<PostKind> {
+                vec![PostKind::Critique]
+            }
+            fn validate_turn(
+                &self,
+                _state: RoomState,
+                kind: PostKind,
+                _turn: Option<&str>,
+                _author: &str,
+                _empty: bool,
+            ) -> anyhow::Result<()> {
+                if kind == PostKind::Critique {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("review-only room"))
+                }
+            }
+        }
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let room = db.create_room(None, "review topic", "sess-a").unwrap();
+        // Default protocol would demand Propose here; the injected one
+        // accepts Critique straight away.
+        let post = db
+            .post_to_room_with(
+                &ReviewOnly,
+                &room.id,
+                "sess-b",
+                PostKind::Critique,
+                "lgtm",
+                &[ev],
+            )
+            .unwrap();
+        assert_eq!(post.kind, PostKind::Critique);
+        assert!(db
+            .post_to_room_with(&ReviewOnly, &room.id, "sess-b", PostKind::Propose, "x", &[])
+            .is_err());
     }
 }

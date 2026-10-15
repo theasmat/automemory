@@ -2,7 +2,9 @@ use crate::protocol::{ToolCallResult, ToolDefinition};
 use automemory_core::db::Database;
 use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
-use automemory_core::ports::CodeIntel;
+use automemory_core::ports::{
+    AdvisoryLocks, CodeIntel, FtsRetriever, LockStrategy, MemoryStore, Retriever,
+};
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
 use automemory_core::verify::{DecayVerifier, Verifier};
@@ -16,6 +18,51 @@ pub struct ToolRegistry {
     db: Arc<Database>,
 }
 
+/// Shared recall path: ranks through the Retriever port over the MemoryStore
+/// port, attaches verify status + trust tier, and withholds Tier 4+ unless
+/// explicitly requested (PRD trust table).
+fn recall_via(
+    store: &dyn MemoryStore,
+    query: &str,
+    project_id: Option<&str>,
+    limit: usize,
+    include_untrusted: bool,
+) -> ToolCallResult {
+    let retriever = FtsRetriever::new(store);
+    let fetch = if include_untrusted {
+        limit
+    } else {
+        limit * 3 + 5
+    };
+    match retriever.retrieve(query, project_id, fetch) {
+        Ok(results) => {
+            let verifier = DecayVerifier::default();
+            let formatted: Vec<_> = results
+                .into_iter()
+                .filter(|(m, _)| include_untrusted || m.trust_tier() <= TrustTier::UserStatement)
+                .take(limit)
+                .map(|(m, rank)| {
+                    let verify_status = verifier.verify(&m).to_string();
+                    json!({
+                        "id": m.id,
+                        "type": m.memory_type.to_string(),
+                        "trust_tier": m.trust_tier().as_u8(),
+                        "status": m.status.to_string(),
+                        "verify_status": verify_status,
+                        "summary": m.summary,
+                        "content": m.content,
+                        "confidence": m.confidence,
+                        "rank": rank,
+                        "tags": m.tags,
+                    })
+                })
+                .collect();
+            ToolCallResult::json(&formatted)
+        }
+        Err(e) => ToolCallResult::error(format!("Search failed: {}", e)),
+    }
+}
+
 impl ToolRegistry {
     pub fn new(db: Arc<Database>) -> Self {
         Self { db }
@@ -26,13 +73,14 @@ impl ToolRegistry {
             // Read Tools
             ToolDefinition {
                 name: "memory.recall".to_string(),
-                description: "Retrieve relevant project or global memories for a query".to_string(),
+                description: "Retrieve relevant project or global memories for a query (trust tiers 1-3 only, unless include_untrusted)".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "query": { "type": "string", "description": "Search query" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" },
-                        "limit": { "type": "integer", "description": "Max results to return (default 5)" }
+                        "limit": { "type": "integer", "description": "Max results to return (default 5)" },
+                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
                     },
                     "required": ["query"]
                 }),
@@ -45,7 +93,8 @@ impl ToolRegistry {
                     "properties": {
                         "query": { "type": "string", "description": "Search query" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" },
-                        "limit": { "type": "integer", "description": "Max results to return (default 5)" }
+                        "limit": { "type": "integer", "description": "Max results to return (default 5)" },
+                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
                     },
                     "required": ["query"]
                 }),
@@ -57,7 +106,8 @@ impl ToolRegistry {
                     "type": "object",
                     "properties": {
                         "target": { "type": "string", "description": "File path or symbol name" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" },
+                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
                     },
                     "required": ["target"]
                 }),
@@ -808,34 +858,13 @@ impl ToolRegistry {
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
-
-                match self.db.search_memories_fts(query, project_id, limit) {
-                    Ok(results) => {
-                        let verifier = DecayVerifier::default();
-                        let formatted: Vec<_> = results
-                            .into_iter()
-                            .map(|(m, rank)| {
-                                let verify_status = verifier.verify(&m).to_string();
-                                json!({
-                                    "id": m.id,
-                                    "type": m.memory_type.to_string(),
-                                    "trust_tier": m.trust_tier().as_u8(),
-                                    "status": m.status.to_string(),
-                                    "verify_status": verify_status,
-                                    "summary": m.summary,
-                                    "content": m.content,
-                                    "confidence": m.confidence,
-                                    "rank": rank,
-                                    "tags": m.tags,
-                                })
-                            })
-                            .collect();
-                        ToolCallResult::json(&formatted)
-                    }
-                    Err(e) => ToolCallResult::error(format!("Search failed: {}", e)),
-                }
+                // PRD trust table: Tier 4+ is labeled, never returned by default.
+                let include_untrusted = arguments
+                    .get("include_untrusted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                recall_via(&*self.db, query, project_id, limit, include_untrusted)
             }
-
             "memory.about" => {
                 let target = match arguments.get("target").and_then(|v| v.as_str()) {
                     Some(t) => t,
@@ -859,11 +888,18 @@ impl ToolRegistry {
                     .collect();
                 let intel = automemory_core::ports::GraphCodeIntel::new(&self.db);
                 let callers = intel.callers(project_id, target);
-                let memories = self
-                    .db
+                let include_untrusted = arguments
+                    .get("include_untrusted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let store: &dyn MemoryStore = &*self.db;
+                let memories = store
                     .search_memories_fts(target, project_id, 5)
                     .unwrap_or_default()
                     .into_iter()
+                    .filter(|(m, _)| {
+                        include_untrusted || m.trust_tier() <= TrustTier::UserStatement
+                    })
                     .map(|(m, _)| {
                         json!({ "id": m.id, "summary": m.summary, "status": m.status.to_string() })
                     })
@@ -1798,7 +1834,8 @@ impl ToolRegistry {
                     .unwrap_or("default-session");
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
 
-                match self.db.acquire_lease(LeaseAcquireArgs {
+                let strategy = AdvisoryLocks::new(&self.db);
+                match strategy.acquire(LeaseAcquireArgs {
                     project_id,
                     agent,
                     session_id,

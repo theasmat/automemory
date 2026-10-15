@@ -220,9 +220,19 @@ impl<'a> ImplicitTaskSegmenter<'a> {
 
     /// Automatically distills all detected segments in a session and stores success traces.
     pub fn process_and_distill_session(&self, session_id: &str) -> Result<usize> {
+        let distiller = TrajectoryDistiller::new(self.db);
+        self.process_and_distill_session_with(&distiller, session_id)
+    }
+
+    /// Same as above, but the distiller is injected: custom Distiller port
+    /// implementations plug in here without touching segmentation.
+    pub fn process_and_distill_session_with(
+        &self,
+        distiller: &dyn crate::ports::Distiller,
+        session_id: &str,
+    ) -> Result<usize> {
         let events = self.db.get_session_events(session_id)?;
         let segments = self.segment_session_events(&events);
-        let distiller = TrajectoryDistiller::new(self.db);
         let mut traces_created = 0;
 
         for seg in segments {
@@ -355,5 +365,87 @@ mod tests {
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].boundary_reason, TaskBoundaryReason::GitCommit);
         assert_eq!(segments[0].events.len(), 3);
+    }
+
+    #[test]
+    fn test_injected_distiller_replaces_default() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct StubDistiller {
+            calls: AtomicUsize,
+        }
+        impl crate::ports::Distiller for StubDistiller {
+            fn distill_session(
+                &self,
+                _session: &str,
+            ) -> anyhow::Result<crate::extraction::DistillationReport> {
+                Err(anyhow::anyhow!("stub has no session path"))
+            }
+            fn distill_events(
+                &self,
+                _events: &[NormalizedEvent],
+                _session: Option<&str>,
+            ) -> anyhow::Result<crate::extraction::DistillationReport> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(crate::extraction::DistillationReport {
+                    session_id: "s-stub".to_string(),
+                    project_id: None,
+                    total_raw_events: 0,
+                    pruned_events: 0,
+                    synthesized_trace: None,
+                    synthesized_memory: None,
+                    resolved_failures: Vec::new(),
+                })
+            }
+        }
+
+        fn stub_event(id: &str, now: chrono::DateTime<Utc>) -> NormalizedEvent {
+            NormalizedEvent {
+                event_id: id.to_string(),
+                event_type: "tool.completed".to_string(),
+                timestamp: now,
+                agent: AgentInfo {
+                    adapter_id: "agy".to_string(),
+                    agent_instance_id: None,
+                },
+                session_id: "s-stub".to_string(),
+                task_id: None,
+                project: ProjectRef {
+                    id: None,
+                    slug: None,
+                    root_path: "".to_string(),
+                    source_git_remote: None,
+                },
+                tool: Some(ToolInfo {
+                    name: "read".to_string(),
+                    category: "file_read".to_string(),
+                    input: Some(serde_json::json!({ "file_path": "src/a.ts" })),
+                    input_hash: None,
+                    output: None,
+                    output_hash: None,
+                    status: "success".to_string(),
+                    exit_code: Some(0),
+                    duration_ms: Some(10),
+                }),
+                artifacts: vec![],
+                sensitivity: "public".to_string(),
+                schema_version: 1,
+                raw_payload: None,
+            }
+        }
+
+        let db = Database::open_in_memory().unwrap();
+        let now = Utc::now();
+        for id in ["e1", "e2", "e3"] {
+            db.append_event(&stub_event(id, now)).unwrap();
+        }
+        let segmenter = ImplicitTaskSegmenter::new(&db);
+        let stub = StubDistiller {
+            calls: AtomicUsize::new(0),
+        };
+        let created = segmenter
+            .process_and_distill_session_with(&stub, "s-stub")
+            .unwrap();
+        assert_eq!(created, 0);
+        assert_eq!(stub.calls.load(Ordering::SeqCst), 1);
     }
 }

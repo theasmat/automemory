@@ -38,7 +38,7 @@ graph TD
         Insert --> SQLite
         SQLite --> TS[Time-Span Activity Engine<br/>15m • 1h • 4h • Today • Session]
         SQLite --> Decay[Exponential Decay & Contradiction Engine]
-        SQLite --> Graph[Codebase AST Knowledge Graph]
+        SQLite --> Graph[File-Level Code Graph + Companion Bridge]
     end
     
     subgraph Interfaces
@@ -54,7 +54,7 @@ graph TD
 ## 2. Core Architectural Pillars
 
 ### Pillar 1: Active Safety & Autopilot Modes
-Instead of treating safety as a post-mortem error, AutoMemory intercepts tool calls before execution via an **AST shell lexer** in `<2ms`. It operates across three distinct autopilot modes:
+Instead of treating safety as a post-mortem error, AutoMemory intercepts tool calls before execution via a shell lexer (measured end-to-end PreToolUse pipeline ~1.26 ms mean; see §5). It operates across three distinct autopilot modes:
 
 - **Vibe Mode (Default for autonomous velocity)**: Blocks only catastrophic, unrecoverable actions (system root deletion, protected production branch force-pushes, raw disk formats). High-risk operations (database migrations, major package upgrades) emit non-blocking inline warnings so background agent loops never stall.
 - **Strict Mode (Production codebases & shared repos)**: Blocks all destructive and high-risk operations until explicit human confirmation is provided.
@@ -82,8 +82,9 @@ Synthesized session memories avoid vague paragraph text in favor of an actionabl
 5. **📝 Decisions & Next Steps**: Architectural decisions and recommended next tasks.
 
 ### Pillar 5: Codebase Knowledge Graph & Impact Analysis
-- AST-level symbol extraction (functions, structs, classes, imports) using Tree-sitter.
-- Enables multi-hop impact analysis (`graph.impact`), informing agents which dependent files will be broken before making an edit.
+- File-level structural index (files, docs) with SHA-256 content hashes, plus incoming-edge dependents (`imports` relations today).
+- Symbol-level entities (functions, structs, classes) and call-graph edges arrive via the `CodeIntel` port: either the `ingest_graph_data` bridge from a companion engine (e.g. codebase-memory-mcp) or a future built-in extractor. Until then, `callers()` returns indexed dependents and `symbol_hash()` resolves the owning file's hash.
+- Blast-radius impact analysis (`graph.impact`) traces what the index knows; it is only as deep as the indexed relations.
 
 ### Pillar 6: Zero-Knowledge Multi-Device Sync
 - Uses **client-side AES-256-GCM blind encryption** derived from a 12- or 24-word **BIP-39 mnemonic seed phrase**.
@@ -93,7 +94,7 @@ Synthesized session memories avoid vague paragraph text in favor of an actionabl
 
 ## 3. System Architecture & Component Layout
 
-The AutoMemory workspace is built as a modular Rust monorepo with zero external runtime dependencies (no Python, no Node.js required at runtime):
+The AutoMemory workspace is built as a modular Rust monorepo. The compiled core binary has zero runtime dependencies; note that the optional CodeIntel companion path configures `npx -y @codebase-memory/mcp@latest`, which requires Node.js/npx on the agent host when used:
 
 ```
 crates/
@@ -102,7 +103,7 @@ crates/
 │   ├── src/guardrails/    # AST shell tokenizer, risk rules, autopilot modes
 │   ├── src/extraction/    # Trajectory distiller, time-span engine, skills
 │   ├── src/retrieval/     # FTS5 lexical search, vector similarity, decay
-│   ├── src/graph/         # Tree-sitter AST knowledge graph & impact
+│   ├── src/graph/         # File-level knowledge graph, impact analysis, CodeIntel port
 │   ├── src/crypto/        # BIP-39 mnemonic key derivation & AES-256-GCM
 │   └── src/models/        # Strongly-typed domain models & serialization
 ├── automemory-cli/        # High-performance CLI & agent hooks
@@ -124,7 +125,7 @@ Autonomous agents often wrap dangerous commands in subshells:
 sudo sh -c 'rm -rf /'
 bash -c "python -c 'import shutil; shutil.rmtree(\"/\")'"
 ```
-A simple string regex misses these bypasses. AutoMemory implements a recursive AST tokenizer in [`crates/automemory-core/src/guardrails/tokenizer.rs`](crates/automemory-core/src/guardrails/tokenizer.rs) that unwraps nested `-c` / `--eval` invocations, inspects pipeline targets, and blocks catastrophic destructive patterns in `<2ms`.
+A simple string regex misses these bypasses. AutoMemory implements a recursive shell tokenizer in [`crates/automemory-core/src/guardrails/tokenizer.rs`](crates/automemory-core/src/guardrails/tokenizer.rs) that unwraps nested `-c` / `--eval` invocations, inspects pipeline targets, and blocks catastrophic destructive patterns. End-to-end PreToolUse pipeline latency is measured at ~1.26 ms mean (`cargo bench -p automemory-core --bench perf`).
 
 ### 4.2. Migration Gating with SQLite `PRAGMA user_version`
 Because agent lifecycle hooks execute on every tool action, connection initialization must be instantaneous. AutoMemory gates all database schema checks behind `PRAGMA user_version < 2`. Subsequent connections open and verify in **1.05ms**, bypassing redundant migration statements.
@@ -164,14 +165,17 @@ This supports `"15m"`, `"30 min"`, `"1h"`, `"4 hours"`, `"2 days"`, `"1w"`, and 
 
 ## 5. Performance Benchmarks
 
-| Metric | Target | AutoMemory Measured Result | Competitor Comparison |
-|---|---|---|---|
-| **Hook Interception Overhead** | `< 5 ms` | **1.05 ms – 1.85 ms** | Mem0 / MemGPT: 150ms–600ms (HTTP/Python) |
-| **FTS5 Lexical Search Latency** | `< 10 ms` | **1.73 ms – 2.13 ms** | Postgres pgvector: 25ms–80ms |
-| **Session Distillation Ratio** | `> 50:1` | **100:1 token reduction** | LangChain / LangMem: 1:1 (uncompressed logs) |
-| **Deduplication Efficiency** | 0 duplicates | **Reduced 460 rows to 7 canonical rows** | Standard stores: Unbounded linear row inflation |
-| **Binary Footprint** | Single file | **28 MB self-contained binary** | Python/Docker stacks: 1.2 GB – 4.5 GB |
-| **Unit & Integration Tests** | 100% pass | **60+ tests passing (0 warnings)** | — |
+Measured with `cargo bench -p automemory-core --bench perf` (criterion, in-memory SQLite, Apple Silicon, Oct 2026) unless noted. PRD gates in the Target column.
+
+| Metric | Target | Measured result |
+|---|---|---|
+| **Hook pipeline (PreToolUse allow path)** | `< 5 ms` p95 | **~1.26 ms mean** |
+| **FTS5 recall over 500 memories** | `< 10 ms` | **~0.56 ms mean** |
+| **Session distillation (40 events)** | — | **~0.11 ms** |
+| **Binary footprint** | Single file | **10.3 MB** release binary |
+| **Unit & integration tests** | 100% pass | **120 pass, 0 fail**; clippy silent |
+
+Not currently measured (no bench; historical or external figures removed rather than repeated): session-distillation token ratio, deduplication row counts, and third-party latency comparisons.
 
 ---
 
@@ -215,7 +219,7 @@ Autonomous agents connect to AutoMemory via stdio or HTTP MCP:
 - `memory.recall`: Retrieves high-signal memories relevant to the current user prompt.
 - `memory.digest`: Generates activity metrics, files touched, achievements, and blockers.
 - `memory.save`: Ingests durable knowledge with structured taxonomy (`category`, `achievements`, `failures_resolved`).
-- `memory.context`: Assembles a token-capped context package for prompt injection.
+- `memory.context`: Assembles a token-capped context package for explicit agent queries (pull-based; no boot-time injection by default).
 - `memory.constitution`: Returns architectural invariants and conventions.
 - `graph.query` & `graph.impact`: Analyzes code dependencies and predicts ripple effects.
 
@@ -228,7 +232,7 @@ Autonomous agents connect to AutoMemory via stdio or HTTP MCP:
 - [x] **Deduplication & Scope Governance**: Atomic deduplication migration and in-place upserting.
 - [x] **5-Part Retrospective Synthesizer**: Structured post-task session distillation.
 - [x] **Ponytail Integration**: Lean senior-developer heuristics and modern Rust refactoring.
-- [ ] **Multi-Agent Blackboard & Baton Handoff**: Cross-agent context passing and collision detection for swarms of autonomous workers.
+- [x] **Multi-Agent Locks, Baton Handoff & Planning Room**: File/glob/symbol leases with collision detection, sub-400-token ledger-grounded handoff packets (`baton.pass`/`baton.pickup`), task claim/submit queue, cross-review with tests-as-judge, and turn-gated propose → critique → revise rooms.
 - [ ] **Worktree Memory Sync**: Coordinated memory sharing across git worktrees during parallel branch development.
 
 ---

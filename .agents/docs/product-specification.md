@@ -1,7 +1,7 @@
 # AutoMemory — Product Requirements & Technical Design
 
-**Status:** Draft v0.1  
-**Audience:** Product owner, coding agents, maintainers, contributors  
+**Status:** v0.1.0 + hook pipeline (Oct 2026 — describes the code as built; supersedes the Oct 7 draft)
+**Audience:** Product owner, coding agents, maintainers, contributors
 **Product type:** Open-source, local-first persistent-memory platform for coding agents, with optional managed Cloudflare sync and user-owned GitHub sync.
 
 ---
@@ -84,9 +84,9 @@ Signs in to AutoMemory. Uses encrypted cloud sync, a dashboard, and automatic mu
 
 ### Agent adapter targets
 
-Initial target: Google Antigravity.
+Shipped: 20 agent surfaces via `automemory connect` / `adapter list` (Antigravity with native hooks; all others MCP-only). Only Antigravity installs lifecycle hook files; the rest join over MCP plus prompt nudges where supported.
 
-Future adapters: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Cline, Aider, and other MCP-compatible coding agents.
+Future adapters: any MCP-compatible coding agent follows the same registry pattern.
 
 ## 6. Functional Requirements
 
@@ -180,15 +180,9 @@ Secrets, credentials, access tokens, private keys, `.env` values, and configured
 
 ### 6.6 Memory extraction
 
-Memory extraction occurs asynchronously after qualifying events. It must not block agent execution.
+Memory extraction runs synchronously in the hook process on Stop/PostCommit and in the `serve` background worker loop. It must stay fast (PreToolUse pipeline measured ~1.26 ms mean).
 
-The extraction pipeline receives compact event evidence and returns one of:
-
-- `SKIP`: nothing durable is learned.
-- `ADD`: create a new distinct memory.
-- `UPDATE`: update or supersede an existing memory.
-- `LINK`: link the event to an existing memory without changing its content.
-- `FLAG`: create a review candidate due to ambiguity, sensitive data, or low confidence.
+The local deterministic distiller (`TrajectoryDistiller`) receives event evidence and returns a `DistillationReport`: pruned-event counts, an optional synthesized success trace, an optional synthesized memory, and resolved failures. There is no SKIP/ADD/UPDATE/LINK/FLAG verdict enum; ambiguity and low-confidence output flow to the review-proposal queue and candidate memory tier instead.
 
 Initial automatic extraction candidates:
 
@@ -282,9 +276,7 @@ The document system must:
 
 ### 6.11 Context assembly
 
-At session start, the system assembles a bounded context package for the current project.
-
-Context package order:
+At session start the system stays silent by default (pull principle); with `[defaults] boot_injection = true` it assembles a bounded context package for the current project. The package order is:
 
 1. Locked global preferences.
 2. Project identity, stack summary, and current state.
@@ -355,53 +347,29 @@ The MCP API must have one common tool schema independent of transport.
 
 ### 7.2 Read tools
 
-- `memory.recall`: Retrieve relevant project/global memories for a query.
+- `memory.recall` / `memory.ask`: Retrieve relevant project/global memories for a query (trust tiers 1–3 by default; `include_untrusted` opts into Tier 4–5).
+- `memory.about`: Everything known about a file or symbol (graph entities, callers, linked memories).
+- `memory.topics`: Active decision topics plus distinct tags (what is queryable).
 - `memory.context`: Build context package for current project and task.
 - `memory.get`: Read a memory, including versions and provenance.
 - `memory.search`: Hybrid search over memories, traces, failures, and document summaries.
 - `memory.list`: Filter memories by project, type, status, tag, date, or confidence.
 - `memory.stats`: Return project/global memory health and counts.
-- `trace.list`: List success traces.
-- `trace.get`: Read a success trace and its evidence.
-- `failure.list`: List failure records.
-- `failure.get`: Read a failure record and its resolution.
-- `project.list`: List projects the caller may access.
-- `project.get`: Read project configuration and memory summary.
-- `doc.list`: List tracked documents and revisions.
-- `doc.get`: Read tracked document content or an excerpt.
-- `preference.get`: Read global or project preferences.
-- `sync.status`: View local/remote versions and pending operations.
+- `memory.digest`, `memory.constitution`, `memory.skills`: Activity rollup, invariant set, distilled playbooks.
+- `trace.list` / `trace.get`, `failure.list` / `failure.get`, `project.list` / `project.get`, `doc.list` / `doc.get`, `preference.get`, `sync.status`, `graph.query`, `graph.neighbors`, `graph.index`, `graph.impact`, `lock.status`, `decision.get`, `task.next`, `review.next`, `room.pending`, `room.status`, `baton.pickup` — as named.
 
 ### 7.3 Write tools
 
-- `memory.save`: Explicitly save a memory.
-- `memory.update`: Update active memory with version/provenance.
-- `memory.upsert`: Add/update based on identity key.
-- `memory.archive`: Archive a memory.
-- `memory.restore`: Restore an archived memory.
-- `memory.feedback`: Mark a recalled memory as useful, wrong, stale, or unsafe.
-- `trace.save`: Explicitly save a success trace.
-- `trace.invalidate`: Mark a trace deprecated/invalid.
-- `failure.save`: Explicitly save a failure record.
-- `failure.resolve`: Link a fix and verification to a failure.
-- `preference.set`: Create/update a global or project preference.
-- `preference.lock`: Prevent automatic agent mutation of a preference.
-- `project.register`: Register a project and path mapping.
-- `project.configure`: Update document/sync/capture settings.
-- `doc.track`: Add document patterns to sync.
-- `doc.untrack`: Stop syncing a document while retaining history.
-- `sync.push`: Request immediate sync.
-- `sync.pull`: Request immediate sync.
+- `memory.save` (explicit save), `memory.update` (versioned), `memory.archive` / `memory.restore`.
+- `memory.propose`: Candidate-tier write; rejected without provenance evidence.
+- `decision.record` (supersedes prior decision on topic, keeps dissent), `lock.acquire` / `lock.release`, `task.create` / `task.submit`, `review.submit` / `review.post` (tests judge), `room.join` / `room.post` (turn-gated, evidence-checked), `baton.pass`.
+- `trace.save`, `failure.save`, `failure.resolve`, `preference.set`, `preference.lock`, `project.register`.
+- Not built: `memory.upsert`, `memory.feedback`, `trace.invalidate`, `project.configure`, `doc.track`, `doc.untrack`, `sync.push`, `sync.pull` (CLI `sync push/pull` and `doc track/list/compile/scan` cover these flows).
 
 ### 7.4 Governance tools
 
-- `memory.proposals.list`: List pending review proposals.
-- `memory.proposals.decide`: Approve/reject a proposal.
-- `memory.consolidate`: Run manual consolidation.
-- `memory.provenance`: Get evidence chain for a memory/trace/failure.
-- `memory.export`: Export project/global memory in portable format.
-- `memory.import`: Import a portable export.
-- `memory.redact`: Apply redaction to selected records before sync/export.
+- `memory.proposals.list` / `memory.proposals.summary` / `memory.proposals.decide` / `memory.proposals.decide_all`, `memory.redact`.
+- Not built: `memory.consolidate`, `memory.provenance`, `memory.export`, `memory.import` (covered by CLI `sync export/import` and `memory.digest`).
 
 ### 7.5 Agent access policy
 
@@ -444,13 +412,7 @@ This prevents a slow LLM, database lock, or network outage from blocking the cod
 
 ### 8.3 Antigravity adapter
 
-Initial release must support Antigravity where available hook events permit it. Installer behavior:
-
-- Detect the Antigravity configuration directory.
-- Back up existing hook configuration before modification.
-- Add AutoMemory hook commands without removing unrelated user hooks.
-- Provide `automemory doctor` to validate event receipt.
-- Provide `automemory disconnect antigravity` to cleanly remove AutoMemory registrations.
+`automemory connect agy` writes workspace `.agents/hooks.json` (PreInvocation/boot, PreToolUse, PostToolUse, Stop), root `.mcp.json`, and `.agents/plugins/automemory/`; `automemory init` writes a reference copy to `~/.automemory/hooks/`. Existing MCP configs are merged, never overwritten. There is no config backup and no `automemory disconnect` — removal means deleting the written files. Validate with `automemory doctor`.
 
 Required minimum lifecycle behavior:
 
@@ -470,23 +432,7 @@ The initial local store is SQLite in WAL mode. Use migrations and a stable porta
 
 ### Core entities
 
-- `projects`
-- `project_paths`
-- `sessions`
-- `tasks`
-- `tool_events`
-- `memories`
-- `memory_versions`
-- `memory_links`
-- `provenance_links`
-- `success_traces`
-- `failure_records`
-- `preferences`
-- `tracked_documents`
-- `document_revisions`
-- `sync_operations`
-- `review_proposals`
-- `agent_adapters`
+`projects`, `project_paths`, `sessions`, `tasks`, `tool_events`, `memories`, `memory_versions`, `memory_links`, `memory_embeddings`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`. No `provenance_links`, `sync_operations`, or `agent_adapters` tables; provenance travels in memory metadata and version rows.
 
 ### Memory fields
 
@@ -501,7 +447,7 @@ Each memory includes at minimum:
 - `confidence`
 - `importance`
 - `freshness`
-- `status` (`active`, `superseded`, `archived`, `invalid`, `review`)
+- `status` (`active`, `candidate`, `pinned`, `stale`, `changed`, `superseded`, `archived`, `invalid`, `review`)
 - `source_kind` (`user`, `agent`, `tool_event`, `task_reflection`, `document`)
 - `created_at`, `updated_at`, `last_recalled_at`
 - `tags`, `entities`, `metadata`
@@ -631,11 +577,10 @@ Do not rely solely on committing a live SQLite binary. SQLite can be included as
 
 1. Install CLI.
 2. Select mode: Local only, GitHub vault, or Managed Cloudflare account.
-3. Choose memory extraction provider: local, API, hybrid, or agent-assisted.
-4. Connect Antigravity.
-5. Register first project and select documents to track.
-6. Confirm capture/privacy defaults.
-7. Run a diagnostic test that verifies hooks, event ingestion, and memory recall.
+3. Connect Antigravity (or another supported agent; see `adapter list`).
+4. Register first project and select documents to track.
+5. Confirm capture/privacy defaults (extraction is local deterministic code; there is no LLM provider to choose).
+6. Run a diagnostic test that verifies hooks, event ingestion, and memory recall.
 
 ### Default capture policy
 
@@ -701,18 +646,18 @@ Do not rely solely on committing a live SQLite binary. SQLite can be included as
 
 - Cloudflare managed SaaS account system.
 - End-to-end encrypted remote search.
-- Semantic embeddings/vector retrieval.
-- Knowledge graph.
+- Neural/vector embeddings upgrade (current: local n-gram projection) and symbol-level code graph.
 - Team workspaces and roles.
 - Billing.
-- Multiple agent adapters beyond Antigravity.
 - Automatic test/deployment “breakage prediction.”
+
+Shipped (no longer deferred): multi-agent adapters, knowledge graph (file-level), semantic vector retrieval (local), GitHub sync, local dashboard.
 
 ## 16. Acceptance Criteria
 
 ### New-chat continuity
 
-Given a registered project with prior decisions, tracked docs, and success traces, when a user starts a new chat in that project, the agent receives a bounded project context without scanning the entire repository first.
+Given a registered project with prior decisions, tracked docs, and success traces, when a user starts a new chat in that project, the agent receives no automatic context by default (pull principle); with `[defaults] boot_injection = true`, it receives a bounded project context without scanning the entire repository first.
 
 ### Project separation
 
@@ -779,11 +724,9 @@ Given a tracked document containing a detected secret, AutoMemory blocks sync by
 
 ## 19. Future Enhancements
 
-- Semantic vector retrieval selectable per user/provider.
-- Knowledge graph with entities, files, modules, APIs, and dependencies.
+- Neural embeddings upgrade; symbol-level AST extraction (tree-sitter or companion bridge).
 - Codebase map integration to answer structural questions without full repository scan.
 - Task planner that checks success traces and known failures before execution.
-- Agent performance dashboard: memory hits, avoidable failures, token savings.
 - Shared team/project memory with role-based access.
 - Browser extension and IDE extension.
 - Offline peer sync or self-hosted S3/MinIO backend.

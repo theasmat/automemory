@@ -19,6 +19,11 @@ pub enum CanonicalEvent {
     PreCommit,
     PostCommit,
     Stop,
+    SubagentStart,
+    SubagentStop,
+    PreCompact,
+    PostCompact,
+    Notification,
 }
 
 impl CanonicalEvent {
@@ -27,7 +32,7 @@ impl CanonicalEvent {
     pub fn from_cli(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().replace('-', "_").as_str() {
             "boot" | "session_boot" | "sessionstart" | "session_start" => Some(Self::SessionStart),
-            "user_prompt_submit" | "userpromptsubmit" => Some(Self::UserPromptSubmit),
+            "user_prompt_submit" | "userpromptsubmit" | "prompt" => Some(Self::UserPromptSubmit),
             "pre_tool" | "pretooluse" | "pre_tool_use" => Some(Self::PreToolUse),
             "post_tool" | "post_tool_fail" | "posttooluse" | "post_tool_use" => {
                 Some(Self::PostToolUse)
@@ -35,6 +40,11 @@ impl CanonicalEvent {
             "pre_commit" | "precommit" => Some(Self::PreCommit),
             "post_commit" | "postcommit" => Some(Self::PostCommit),
             "stop" | "task_done" | "session_stop" => Some(Self::Stop),
+            "subagent_start" | "subagentstart" => Some(Self::SubagentStart),
+            "subagent_stop" | "subagentstop" => Some(Self::SubagentStop),
+            "pre_compact" | "precompact" => Some(Self::PreCompact),
+            "post_compact" | "postcompact" => Some(Self::PostCompact),
+            "notify" | "notification" => Some(Self::Notification),
             _ => None,
         }
     }
@@ -48,6 +58,11 @@ impl CanonicalEvent {
             Self::PreCommit => "PreCommit",
             Self::PostCommit => "PostCommit",
             Self::Stop => "Stop",
+            Self::SubagentStart => "SubagentStart",
+            Self::SubagentStop => "SubagentStop",
+            Self::PreCompact => "PreCompact",
+            Self::PostCompact => "PostCompact",
+            Self::Notification => "Notification",
         }
     }
 }
@@ -663,6 +678,30 @@ mod tests {
         );
         assert_eq!(
             CanonicalEvent::from_cli("user-prompt-submit"),
+            Some(CanonicalEvent::UserPromptSubmit)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("subagent-start"),
+            Some(CanonicalEvent::SubagentStart)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("subagent-stop"),
+            Some(CanonicalEvent::SubagentStop)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("pre-compact"),
+            Some(CanonicalEvent::PreCompact)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("post-compact"),
+            Some(CanonicalEvent::PostCompact)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("notify"),
+            Some(CanonicalEvent::Notification)
+        );
+        assert_eq!(
+            CanonicalEvent::from_cli("prompt"),
             Some(CanonicalEvent::UserPromptSubmit)
         );
         assert_eq!(CanonicalEvent::from_cli("bogus"), None);

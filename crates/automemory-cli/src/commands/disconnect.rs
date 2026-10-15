@@ -1,0 +1,632 @@
+//! `automemory disconnect <agent>`: remove exactly what `connect` wrote.
+//!
+//! Safety contract (each op is conservative by design):
+//! - MCP JSON files: only the `mcpServers.automemory` key is removed. The
+//!   `codebase-memory` entry and everything else is left intact, and files
+//!   themselves are never deleted.
+//! - `.agents/hooks.json`: only the top-level `automemory` key is removed;
+//!   the file is deleted only if nothing remains.
+//! - `.cursorrules`: deleted only on byte-exact match with our template.
+//! - YAML blocks: removed only on exact shape match, else reported manual.
+//! - Anything unrecognized prints manual removal steps instead of guessing.
+
+use anyhow::Result;
+use automemory_core::ports::AgentAdapter;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use super::adapter::find_adapter;
+use super::connect::{get_vscode_user_dir, CURSOR_RULES};
+
+/// One removal operation derived from an agent's connect paths.
+enum Removal {
+    /// Strip `mcpServers.automemory` from a JSON MCP config file.
+    McpServerJson(PathBuf),
+    /// Strip the top-level `automemory` key from a hooks JSON file.
+    HooksKey(PathBuf),
+    /// Remove a directory tree created by connect.
+    PluginDir(PathBuf),
+    /// Delete `.cursorrules` on exact template match.
+    CursorRules(PathBuf),
+    /// Strip our appended block from a Goose YAML config.
+    GooseYaml(PathBuf),
+    /// Strip our appended block from an Aider YAML config.
+    AiderYaml(PathBuf),
+    /// Strip our entry from a Continue.dev JSON config array.
+    ContinueJson(PathBuf),
+    /// Strip `context_servers.automemory` from a Zed JSON config.
+    ZedJson(PathBuf),
+}
+
+/// Mirror of each `connect_*` target path in `connect.rs`. Workspace paths
+/// resolve under `cwd`, global paths under `home`, same as connect.
+fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Removal>> {
+    let ws = |parts: &[&str]| {
+        let mut p = cwd.to_path_buf();
+        for part in parts {
+            p = p.join(part);
+        }
+        p
+    };
+    #[cfg(target_os = "macos")]
+    let code_settings = |home: &Path, ext: &str| {
+        home.join("Library/Application Support/Code/User/globalStorage")
+            .join(ext)
+            .join("settings/cline_mcp_settings.json")
+    };
+    #[cfg(target_os = "windows")]
+    let code_settings = |home: &Path, ext: &str| {
+        home.join("AppData/Roaming/Code/User/globalStorage")
+            .join(ext)
+            .join("settings/cline_mcp_settings.json")
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let code_settings = |home: &Path, ext: &str| {
+        home.join(".config/Code/User/globalStorage")
+            .join(ext)
+            .join("settings/cline_mcp_settings.json")
+    };
+
+    let ops = match agent {
+        "agy" => {
+            if global {
+                vec![Removal::McpServerJson(
+                    home.join(".gemini").join("config/mcp_config.json"),
+                )]
+            } else {
+                vec![
+                    Removal::McpServerJson(ws(&[".agents", "mcp_config.json"])),
+                    Removal::McpServerJson(ws(&[".mcp.json"])),
+                    Removal::HooksKey(ws(&[".agents", "hooks.json"])),
+                    Removal::PluginDir(ws(&[".agents", "plugins", "automemory"])),
+                ]
+            }
+        }
+        "claude" => vec![Removal::McpServerJson(if global {
+            home.join(".claude.json")
+        } else {
+            ws(&[".mcp.json"])
+        })],
+        "claude-desktop" => {
+            #[cfg(target_os = "macos")]
+            let p = home.join("Library/Application Support/Claude/claude_desktop_config.json");
+            #[cfg(target_os = "windows")]
+            let p = home.join("AppData/Roaming/Claude/claude_desktop_config.json");
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let p = home.join(".config/Claude/claude_desktop_config.json");
+            vec![Removal::McpServerJson(p)]
+        }
+        "cursor" => {
+            let mut ops = vec![Removal::McpServerJson(if global {
+                #[cfg(target_os = "macos")]
+                let p = home.join("Library/Application Support/Cursor/User/globalStorage/mcp.json");
+                #[cfg(target_os = "windows")]
+                let p = home.join("AppData/Roaming/Cursor/User/globalStorage/mcp.json");
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                let p = home.join(".config/Cursor/User/globalStorage/mcp.json");
+                p
+            } else {
+                ws(&[".cursor", "mcp.json"])
+            })];
+            if !global {
+                ops.push(Removal::CursorRules(ws(&[".cursorrules"])));
+            }
+            ops
+        }
+        "windsurf" => vec![Removal::McpServerJson(if global {
+            home.join(".codeium").join("windsurf/mcp_config.json")
+        } else {
+            ws(&[".windsurf", "mcp.json"])
+        })],
+        "cline" => vec![Removal::McpServerJson(if global {
+            code_settings(home, "saoudrizwan.claude-dev")
+        } else {
+            ws(&[".cline", "mcp.json"])
+        })],
+        "roo" => vec![Removal::McpServerJson(if global {
+            code_settings(home, "rooveterinaryinc.roo-cline")
+        } else {
+            ws(&[".roo", "mcp.json"])
+        })],
+        "kilo" => vec![Removal::McpServerJson(if global {
+            code_settings(home, "kilocode.kilo-code")
+        } else {
+            ws(&[".kilo", "mcp.json"])
+        })],
+        "continue" => vec![Removal::ContinueJson(if global {
+            home.join(".continue/config.json")
+        } else {
+            ws(&[".continue", "config.json"])
+        })],
+        "zed" => vec![Removal::ZedJson(if global {
+            home.join(".config/zed/settings.json")
+        } else {
+            ws(&[".zed", "settings.json"])
+        })],
+        "codex" => vec![Removal::McpServerJson(if global {
+            home.join(".codex/config.json")
+        } else {
+            ws(&[".codex", "config.json"])
+        })],
+        "opencode" => vec![Removal::McpServerJson(if global {
+            home.join(".opencode/config.json")
+        } else {
+            ws(&[".opencode", "config.json"])
+        })],
+        "goose" => vec![Removal::GooseYaml(if global {
+            home.join(".config/goose/config.yaml")
+        } else {
+            ws(&[".goose", "config.yaml"])
+        })],
+        "aider" => vec![Removal::AiderYaml(if global {
+            home.join(".aider.conf.yml")
+        } else {
+            ws(&[".aider.conf.yml"])
+        })],
+        "warp" => vec![Removal::McpServerJson(if global {
+            home.join(".warp/mcp.json")
+        } else {
+            ws(&[".warp", "mcp.json"])
+        })],
+        "gemini-cli" => vec![Removal::McpServerJson(if global {
+            home.join(".gemini/settings.json")
+        } else {
+            ws(&[".gemini", "settings.json"])
+        })],
+        "devin" => vec![Removal::McpServerJson(if global {
+            home.join(".devin/mcp.json")
+        } else {
+            ws(&[".devin", "mcp.json"])
+        })],
+        "copilot" => vec![Removal::McpServerJson(if global {
+            get_vscode_user_dir(home).join("mcp.json")
+        } else {
+            ws(&[".vscode", "mcp.json"])
+        })],
+        "openclaw" => vec![Removal::McpServerJson(if global {
+            home.join(".openclaw/mcp.json")
+        } else {
+            ws(&[".openclaw", "mcp.json"])
+        })],
+        "hermes" => vec![Removal::McpServerJson(if global {
+            home.join(".hermes/mcp.json")
+        } else {
+            ws(&[".hermes", "mcp.json"])
+        })],
+        other => anyhow::bail!(
+            "Unknown agent: '{other}'. See `automemory adapter list`."
+        ),
+    };
+    Ok(ops)
+}
+
+fn read_json(path: &Path) -> Option<serde_json::Value> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+}
+
+fn write_json(path: &Path, val: &serde_json::Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(val)?)?;
+    Ok(())
+}
+
+/// Removes `mcpServers.automemory` (only our key) and prunes the emptied
+/// parent object. Returns true when the file changed.
+fn strip_mcp_server(path: &Path) -> Result<bool> {
+    let mut val = match read_json(path) {
+        Some(v) => v,
+        None => return Ok(false),
+    };
+    let changed = val
+        .get_mut("mcpServers")
+        .and_then(|servers| servers.as_object_mut())
+        .map(|servers| servers.remove("automemory").is_some())
+        .unwrap_or(false);
+    if !changed {
+        return Ok(false);
+    }
+    if val
+        .get("mcpServers")
+        .and_then(|s| s.as_object())
+        .map(|s| s.is_empty())
+        .unwrap_or(false)
+    {
+        if let Some(obj) = val.as_object_mut() {
+            obj.remove("mcpServers");
+        }
+    }
+    write_json(path, &val)?;
+    Ok(true)
+}
+
+/// Removes the top-level `automemory` hooks key; deletes the file if empty.
+fn strip_hooks_key(path: &Path) -> Result<bool> {
+    let mut val = match read_json(path) {
+        Some(v) => v,
+        None => return Ok(false),
+    };
+    let changed = val
+        .as_object_mut()
+        .map(|obj| obj.remove("automemory").is_some())
+        .unwrap_or(false);
+    if !changed {
+        return Ok(false);
+    }
+    if val.as_object().map(|o| o.is_empty()).unwrap_or(false) {
+        fs::remove_file(path)?;
+    } else {
+        write_json(path, &val)?;
+    }
+    Ok(true)
+}
+
+/// Removes our appended Goose block only on exact shape match:
+/// `- name: automemory` + `type: stdio` + `cmd:` mentioning automemory +
+/// `args:` + `- mcp`, directly under an `extensions:` header.
+fn strip_goose_block(path: &Path) -> Result<bool> {
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => return Ok(false),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.iter().position(|l| {
+        let t = l.trim_start();
+        t.starts_with("- name:") && t.contains("automemory")
+    });
+    let Some(start) = start else {
+        return Ok(false);
+    };
+    let body: Vec<&str> = lines[start + 1..].iter().take(4).copied().collect();
+    let shape_ok = body.len() == 4
+        && body[0].trim_start().starts_with("type: stdio")
+        && body[1].trim_start().starts_with("cmd:")
+        && body[1].contains("automemory")
+        && body[2].trim_start().starts_with("args:")
+        && body[3].trim() == "- mcp";
+    if !shape_ok {
+        return Ok(false);
+    }
+    // Our block is exactly 5 lines (item + type/cmd/args/- mcp); the scan
+    // below only advances past deeper-indented user lines that belong to
+    // our own item, stopping at the next list entry, dedent, or EOF.
+    let mut end = start + 5;
+    while end < lines.len() {
+        let t = lines[end];
+        let trimmed = t.trim_start();
+        let indent = t.len() - trimmed.len();
+        let item_indent = lines[start].len() - lines[start].trim_start().len();
+        if trimmed.starts_with("- ") && indent <= item_indent {
+            break;
+        }
+        if !t.trim().is_empty() && indent < item_indent {
+            break;
+        }
+        end += 1;
+    }
+    let mut kept: Vec<&str> = lines[..start].to_vec();
+    kept.extend_from_slice(&lines[end..]);
+    // Drop the `extensions:` header only when no list items remain under it
+    // (siblings before or after our removed block both count).
+    if start > 0 && kept.get(start - 1).map(|l| l.trim()) == Some("extensions:") {
+        let items_remain = kept[start..]
+            .iter()
+            .chain(kept[..start - 1].iter())
+            .any(|l| l.starts_with(' ') && l.trim_start().starts_with("- "));
+        if !items_remain {
+            kept.remove(start - 1);
+        }
+    }
+    let mut out = kept.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    fs::write(path, out)?;
+    Ok(true)
+}
+
+/// Removes our Aider block (marker `# AutoMemory MCP server` through the
+/// `args: [mcp]` line) plus one preceding blank line.
+fn strip_aider_block(path: &Path) -> Result<bool> {
+    let text = match fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => return Ok(false),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines
+        .iter()
+        .position(|l| l.trim() == "# AutoMemory MCP server");
+    let Some(start) = start else {
+        return Ok(false);
+    };
+    let mut end = start + 1;
+    while end < lines.len() && !lines[end].trim_start().starts_with("args:") {
+        end += 1;
+    }
+    if end >= lines.len() || !lines[end].contains("mcp") {
+        return Ok(false);
+    }
+    end += 1;
+    let mut kept: Vec<&str> = lines[..start.saturating_sub(1)].to_vec();
+    // Keep the preceding line when it is not blank (don't eat user content).
+    if start > 0 && !lines[start - 1].trim().is_empty() {
+        kept.push(lines[start - 1]);
+    }
+    kept.extend_from_slice(&lines[end..]);
+    let mut out = kept.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    fs::write(path, out)?;
+    Ok(true)
+}
+
+/// Removes array entries whose transport command mentions automemory.
+fn strip_continue_entry(path: &Path) -> Result<bool> {
+    let mut val = match read_json(path) {
+        Some(v) => v,
+        None => return Ok(false),
+    };
+    let servers = val
+        .get_mut("experimental")
+        .and_then(|e| e.get_mut("modelContextProtocolServers"))
+        .and_then(|s| s.as_array_mut());
+    let Some(servers) = servers else {
+        return Ok(false);
+    };
+    let before = servers.len();
+    servers.retain(|s| {
+        s.get("transport")
+            .and_then(|t| t.get("command"))
+            .and_then(|c| c.as_str())
+            .map(|cmd| !cmd.contains("automemory"))
+            .unwrap_or(true)
+    });
+    if servers.len() == before {
+        return Ok(false);
+    }
+    write_json(path, &val)?;
+    Ok(true)
+}
+
+/// Removes `context_servers.automemory` from a Zed settings file.
+fn strip_zed_entry(path: &Path) -> Result<bool> {
+    let mut val = match read_json(path) {
+        Some(v) => v,
+        None => return Ok(false),
+    };
+    let changed = val
+        .get_mut("context_servers")
+        .and_then(|c| c.as_object_mut())
+        .map(|c| c.remove("automemory").is_some())
+        .unwrap_or(false);
+    if !changed {
+        return Ok(false);
+    }
+    write_json(path, &val)?;
+    Ok(true)
+}
+
+fn apply(op: &Removal) -> Result<bool> {
+    match op {
+        Removal::McpServerJson(p) => strip_mcp_server(p),
+        Removal::HooksKey(p) => strip_hooks_key(p),
+        Removal::PluginDir(p) => {
+            if p.exists() {
+                fs::remove_dir_all(p)?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        Removal::CursorRules(p) => match fs::read_to_string(p) {
+            Ok(content) if content == CURSOR_RULES => {
+                fs::remove_file(p)?;
+                Ok(true)
+            }
+            Ok(_) => {
+                println!("  ⚠ Kept edited .cursorrules (not our template): {}", p.display());
+                Ok(false)
+            }
+            Err(_) => Ok(false),
+        },
+        Removal::GooseYaml(p) => strip_goose_block(p),
+        Removal::AiderYaml(p) => strip_aider_block(p),
+        Removal::ContinueJson(p) => strip_continue_entry(p),
+        Removal::ZedJson(p) => strip_zed_entry(p),
+    }
+}
+
+fn describe(op: &Removal) -> String {
+    match op {
+        Removal::McpServerJson(p) => format!("MCP server entry in {}", p.display()),
+        Removal::HooksKey(p) => format!("hooks key in {}", p.display()),
+        Removal::PluginDir(p) => format!("plugin dir {}", p.display()),
+        Removal::CursorRules(p) => format!(".cursorrules at {}", p.display()),
+        Removal::GooseYaml(p) => format!("Goose block in {}", p.display()),
+        Removal::AiderYaml(p) => format!("Aider block in {}", p.display()),
+        Removal::ContinueJson(p) => format!("Continue entry in {}", p.display()),
+        Removal::ZedJson(p) => format!("Zed entry in {}", p.display()),
+    }
+}
+
+/// Removes exactly what `connect` wrote for one agent. Third-party entries
+/// (e.g. a separately configured `codebase-memory` server) are left intact.
+pub fn execute(agent: &str, global: bool) -> Result<()> {
+    let canonical = find_adapter(agent).map(|a| a.adapter_id().to_string());
+    let Some(id) = canonical else {
+        anyhow::bail!("Unknown agent: '{agent}'. See `automemory adapter list`.");
+    };
+    if id == "all" {
+        anyhow::bail!("Disconnect one agent at a time (no `all`); repeat per agent as needed.");
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let scope = if global { "GLOBAL" } else { "WORKSPACE" };
+    println!("Disconnecting AutoMemory [{scope}] for agent: '{id}'...\n");
+
+    let mut removed = 0;
+    for op in targets(&id, &home, &cwd, global)? {
+        match apply(&op) {
+            Ok(true) => {
+                println!("  ✓ Removed {}", describe(&op));
+                removed += 1;
+            }
+            Ok(false) => {}
+            Err(e) => println!("  ⚠ Skipped {}: {e}", describe(&op)),
+        }
+    }
+    if removed == 0 {
+        println!("  Nothing AutoMemory-owned found; check manual steps in hooks-configuration.md §7.");
+    } else {
+        println!("\n✓ Disconnected '{id}' ({removed} change(s)). Local memory data left intact.");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sandbox(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("automemory-disconnect-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn mcp_strip_keeps_other_servers_and_prunes_empty_parent() {
+        let dir = sandbox("mcp");
+        let path = dir.join("mcp.json");
+        fs::write(
+            &path,
+            r#"{"mcpServers": {"automemory": {"command": "x"}, "other": {"command": "y"}}}"#,
+        )
+        .unwrap();
+        assert!(strip_mcp_server(&path).unwrap());
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(val["mcpServers"].get("automemory").is_none());
+        assert_eq!(val["mcpServers"]["other"]["command"], "y");
+
+        fs::write(&path, r#"{"mcpServers": {"automemory": {"command": "x"}}}"#).unwrap();
+        assert!(strip_mcp_server(&path).unwrap());
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(val.get("mcpServers").is_none());
+
+        // Missing file and foreign-only file are no-ops, never errors.
+        assert!(!strip_mcp_server(&dir.join("nope.json")).unwrap());
+        fs::write(&path, r#"{"mcpServers": {"other": {}}}"#).unwrap();
+        assert!(!strip_mcp_server(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hooks_key_strip_deletes_file_only_when_empty() {
+        let dir = sandbox("hooks");
+        let path = dir.join("hooks.json");
+        fs::write(&path, r#"{"automemory": {"enabled": true}, "user": {}}"#).unwrap();
+        assert!(strip_hooks_key(&path).unwrap());
+        assert!(path.exists());
+        fs::write(&path, r#"{"automemory": {"enabled": true}}"#).unwrap();
+        assert!(strip_hooks_key(&path).unwrap());
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn goose_block_removed_only_on_exact_shape() {
+        let dir = sandbox("goose");
+        let path = dir.join("config.yaml");
+        // Ours alone.
+        fs::write(
+            &path,
+            "other: 1\n\nextensions:\n  - name: automemory\n    type: stdio\n    cmd: /bin/automemory\n    args:\n      - mcp\n",
+        )
+        .unwrap();
+        assert!(strip_goose_block(&path).unwrap());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("automemory"));
+        assert!(text.contains("other: 1"));
+
+        // Mixed with a user extension: header stays, ours goes.
+        fs::write(
+            &path,
+            "extensions:\n  - name: mine\n    type: foo\n  - name: automemory\n    type: stdio\n    cmd: /bin/automemory\n    args:\n      - mcp\n",
+        )
+        .unwrap();
+        assert!(strip_goose_block(&path).unwrap());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("mine"));
+        assert!(text.contains("extensions:"));
+        assert!(text.contains("type: foo"));
+        assert!(!text.contains("automemory"));
+
+        // Wrong shape: untouched, caller reports manual.
+        fs::write(&path, "extensions:\n  - name: automemory\n    type: http\n").unwrap();
+        assert!(!strip_goose_block(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aider_block_removed_by_marker() {
+        let dir = sandbox("aider");
+        let path = dir.join(".aider.conf.yml");
+        fs::write(
+            &path,
+            "model: gpt\n\n# AutoMemory MCP server\nmcp-servers:\n  automemory:\n    command: /bin/automemory\n    args: [mcp]\n",
+        )
+        .unwrap();
+        assert!(strip_aider_block(&path).unwrap());
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text, "model: gpt\n");
+        assert!(!strip_aider_block(&path).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn continue_and_zed_entries_stripped() {
+        let dir = sandbox("json");
+        let cpath = dir.join("config.json");
+        fs::write(
+            &cpath,
+            r#"{"experimental": {"modelContextProtocolServers": [{"transport": {"command": "/bin/automemory"}}, {"transport": {"command": "other"}}]}}"#,
+        )
+        .unwrap();
+        assert!(strip_continue_entry(&cpath).unwrap());
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&cpath).unwrap()).unwrap();
+        assert_eq!(val["experimental"]["modelContextProtocolServers"].as_array().unwrap().len(), 1);
+
+        let zpath = dir.join("settings.json");
+        fs::write(
+            &zpath,
+            r#"{"context_servers": {"automemory": {}, "other": {}}, "theme": "x"}"#,
+        )
+        .unwrap();
+        assert!(strip_zed_entry(&zpath).unwrap());
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&zpath).unwrap()).unwrap();
+        assert!(val["context_servers"].get("automemory").is_none());
+        assert_eq!(val["context_servers"]["other"], serde_json::json!({}));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn targets_cover_all_registered_adapters() {
+        let home = std::env::temp_dir().join("automemory-disconnect-home");
+        let cwd = std::env::temp_dir().join("automemory-disconnect-cwd");
+        for a in super::super::adapter::ADAPTERS {
+            let ws = targets(a.adapter_id(), &home, &cwd, false).unwrap();
+            let gl = targets(a.adapter_id(), &home, &cwd, true).unwrap();
+            assert!(!ws.is_empty(), "workspace targets for {}", a.adapter_id());
+            assert!(!gl.is_empty(), "global targets for {}", a.adapter_id());
+        }
+        assert!(targets("nope", &home, &cwd, false).is_err());
+    }
+}

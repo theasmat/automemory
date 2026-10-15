@@ -34,6 +34,23 @@ enum Commands {
         global: bool,
     },
 
+    /// Remove exactly what `connect` wrote for one host coding agent
+    Disconnect {
+        /// Agent host to disconnect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes)
+        #[arg(default_value = "agy")]
+        agent: String,
+
+        /// Remove global configuration rather than current workspace
+        #[arg(short, long)]
+        global: bool,
+    },
+
+    /// List registered agent adapters and refresh one's hook/event mappings
+    Adapter {
+        #[command(subcommand)]
+        command: AdapterCommands,
+    },
+
     /// Link project to canonical single-source context (~/.automemory/context/projects/<id>) via local .context symlink
     Link {
         /// Project ID or slug (inferred from directory if omitted)
@@ -531,6 +548,41 @@ enum HooksCommands {
 enum PluginCommands {
     /// List the 16 versioned ports and any installed plugin manifests
     List,
+    /// Install a plugin manifest (validates ports + api_version first)
+    Install {
+        /// Path to the plugin manifest (.toml)
+        path: String,
+    },
+    /// Update an installed plugin from a manifest path
+    Update {
+        /// Path to the plugin manifest (.toml)
+        path: String,
+    },
+    /// Pin an installed plugin version so updates refuse to replace it
+    Pin {
+        /// Plugin name
+        name: String,
+    },
+    /// Roll back an installed plugin to its pre-update manifest
+    Rollback {
+        /// Plugin name
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AdapterCommands {
+    /// List registered agent adapters and their hook coverage
+    List,
+    /// Re-run an adapter's installer to refresh hook/event mappings
+    Update {
+        /// Agent id or alias (see `adapter list`)
+        agent: String,
+
+        /// Apply configuration globally rather than to current workspace
+        #[arg(short, long)]
+        global: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -878,6 +930,9 @@ async fn main() -> Result<()> {
         Commands::Connect { agent, global } => {
             commands::connect::execute(&agent, global)?;
         }
+        Commands::Disconnect { agent, global } => {
+            commands::disconnect::execute(&agent, global)?;
+        }
         Commands::Link { project_id } => {
             commands::link::execute(project_id)?;
         }
@@ -1193,6 +1248,16 @@ async fn main() -> Result<()> {
         },
         Commands::Plugin { command } => match command {
             PluginCommands::List => commands::plugin::list()?,
+            PluginCommands::Install { path } => commands::plugin::install(&path)?,
+            PluginCommands::Update { path } => commands::plugin::update(&path)?,
+            PluginCommands::Pin { name } => commands::plugin::pin(&name)?,
+            PluginCommands::Rollback { name } => commands::plugin::rollback(&name)?,
+        },
+        Commands::Adapter { command } => match command {
+            AdapterCommands::List => commands::adapter::list()?,
+            AdapterCommands::Update { agent, global } => {
+                commands::adapter::update(&agent, global)?;
+            }
         },
     }
 

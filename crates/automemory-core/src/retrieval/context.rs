@@ -1,13 +1,13 @@
 use super::decay::MemoryDecayScorer;
 use super::scorer::HybridScorer;
-use super::vector::VectorEngine;
 use crate::db::Database;
 use crate::models::*;
+use crate::ports::{EmbeddingProvider, LocalEmbeddings};
 use anyhow::Result;
 
 pub struct RetrievalEngine<'a> {
     db: &'a Database,
-    vec_engine: VectorEngine,
+    embeddings: Box<dyn EmbeddingProvider>,
     scorer: HybridScorer,
     decay_scorer: MemoryDecayScorer,
 }
@@ -16,10 +16,17 @@ impl<'a> RetrievalEngine<'a> {
     pub fn new(db: &'a Database) -> Self {
         Self {
             db,
-            vec_engine: VectorEngine,
+            embeddings: Box::new(LocalEmbeddings::new()),
             scorer: HybridScorer::default(),
             decay_scorer: MemoryDecayScorer::default(),
         }
+    }
+
+    /// Swaps the embedding backend (e.g. an API provider in tests or
+    /// team setups) without touching ranking logic.
+    pub fn with_embeddings(mut self, provider: Box<dyn EmbeddingProvider>) -> Self {
+        self.embeddings = provider;
+        self
     }
 
     /// Generates a token-capped (max 500 tokens) Hot Memory Constitution for the project.
@@ -189,10 +196,7 @@ impl<'a> RetrievalEngine<'a> {
                 .db
                 .search_memories_fts(&expanded_query, project_id, 15)
                 .unwrap_or_default();
-            let query_emb = self
-                .vec_engine
-                .embed_text(&expanded_query)
-                .unwrap_or_default();
+            let query_emb = self.embeddings.embed(&expanded_query).unwrap_or_default();
             let vec_results = if !query_emb.is_empty() {
                 self.db
                     .search_memories_vector(&query_emb, project_id, 15)
@@ -452,10 +456,7 @@ impl<'a> RetrievalEngine<'a> {
             .db
             .search_memories_fts(&expanded_query, project_id, limit * 2)
             .unwrap_or_default();
-        let query_emb = self
-            .vec_engine
-            .embed_text(&expanded_query)
-            .unwrap_or_default();
+        let query_emb = self.embeddings.embed(&expanded_query).unwrap_or_default();
         let vec_results = if !query_emb.is_empty() {
             self.db
                 .search_memories_vector(&query_emb, project_id, limit * 2)
@@ -569,4 +570,60 @@ fn compute_doc_relevance(
     }
 
     score
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{MemoryScope, MemorySourceKind, MemoryStatus, MemoryType};
+    use crate::ports::EmbeddingProvider;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    struct ZeroEmbeddings {
+        called: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl EmbeddingProvider for ZeroEmbeddings {
+        fn embed(&self, _text: &str) -> Result<Vec<f32>> {
+            self.called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(vec![0.0; 384])
+        }
+    }
+
+    #[test]
+    fn injected_embeddings_drive_vector_branch() {
+        let db = Database::open_in_memory().unwrap();
+        let mem = Memory {
+            id: Uuid::now_v7().to_string(),
+            scope: MemoryScope::Project,
+            project_id: None,
+            memory_type: MemoryType::Fact,
+            content: "content for injected provider memory".to_string(),
+            summary: "injected provider memory".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+        db.save_memory(&mem).unwrap();
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stub = ZeroEmbeddings {
+            called: flag.clone(),
+        };
+        let engine = RetrievalEngine::new(&db).with_embeddings(Box::new(stub));
+        let hits = engine.search("injected provider", None, 5).unwrap();
+        assert!(hits.iter().any(|h| h.id == mem.id));
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "injected provider must be consulted"
+        );
+    }
 }

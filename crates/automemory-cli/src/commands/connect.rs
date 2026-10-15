@@ -16,77 +16,16 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         scope_label, agent
     );
 
-    match agent.to_lowercase().as_str() {
-        "agy" | "antigravity" | "gemini" => {
-            connect_agy(&home, &cwd, &exe_path, global)?;
-        }
-        "claude" | "claudecode" => {
-            connect_claude(&home, &cwd, &exe_path, global)?;
-        }
-        "cursor" => {
-            connect_cursor(&cwd, &home, &exe_path, global)?;
-        }
-        "windsurf" | "codeium" => {
-            connect_windsurf(&home, &cwd, &exe_path, global)?;
-        }
-        "cline" => {
-            connect_cline(&home, &cwd, &exe_path, global)?;
-        }
-        "roo" | "roocode" | "roo-cline" => {
-            connect_roo(&home, &cwd, &exe_path, global)?;
-        }
-        "continue" | "vscode" => {
-            connect_continue(&home, &cwd, &exe_path, global)?;
-        }
-        "zed" => {
-            connect_zed(&home, &cwd, &exe_path, global)?;
-        }
-        "codex" | "openai" => {
-            connect_codex(&home, &cwd, &exe_path, global)?;
-        }
-        "opencode" => {
-            connect_opencode(&home, &cwd, &exe_path, global)?;
-        }
-        "goose" | "block-goose" => {
-            connect_goose(&home, &cwd, &exe_path, global)?;
-        }
-        "kilo" | "kilocode" | "kilo-code" => {
-            connect_kilo(&home, &cwd, &exe_path, global)?;
-        }
-        "aider" => {
-            connect_aider(&home, &cwd, &exe_path, global)?;
-        }
-        "warp" => {
-            connect_warp(&home, &cwd, &exe_path, global)?;
-        }
-        "gemini-cli" | "geminicli" => {
-            connect_gemini_cli(&home, &cwd, &exe_path, global)?;
-        }
-        "devin" => {
-            connect_devin(&home, &cwd, &exe_path, global)?;
-        }
-        "copilot" | "github-copilot" | "ghcopilot" => {
-            connect_copilot(&home, &cwd, &exe_path, global)?;
-        }
-        "openclaw" => {
-            connect_openclaw(&home, &cwd, &exe_path, global)?;
-        }
-        "hermes" => {
-            connect_hermes(&home, &cwd, &exe_path, global)?;
-        }
-        "claude-desktop" | "claudedesktop" => {
-            connect_claude_desktop(&home, &cwd, &exe_path, global)?;
-        }
-        "all" => {
-            connect_all(&home, &cwd, &exe_path, global)?;
-        }
-        other => {
-            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all", other);
-            return Ok(());
+    if agent.eq_ignore_ascii_case("all") {
+        return connect_all(&home, &cwd, &exe_path, global);
+    }
+    match super::adapter::find_adapter(agent) {
+        Some(adapter) => super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global),
+        None => {
+            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all", agent);
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 fn codebase_memory_config() -> serde_json::Value {
@@ -129,7 +68,12 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
 }
 
 // ── Antigravity / Gemini ────────────────────────────────────────────────────
-fn connect_agy(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_agy(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     if global {
         let gemini_config = home.join(".gemini").join("config");
         fs::create_dir_all(&gemini_config)?;
@@ -225,7 +169,12 @@ fn connect_agy(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
 }
 
 // ── Claude Code & Claude Desktop ────────────────────────────────────────────
-fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_claude(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     if global {
         let claude_config = home.join(".claude.json");
         merge_mcp_config(&claude_config, exe_path)?;
@@ -262,7 +211,29 @@ fn connect_claude(home: &Path, workspace_root: &Path, exe_path: &str, global: bo
 }
 
 // ── Cursor ──────────────────────────────────────────────────────────────────
-fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bool) -> Result<()> {
+/// Exact guidelines text written by `connect_cursor`. `disconnect` deletes
+/// `.cursorrules` only on byte-exact match, never user-edited content.
+pub(crate) const CURSOR_RULES: &str = r#"# AutoMemory Persistent Intelligence Rules
+- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`, `memory.proposals.summary`, `memory.proposals.decide_all`).
+- You have deep AST code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`).
+- At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
+- Zero-SQL Rule: Never run raw sqlite3 queries on internal databases. Use the official MCP tools and CLI commands.
+"#;
+pub(crate) fn connect_cursor_unified(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
+    connect_cursor(workspace_root, home, exe_path, global)
+}
+
+pub(crate) fn connect_cursor(
+    workspace_root: &Path,
+    home: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         #[cfg(target_os = "macos")]
         let p = home.join("Library/Application Support/Cursor/User/globalStorage/mcp.json");
@@ -277,15 +248,10 @@ fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bo
 
     merge_mcp_config(&target_path, exe_path)?;
 
-    // Create .cursorrules in workspace
+    // Create .cursorrules in workspace (exact template match required to
+    // remove it again in `disconnect`; see CURSOR_RULES).
     let cursorrules_path = workspace_root.join(".cursorrules");
-    let rules_content = r#"# AutoMemory Persistent Intelligence Rules
-- You have persistent cognitive memory via `automemory` MCP server (`memory.context`, `memory.recall`, `memory.save`, `trace.save`, `memory.proposals.summary`, `memory.proposals.decide_all`).
-- You have deep AST code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`).
-- At the start of a task, call `memory.context` to load prior decisions, learnings, and golden trajectories.
-- Zero-SQL Rule: Never run raw sqlite3 queries on internal databases. Use the official MCP tools and CLI commands.
-"#;
-    let _ = fs::write(&cursorrules_path, rules_content);
+    let _ = fs::write(&cursorrules_path, CURSOR_RULES);
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -298,7 +264,7 @@ fn connect_cursor(workspace_root: &Path, home: &Path, exe_path: &str, global: bo
 }
 
 // ── Windsurf / Codeium Cascade ──────────────────────────────────────────────
-fn connect_windsurf(
+pub(crate) fn connect_windsurf(
     home: &Path,
     workspace_root: &Path,
     exe_path: &str,
@@ -324,7 +290,12 @@ fn connect_windsurf(
 }
 
 // ── Cline ───────────────────────────────────────────────────────────────────
-fn connect_cline(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_cline(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         #[cfg(target_os = "macos")]
         let p = home.join("Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json");
@@ -349,7 +320,12 @@ fn connect_cline(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
 }
 
 // ── Roo Code ────────────────────────────────────────────────────────────────
-fn connect_roo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_roo(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         #[cfg(target_os = "macos")]
         let p = home.join("Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/cline_mcp_settings.json");
@@ -374,7 +350,7 @@ fn connect_roo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
 }
 
 // ── Continue.dev / VS Code ──────────────────────────────────────────────────
-fn connect_continue(
+pub(crate) fn connect_continue(
     home: &Path,
     workspace_root: &Path,
     exe_path: &str,
@@ -439,7 +415,12 @@ fn connect_continue(
 }
 
 // ── Zed Editor ──────────────────────────────────────────────────────────────
-fn connect_zed(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_zed(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".config").join("zed").join("settings.json")
     } else {
@@ -480,7 +461,12 @@ fn connect_zed(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
 }
 
 // ── OpenAI Codex CLI ────────────────────────────────────────────────────────
-fn connect_codex(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_codex(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".codex").join("config.json")
     } else {
@@ -499,7 +485,12 @@ fn connect_codex(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
 }
 
 // ── Connect All Agents ──────────────────────────────────────────────────────
-fn connect_all(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_all(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     println!("========================================================");
     println!("       AutoMemory Multi-Agent Universal Connector       ");
     println!("========================================================");
@@ -532,7 +523,7 @@ fn connect_all(home: &Path, workspace_root: &Path, exe_path: &str, global: bool)
 }
 
 // ── OpenCode ─────────────────────────────────────────────────────────────────
-fn connect_opencode(
+pub(crate) fn connect_opencode(
     home: &Path,
     workspace_root: &Path,
     exe_path: &str,
@@ -556,7 +547,12 @@ fn connect_opencode(
 }
 
 // ── Goose (Block) ─────────────────────────────────────────────────────────────
-fn connect_goose(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_goose(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     // Goose uses YAML config at ~/.config/goose/config.yaml
     let target_path = if global {
         home.join(".config").join("goose").join("config.yaml")
@@ -595,7 +591,12 @@ fn connect_goose(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
 }
 
 // ── Kilo Code (VS Code Extension, same pattern as Cline/Roo) ─────────────────
-fn connect_kilo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_kilo(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         #[cfg(target_os = "macos")]
         let p = home.join("Library/Application Support/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json");
@@ -623,7 +624,12 @@ fn connect_kilo(home: &Path, workspace_root: &Path, exe_path: &str, global: bool
 
 // ── Aider ─────────────────────────────────────────────────────────────────────
 // Aider uses a YAML config file. MCP is injected via its `--mcp-server` key.
-fn connect_aider(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_aider(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".aider.conf.yml")
     } else {
@@ -655,7 +661,12 @@ fn connect_aider(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
 }
 
 // ── Warp Terminal ─────────────────────────────────────────────────────────────
-fn connect_warp(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_warp(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     // Warp uses ~/.warp/mcp.json for MCP servers
     let target_path = if global {
         home.join(".warp").join("mcp.json")
@@ -676,7 +687,7 @@ fn connect_warp(home: &Path, workspace_root: &Path, exe_path: &str, global: bool
 
 // ── Gemini CLI (standalone, different from Antigravity IDE) ──────────────────
 // `gemini-cli` is google-gemini/gemini-cli — separate from the AGY plugin system.
-fn connect_gemini_cli(
+pub(crate) fn connect_gemini_cli(
     home: &Path,
     workspace_root: &Path,
     exe_path: &str,
@@ -718,7 +729,12 @@ fn connect_gemini_cli(
 
 // ── Devin ─────────────────────────────────────────────────────────────────────
 // Devin uses a .devin/config.json for MCP server configuration.
-fn connect_devin(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_devin(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".devin").join("mcp.json")
     } else {
@@ -738,7 +754,12 @@ fn connect_devin(home: &Path, workspace_root: &Path, exe_path: &str, global: boo
 
 // ── GitHub Copilot CLI ────────────────────────────────────────────────────────
 // GitHub Copilot CLI uses the VS Code MCP config path (it runs inside VS Code).
-fn connect_copilot(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_copilot(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         // VS Code user-level settings (same as what Copilot Chat picks up)
         get_vscode_user_dir(home).join("mcp.json")
@@ -758,7 +779,7 @@ fn connect_copilot(home: &Path, workspace_root: &Path, exe_path: &str, global: b
 }
 
 // ── OpenClaw ──────────────────────────────────────────────────────────────────
-fn connect_openclaw(
+pub(crate) fn connect_openclaw(
     home: &Path,
     workspace_root: &Path,
     exe_path: &str,
@@ -782,7 +803,12 @@ fn connect_openclaw(
 }
 
 // ── Hermes (NousResearch) ─────────────────────────────────────────────────────
-fn connect_hermes(home: &Path, workspace_root: &Path, exe_path: &str, global: bool) -> Result<()> {
+pub(crate) fn connect_hermes(
+    home: &Path,
+    workspace_root: &Path,
+    exe_path: &str,
+    global: bool,
+) -> Result<()> {
     let target_path = if global {
         home.join(".hermes").join("mcp.json")
     } else {
@@ -801,7 +827,7 @@ fn connect_hermes(home: &Path, workspace_root: &Path, exe_path: &str, global: bo
 }
 
 // ── Claude Desktop (separate from Claude Code) ────────────────────────────────
-fn connect_claude_desktop(
+pub(crate) fn connect_claude_desktop(
     home: &Path,
     _workspace_root: &Path,
     exe_path: &str,
@@ -834,7 +860,7 @@ fn connect_claude_desktop(
 }
 
 // ── VS Code helpers ──────────────────────────────────────────────────────────
-fn get_vscode_user_dir(home: &Path) -> PathBuf {
+pub(crate) fn get_vscode_user_dir(home: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     return home
         .join("Library")

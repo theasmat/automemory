@@ -46,10 +46,12 @@ Multi-agent work fails at three points: collisions, lost context, and untrusted 
 
 **Non-goals for v1**
 
-- Hosted service, team sharing, zero-knowledge sync, dashboard UI.
+- Hosted service, team sharing.
 - Our own code graph, or LLM calls inside the daemon.
 - Replacing agents' native memory; we sit beside it.
 - More than three agent adapters.
+
+> Amendment (Oct 14, 2026): the original non-goals also listed zero-knowledge sync, dashboard UI, and boot-time injection. All three shipped and are now accepted v1 scope: sync as vault/git/cloud backends, dashboard as the local `serve` UI, and boot context gated behind `boot_injection` (default off, pull-first preserved).
 
 | Metric | How measured | Proposed target |
 | --- | --- | --- |
@@ -467,7 +469,9 @@ Phases 1 to 3 form the minimum credible product: coordination you can feel, memo
 
 ### 16.2 Cut list (v1)
 
-Boot-time injection, auto-distill of every session, auto-generated AGENTS.md, own AST graph, shell-regex guardrail arms race, zero-knowledge BIP-39 sync, storing raw agent reasoning, agent-edited memory, debate as default, dashboard, team sharing, and more than three adapters.
+Auto-distill of every session, auto-generated AGENTS.md, own AST graph, shell-regex guardrail arms race, storing raw agent reasoning, agent-edited memory, debate as default, team sharing, and more than three adapters.
+
+> Amendment (Oct 14, 2026): boot-time injection, dashboard, and zero-knowledge sync were originally cut here but shipped; they are accepted scope per the §3 amendment above (boot stays gated default-off).
 
 ### 16.3 Competitor landscape
 

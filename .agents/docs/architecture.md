@@ -1,7 +1,7 @@
 # AutoMemory — Technical Architecture
 
-**Status:** Draft v0.1  
-**Audience:** Coding agents, engineers, maintainers  
+**Status:** v0.1.0 + hook pipeline (Oct 2026 — describes the code as built)
+**Audience:** Coding agents, engineers, maintainers
 **Scope:** Local runtime, MCP server, hooks/adapters, event pipeline, sync, and data model.
 
 ---
@@ -32,7 +32,7 @@ All components must work offline. Sync is optional and additive.
 - **Consolidation Worker:** background maintenance worker for deduplication, supersession, archiving, and review proposals.
 - **Sync Coordinator:** manages push/pull operations, conflict detection, and sync metadata.
 - **Document Vault:** local copy of tracked documents and their revisions.
-- **Audit Log:** tamper-evident log of writes, updates, archives, deletes, and sync operations.
+- **Audit Log:** append-only table recording writes, updates, archives, and sync operations (plain SQLite rows; not hash-chained).
 
 ### 2.2 Data Flow
 
@@ -53,11 +53,13 @@ All components must work offline. Sync is optional and additive.
 - **Stdio:** primary for local coding agents.
 - **HTTP:** local network/custom integrations and managed SaaS gateway.
 
-### 3.2 Tool Categories
+### 3.2 Tool Categories (59 tools, `memory.*` unless noted)
 
-- **Read:** `memory.recall`, `memory.context`, `memory.get`, `memory.search`, `memory.list`, `memory.stats`, `trace.list`, `trace.get`, `failure.list`, `failure.get`, `project.list`, `project.get`, `doc.list`, `doc.get`, `preference.get`, `sync.status`.
-- **Write:** `memory.save`, `memory.update`, `memory.upsert`, `memory.archive`, `memory.restore`, `memory.feedback`, `trace.save`, `trace.invalidate`, `failure.save`, `failure.resolve`, `preference.set`, `preference.lock`, `project.register`, `project.configure`, `doc.track`, `doc.untrack`, `sync.push`, `sync.pull`.
-- **Governance:** `memory.proposals.list`, `memory.proposals.decide`, `memory.consolidate`, `memory.provenance`, `memory.export`, `memory.import`, `memory.redact`.
+- **Read:** `recall`, `ask`, `about`, `get`, `topics`, `search`, `list`, `stats`, `context`, `digest`, `constitution`, `skills`, `trace.list`, `trace.get`, `failure.list`, `failure.get`, `project.list`, `project.get`, `doc.list`, `doc.get`, `preference.get`, `sync.status`, `graph.query`, `graph.neighbors`, `graph.index`, `graph.impact`.
+- **Write:** `save`, `update`, `archive`, `restore`, `propose` (candidate tier; rejected without provenance), `trace.save`, `failure.save`, `failure.resolve`, `preference.set`, `preference.lock`, `project.register`, `lock.acquire`, `lock.release`, `task.create`, `review.submit`, `room.join`, `baton.pass`.
+- **Coordination:** `lock.status`, `task.next`, `task.submit`, `review.next`, `review.post`, `room.pending`, `room.post`, `room.status`, `baton.pickup`.
+- **Governance:** `memory.proposals.list`, `memory.proposals.summary`, `memory.proposals.decide`, `memory.proposals.decide_all`, `memory.redact`.
+- **Not built:** `memory.upsert`, `memory.feedback`, `trace.invalidate`, `project.configure`, `doc.track`, `doc.untrack`, `sync.push`, `sync.pull`, `memory.consolidate`, `memory.provenance`, `memory.export`, `memory.import`.
 
 ---
 
@@ -91,9 +93,10 @@ Hooks run as separate commands that:
 
 - Validate payload.
 - Find project.
-- Append normalized event to durable queue.
-- Return quickly.
-- Background daemon handles extraction, indexing, consolidation, and sync.
+- Run the gate pipeline on PreToolUse/PreCommit (lease check → guardrail → custom exec; strictest decision wins, may deny).
+- Append normalized event to the durable ledger.
+- Return quickly (PreToolUse pipeline measured ~1.26 ms mean; external exec handlers are killed past their latency budget).
+- The `serve` daemon additionally runs the extraction worker loop and consolidation worker in the background; hook invocations also distill synchronously on Stop/PostCommit.
 
 ---
 
@@ -101,23 +104,9 @@ Hooks run as separate commands that:
 
 ### 5.1 Core Entities
 
-- `projects`
-- `project_paths`
-- `sessions`
-- `tasks`
-- `tool_events`
-- `memories`
-- `memory_versions`
-- `memory_links`
-- `provenance_links`
-- `success_traces`
-- `failure_records`
-- `preferences`
-- `tracked_documents`
-- `document_revisions`
-- `sync_operations`
-- `review_proposals`
-- `agent_adapters`
+`projects`, `project_paths`, `sessions`, `tasks`, `tool_events`, `memories`, `memory_versions`, `memory_links`, `memory_embeddings`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`.
+
+No `provenance_links`, `sync_operations`, or `agent_adapters` tables exist; provenance travels in memory metadata and version rows.
 
 ### 5.2 Memory Fields
 
@@ -130,7 +119,7 @@ Hooks run as separate commands that:
 - `confidence`
 - `importance`
 - `freshness`
-- `status` (`active`, `superseded`, `archived`, `invalid`, `review`)
+- `status` (`active`, `candidate`, `pinned`, `stale`, `changed`, `superseded`, `archived`, `invalid`, `review`)
 - `source_kind` (`user`, `agent`, `tool_event`, `task_reflection`, `document`)
 - `created_at`, `updated_at`, `last_recalled_at`
 - `tags`, `entities`, `metadata`
@@ -229,21 +218,19 @@ automemory-vault/
 | MCP Server | Rust (stdio + HTTP) |
 | Agent Adapters | Rust (out-of-process hooks) |
 | Cloudflare Worker | TypeScript |
-| Frontend (Managed Mode) | Nuxt 4 (CF Pages) |
+| Frontend (Managed Mode) | Nuxt 3.15.4 (CF Pages) |
 | Database (Local) | SQLite (WAL mode) |
 | Database (Managed) | Cloudflare D1 + R2 |
-| LLM (Local) | Ollama (Llama 3 8B) |
-| LLM (Cloud) | Claude 3.5 Sonnet / GPT-4o |
+| LLM | None — the daemon makes no LLM calls. Distillation, retrieval ranking, and guardrails are local deterministic code. LLM-backed extraction providers are future work, not present. |
 
 ---
 
 ## 10. Future Enhancements
 
-- Semantic vector retrieval.
-- Knowledge graph.
+Already shipped (no longer future): semantic vector retrieval (local n-gram projection engine, not neural embeddings), knowledge graph (file-level entities with SHA-256 + `imports` edges; symbol-level extraction still future), multi-agent adapters, agent performance dashboard.
+Still future:
 - Codebase map integration.
 - Task planner with trace/failure checks.
-- Agent performance dashboard.
 - Team workspaces and roles.
 - Browser/IDE extensions.
 - Offline peer sync or self-hosted S3/MinIO backend.

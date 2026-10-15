@@ -16,10 +16,12 @@ Assembles a bounded, token-capped context package containing active preferences,
 
 ### `memory.recall`
 Queries memories relevant to a specific user task or prompt.
+Returns trust tiers 1–3 only; Tier 4–5 agent claims are withheld unless asked for.
 - **Parameters**:
   - `query` *(required, string)*: Search keywords or task prompt.
   - `project_id` *(optional, string)*: Project scope filter.
   - `limit` *(optional, integer)*: Max results to return (default: 5).
+  - `include_untrusted` *(optional, boolean)*: Also return Tier 4–5 claims (default: false).
 
 ### `memory.search`
 Full-text FTS5 and semantic search across all memory records.

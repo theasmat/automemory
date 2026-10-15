@@ -79,7 +79,8 @@ mod tests {
         let save_resp = server.handle_request(save_req).unwrap();
         assert!(save_resp.result.is_some());
 
-        // Recall memory
+        // Recall memory: default save lands at Tier 4 (agent claim, 0.9),
+        // so default recall withholds it per the PRD trust table.
         let recall_req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(11)),
@@ -93,7 +94,60 @@ mod tests {
         };
         let recall_resp = server.handle_request(recall_req).unwrap();
         let content_text = &recall_resp.result.unwrap()["content"][0]["text"];
-        assert!(content_text.as_str().unwrap().contains("DB pool size 25"));
+        assert!(!content_text.as_str().unwrap().contains("DB pool size 25"));
+
+        // Explicit opt-in returns Tier 4.
+        let open_req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(12)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "memory.recall",
+                "arguments": {
+                    "query": "PostgreSQL pool",
+                    "include_untrusted": true
+                }
+            })),
+        };
+        let open_resp = server.handle_request(open_req).unwrap();
+        let open_text = &open_resp.result.unwrap()["content"][0]["text"];
+        assert!(open_text.as_str().unwrap().contains("DB pool size 25"));
+
+        // Verified memory (Tier 2) is returned by default.
+        let save_verified = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(13)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "memory.save",
+                "arguments": {
+                    "content": "PostgreSQL pool verified by test suite.",
+                    "summary": "DB pool verified",
+                    "type": "decision",
+                    "confidence": 0.97,
+                    "tags": ["database", "postgres"]
+                }
+            })),
+        };
+        assert!(server
+            .handle_request(save_verified)
+            .unwrap()
+            .result
+            .is_some());
+        let recall_verified = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(14)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "memory.recall",
+                "arguments": {
+                    "query": "PostgreSQL verified"
+                }
+            })),
+        };
+        let verified_resp = server.handle_request(recall_verified).unwrap();
+        let verified_text = &verified_resp.result.unwrap()["content"][0]["text"];
+        assert!(verified_text.as_str().unwrap().contains("DB pool verified"));
     }
 
     #[test]
@@ -377,7 +431,7 @@ mod tests {
                 .to_string()
         };
 
-        // ask aliases recall.
+        // ask aliases recall (Tier 4 withheld by default, returned on opt-in).
         let saved = call(
             60,
             "memory.save",
@@ -387,14 +441,24 @@ mod tests {
         );
         assert!(saved.contains("saved"));
         let asked = call(61, "memory.ask", json!({ "query": "JWT" }));
-        assert!(asked.contains("auth fact"));
+        assert!(!asked.contains("auth fact"));
+        let asked_open = call(
+            66,
+            "memory.ask",
+            json!({ "query": "JWT", "include_untrusted": true }),
+        );
+        assert!(asked_open.contains("auth fact"));
 
         // topics lists the tag.
         let topics = call(62, "memory.topics", json!({}));
         assert!(topics.contains("auth"));
 
-        // about answers for the tag target.
-        let about = call(63, "memory.about", json!({ "target": "auth" }));
+        // about answers for the tag target (opt-in surfaces the Tier 4 hit).
+        let about = call(
+            63,
+            "memory.about",
+            json!({ "target": "auth", "include_untrusted": true }),
+        );
         assert!(about.contains("auth fact"));
 
         // propose without provenance is rejected; with it, queued as candidate.

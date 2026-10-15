@@ -1,12 +1,12 @@
 use anyhow::Result;
-use automemory_core::config::Config;
+use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::db::Database;
 use automemory_core::hooks::{
     merge_decision, run_pipeline, CanonicalEvent, GateDecision, GuardrailHandler, HooksConfig,
     LockCheckHandler, PipelineCtx,
 };
 use automemory_core::models::*;
-use automemory_core::ports::{HandlerEnv, HookHandler};
+use automemory_core::ports::{HandlerEnv, HookHandler, Notifier};
 use automemory_core::redaction::redact_json;
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -66,8 +66,17 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         .or(project_id_owned.as_deref());
 
     // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
+    // Gated off by default: PRD pull-principle (§5) reserves context for
+    // explicit queries; enable with [defaults] boot_injection = true.
     let canonical = CanonicalEvent::from_cli(event);
     if canonical == Some(CanonicalEvent::SessionStart) {
+        let boot_on = GlobalConfig::load()
+            .map(|g| g.defaults.boot_injection)
+            .unwrap_or(false);
+        if !boot_on {
+            println!("{{}}");
+            return Ok(());
+        }
         let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
         let ctx = engine
             .assemble_context(effective_project_id, None, 2000)
@@ -191,8 +200,15 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         run_post_tool_distillation(&db, &session_id);
     }
 
-    // Release all active leases held by this session upon stop
+    // Release all active leases held by this session upon stop — unless work
+    // is owed, in which case the stop is blocked (PRD §7.2) and the human is
+    // told why through the Notifier port.
     if canonical == Some(CanonicalEvent::Stop) {
+        if let Some(owed) = pending_work_nudge(&db, effective_project_id, &session_id) {
+            automemory_core::ports::StderrNotifier.notify("stop blocked", &owed);
+            println!("{}", json!({"decision": "block", "reason": owed}));
+            return Ok(());
+        }
         let _ = db.release_leases(&session_id, None);
     }
 
@@ -330,8 +346,10 @@ fn build_normalized_event(
 
 /// Runs implicit task segmentation and session distillation in the background.
 fn run_post_tool_distillation(db: &Database, session_id: &str) {
+    use automemory_core::extraction::TrajectoryDistiller;
     let segmenter = automemory_core::extraction::ImplicitTaskSegmenter::new(db);
-    let _ = segmenter.process_and_distill_session(session_id);
+    let distiller = TrajectoryDistiller::new(db);
+    let _ = segmenter.process_and_distill_session_with(&distiller, session_id);
 }
 
 /// Resolves the project reference based on CLI flags, environment variables,

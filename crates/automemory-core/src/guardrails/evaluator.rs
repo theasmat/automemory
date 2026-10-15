@@ -2,7 +2,7 @@ use super::rules::GuardrailRule;
 use super::tokenizer::ShellCommandTree;
 use crate::db::Database;
 use crate::models::AutopilotMode;
-use regex::Regex;
+use crate::ports::RuleMatcher;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -38,6 +38,7 @@ pub struct GuardrailDecision {
 pub struct GuardrailEvaluator<'a> {
     db: Option<&'a Database>,
     rules: Vec<GuardrailRule>,
+    extra: Vec<Box<dyn RuleMatcher>>,
 }
 
 /// Tool names that execute shell commands (canonical hook names and raw variants).
@@ -89,7 +90,18 @@ impl<'a> GuardrailEvaluator<'a> {
                 }
             }
         }
-        Self { db, rules }
+        Self {
+            db,
+            rules,
+            extra: Vec::new(),
+        }
+    }
+
+    /// Adds a custom rule implementation (e.g. an org policy plugin).
+    /// Extra rules run before the built-in set.
+    pub fn with_extra_rule(mut self, rule: Box<dyn RuleMatcher>) -> Self {
+        self.extra.push(rule);
+        self
     }
 
     /// Evaluates a pre-action tool call against AST shell tokenizer checks,
@@ -259,36 +271,53 @@ impl<'a> GuardrailEvaluator<'a> {
             });
         }
 
+        // 1b. ── Extra RuleMatcher plugins (custom org policies first) ──
+        for rule in &self.extra {
+            if rule.matches_text(&command_str) {
+                return self.handle_high_risk(HighRiskInput {
+                    rule_id: "custom_plugin_rule",
+                    title: &format!("Custom Guardrail: {}", rule.rule_id()),
+                    risk_summary: "An installed guardrail plugin flagged this command.",
+                    mitigation_hint: Some(
+                        "Review the plugin policy or run in shadow mode to audit it.".to_string(),
+                    ),
+                    command_str: &command_str,
+                    project_id,
+                    mode,
+                    risk_score: 0.75,
+                    matched_failure_id: None,
+                });
+            }
+        }
+
         // 2. ── Regex Rule Matching (File Tampering & Supplemental Patterns) ──
         for rule in &self.rules {
-            if let Ok(re) = Regex::new(&rule.pattern) {
-                if re.is_match(&command_str) {
-                    if rule.is_critical {
-                        return GuardrailDecision {
-                            action: GuardrailAction::Block,
-                            severity: GuardrailSeverity::Critical,
-                            risk_score: 1.0,
-                            title: format!("CRITICAL STOP: {}", rule.name),
-                            risk_summary: rule.description.clone(),
-                            mitigation_hint: Some(rule.mitigation_hint.clone()),
-                            rule_matched: Some(rule.id.clone()),
-                            matched_failure_id: None,
-                            requires_confirmation: true,
-                        };
-                    }
-
-                    return self.handle_high_risk(HighRiskInput {
-                        rule_id: &rule.id,
-                        title: &format!("High-Risk Guardrail: {}", rule.name),
-                        risk_summary: &rule.description,
+            if rule.matches_text(&command_str) {
+                if rule.is_critical {
+                    return GuardrailDecision {
+                        action: GuardrailAction::Block,
+                        severity: GuardrailSeverity::Critical,
+                        risk_score: 1.0,
+                        title: format!("CRITICAL STOP: {}", rule.name),
+                        risk_summary: rule.description.clone(),
                         mitigation_hint: Some(rule.mitigation_hint.clone()),
-                        command_str: &command_str,
-                        project_id,
-                        mode,
-                        risk_score: 0.75,
+                        rule_matched: Some(rule.id.clone()),
                         matched_failure_id: None,
-                    });
+                        requires_confirmation: true,
+                    };
                 }
+
+                return self.handle_high_risk(HighRiskInput {
+                    rule_id: &rule.id,
+                    title: &format!("High-Risk Guardrail: {}", rule.name),
+                    risk_summary: &rule.description,
+                    mitigation_hint: Some(rule.mitigation_hint.clone()),
+                    command_str: &command_str,
+                    project_id,
+                    mode,
+                    risk_score: 0.75,
+                    matched_failure_id: None,
+                });
             }
         }
 
@@ -514,6 +543,24 @@ mod tests {
         assert_eq!(decision.action, GuardrailAction::Block);
         assert_eq!(decision.severity, GuardrailSeverity::Critical);
         assert!(decision.requires_confirmation);
+    }
+
+    #[test]
+    fn test_extra_rule_plugin_runs_before_builtins() {
+        struct OrgDenyDeploy;
+        impl crate::ports::RuleMatcher for OrgDenyDeploy {
+            fn rule_id(&self) -> &str {
+                "org-deny-deploy"
+            }
+            fn matches_text(&self, text: &str) -> bool {
+                text.contains("deploy-to-prod")
+            }
+        }
+        let evaluator = GuardrailEvaluator::new(None).with_extra_rule(Box::new(OrgDenyDeploy));
+        let args = serde_json::json!({ "CommandLine": "run deploy-to-prod now" });
+        let decision = evaluator.evaluate("run_command", &args, None, AutopilotMode::Vibe);
+        assert_eq!(decision.action, GuardrailAction::Warn);
+        assert_eq!(decision.rule_matched.as_deref(), Some("custom_plugin_rule"));
     }
 
     #[test]

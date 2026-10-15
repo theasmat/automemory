@@ -26,7 +26,7 @@ fn test_mcp_comprehensive_tool_suite_execution() {
     let resp_reg = server.handle_request(req_reg).unwrap();
     assert!(resp_reg.result.is_some(), "project.register must succeed");
 
-    // 2. Save Memory via MCP
+    // 2. Save Memory via MCP (verified confidence: Tier 2 is recallable)
     let req_save = JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(json!(102)),
@@ -38,6 +38,7 @@ fn test_mcp_comprehensive_tool_suite_execution() {
                 "content": "Redis cache TTL configured to 300 seconds for hot session keys.",
                 "summary": "Redis TTL 300s",
                 "type": "decision",
+                "confidence": 0.97,
                 "tags": ["redis", "cache", "sessions"]
             }
         })),

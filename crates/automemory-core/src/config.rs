@@ -95,6 +95,10 @@ pub struct DefaultSettings {
     pub token_budget_boot: usize,
     #[serde(default = "default_task_budget")]
     pub token_budget_task: usize,
+    /// PRD §5 is pull-only and §16.2 cuts boot-time injection, so session
+    /// start stays silent unless the user explicitly opts back in.
+    #[serde(default)]
+    pub boot_injection: bool,
 }
 
 fn default_mode() -> String {
@@ -113,6 +117,7 @@ impl Default for DefaultSettings {
             autopilot_mode: default_mode(),
             token_budget_boot: default_boot_budget(),
             token_budget_task: default_task_budget(),
+            boot_injection: false,
         }
     }
 }

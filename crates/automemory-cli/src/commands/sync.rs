@@ -3,6 +3,7 @@ use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::crypto::{BlindCrypto, BlindMemoryWire, BlindSkillWire, EncryptedBlob};
 use automemory_core::db::Database;
 use automemory_core::models::*;
+use automemory_core::ports::{Exporter, SyncBackend};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
@@ -370,12 +371,14 @@ pub async fn push(
         let master_key = BlindCrypto::get_or_create_master_key(key_opt.as_deref())?;
         let index_key = BlindCrypto::derive_index_key(&master_key);
 
-        let vector_engine = automemory_core::retrieval::vector::VectorEngine;
+        let vector_engine = automemory_core::ports::LocalEmbeddings::new();
         let mut blind_memories = Vec::new();
         for m in &memories {
-            let embedding = vector_engine
-                .embed_text(&format!("{} {}", m.summary, m.content))
-                .ok();
+            let embedding = automemory_core::ports::EmbeddingProvider::embed(
+                &vector_engine,
+                &format!("{} {}", m.summary, m.content),
+            )
+            .ok();
             match BlindCrypto::encrypt_memory_with_embedding(
                 &master_key,
                 &index_key,
@@ -1058,8 +1061,7 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
         .unwrap_or(config.vault_dir);
 
     let db = Database::open(&config.db_path)?;
-    let manager = automemory_core::sync::VaultManager::new(&db, &vault_path);
-    manager.export_to_vault()?;
+    automemory_core::ports::VaultExporter::new(&db, vault_path.clone()).export()?;
     println!(
         "✓ Exported database to text-first vault at: {:?}",
         vault_path
@@ -1083,7 +1085,8 @@ pub fn export_vault(path: Option<String>) -> Result<()> {
         if let Some(ref remote_url) = global_cfg.vault.remote_url {
             let _ = automemory_core::sync::GitSync::set_remote(&vault_path, "origin", remote_url);
             println!("Pushing vault updates to GitHub remote: {}...", remote_url);
-            if let Err(e) = automemory_core::sync::GitSync::push(&vault_path, None, None) {
+            let transport = automemory_core::ports::GitTransport;
+            if let Err(e) = transport.push(&vault_path, None, None) {
                 println!("ℹ Git push note: {}", e);
             } else {
                 println!("✓ Successfully pushed vault updates to GitHub!");
