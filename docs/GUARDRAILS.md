@@ -70,5 +70,14 @@ automemory rule list
 automemory rule toggle <rule-id> --disable
 
 # Delete a rule:
-automemory rule delete <rule-id>
+automemory rule remove <rule-id>
 ```
+
+### 🔐 Human authorization for safety writes
+
+Rule mutations (`add`/`remove`/`toggle`), hook pipeline changes, `mode set`, and the dashboard's rule/mode endpoints require a **human password** — agents with shell or localhost access cannot satisfy it:
+
+- Set it once: `automemory rule passwd` (or `--from-env` with `AUTOMEMORY_PASSWORD`).
+- The CLI accepts the password only from `AUTOMEMORY_PASSWORD` or an interactive `/dev/tty` prompt (echo disabled). Piped stdin — how agents invoke hooks — always fails closed.
+- The dashboard accepts it as the `X-AutoMemory-Password` header (403 otherwise). Read paths stay open.
+- Hashes are PBKDF2-HMAC-SHA256 (600k rounds); plaintext is never stored. Until a password is set, writes are allowed once with a warning.

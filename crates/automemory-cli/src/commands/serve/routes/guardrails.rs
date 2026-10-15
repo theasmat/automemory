@@ -3,7 +3,7 @@ use automemory_core::guardrails::CustomGuardrailRule;
 use automemory_core::models::*;
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -11,6 +11,33 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
+
+/// Human gate for dashboard safety writes. The browser dashboard prompts for
+/// the password and sends it as `X-AutoMemory-Password`; scripts use the same
+/// header. Unset password warns once and allows (fresh installs stay usable).
+fn require_human_header(
+    headers: &HeaderMap,
+    action: &str,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let deny = |msg: String| (StatusCode::FORBIDDEN, Json(json!({ "error": msg })));
+    let Some(hash) =
+        automemory_core::auth::stored_password_hash().filter(|h| !h.trim().is_empty())
+    else {
+        eprintln!(
+            "⚠ Dashboard safety write '{action}' allowed with no human password set. Run `automemory rule passwd` to lock it."
+        );
+        return Ok(());
+    };
+    match headers
+        .get("x-automemory-password")
+        .and_then(|v| v.to_str().ok())
+    {
+        Some(pw) if automemory_core::auth::verify_password(pw, &hash) => Ok(()),
+        _ => Err(deny(format!(
+            "Safety change '{action}' needs the human password in the X-AutoMemory-Password header."
+        ))),
+    }
+}
 
 #[derive(Deserialize)]
 pub struct ModePayload {
@@ -42,8 +69,12 @@ pub async fn api_get_mode(
 
 pub async fn api_set_mode(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ModePayload>,
 ) -> impl IntoResponse {
+    if let Err(e) = require_human_header(&headers, "mode set") {
+        return e;
+    };
     let mode = match AutopilotMode::from_str(&payload.mode) {
         Ok(m) => m,
         Err(e) => {
@@ -158,8 +189,12 @@ pub struct CreateRulePayload {
 
 pub async fn api_guardrail_rule_add(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<CreateRulePayload>,
 ) -> impl IntoResponse {
+    if let Err(e) = require_human_header(&headers, "rule add") {
+        return e;
+    }
     if let Err(e) = regex::Regex::new(&payload.pattern) {
         return (
             StatusCode::BAD_REQUEST,
@@ -206,8 +241,12 @@ pub async fn api_guardrail_rule_add(
 
 pub async fn api_guardrail_rule_delete(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = require_human_header(&headers, "rule delete") {
+        return e;
+    }
     match state.db.delete_custom_guardrail_rule(&id) {
         Ok(true) => {
             let _ = state.broadcast_tx.send(
@@ -238,9 +277,13 @@ pub struct ToggleRulePayload {
 
 pub async fn api_guardrail_rule_toggle(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(payload): Json<ToggleRulePayload>,
 ) -> impl IntoResponse {
+    if let Err(e) = require_human_header(&headers, "rule toggle") {
+        return e;
+    }
     match state.db.toggle_custom_guardrail_rule(&id, payload.enabled) {
         Ok(true) => {
             let _ = state.broadcast_tx.send(

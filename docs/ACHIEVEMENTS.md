@@ -33,6 +33,6 @@ To avoid bloated in-house re-inventions, AutoMemory explicitly integrates with c
 
 ---
 
-## Document Index
+## Verification history
 
-- [`verified-achievements.md`](verified-achievements.md): Detailed verification breakdown, test suite results, and architectural specifications.
+The old per-test log (`verified-achievements.md`, 20 tests) was retired; status is measured live instead: **120 tests green** (`cargo test --workspace`), hook pipeline **~1.26 ms mean** and FTS recall **~0.56 ms mean** (`cargo bench -p automemory-core --bench perf`), clippy silent. See [OVERVIEW.md](OVERVIEW.md) §5 for the measured table.

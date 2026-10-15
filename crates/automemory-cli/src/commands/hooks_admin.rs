@@ -137,6 +137,10 @@ fn symbols_of(input: &Value) -> Vec<String> {
 /// Edits one handler field in the project hooks.toml (creates the file and a
 /// minimal entry when absent). The global file is never touched.
 pub fn set_field(id: &str, f: impl FnOnce(&mut HandlerSpec)) -> Result<()> {
+    automemory_core::auth::require_human(
+        automemory_core::auth::stored_password_hash().as_deref(),
+        "hooks config change",
+    )?;
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let path = cwd.join(".automemory").join("hooks.toml");
     let mut cfg: HooksConfig = if path.exists() {

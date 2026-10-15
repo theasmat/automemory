@@ -500,6 +500,12 @@ enum RuleCommands {
         /// Enable flag (true or false)
         enabled: bool,
     },
+    /// Set the human password guarding safety writes (rule/hooks/mode changes)
+    Passwd {
+        /// Read the new password from AUTOMEMORY_PASSWORD instead of prompting
+        #[arg(long, default_value_t = false)]
+        from_env: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1115,6 +1121,7 @@ async fn main() -> Result<()> {
             )?,
             RuleCommands::Remove { id } => commands::rule::remove(&id)?,
             RuleCommands::Toggle { id, enabled } => commands::rule::toggle(&id, enabled)?,
+            RuleCommands::Passwd { from_env } => commands::rule::passwd(from_env)?,
         },
         Commands::Skill { command } => match command {
             SkillCommands::List { project } => commands::skill::list(project)?,

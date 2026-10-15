@@ -190,3 +190,49 @@ Performs blast-radius impact analysis for modifying a file or symbol, tracing de
 - **Parameters**:
   - `target` *(required, string)*: Symbol name or relative file path.
   - `depth` *(optional, integer)*: Max traversal depth (default: 3).
+
+> **Graph depth note:** the built-in indexer records file-level entities with SHA-256 plus `imports` edges; symbol-level entities arrive via `graph.index` companions or `ingest_graph_data`. `callers()` returns indexed dependents — real, but only as deep as the indexed relations.
+
+---
+
+## Multi-Agent Coordination Tools
+
+### `memory.ask`
+Alias for `memory.recall` with PRD naming: ranked short entries with ids, status, trust tier, and provenance. Tiers 1–3 only unless `include_untrusted` is set.
+
+### `memory.about`
+Everything known about a file or symbol: graph entities, callers, and linked memories (tier-filtered like recall).
+- **Parameters**: `target` *(required)*, `project_id`, `include_untrusted`.
+
+### `memory.topics`
+What is queryable: active decision topics plus distinct memory tags.
+
+### `memory.propose`
+Writes a **candidate**-tier memory. Rejected without provenance.
+- **Parameters**: `content`, `summary`, `evidence` *(all required)*.
+
+### `memory.constitution`
+Token-capped Hot Memory Constitution: core rules, architecture invariants, gotchas.
+
+### `memory.skills`
+Auto-distilled procedural skill playbooks from verified success traces.
+
+### `lock.acquire` / `lock.release` / `lock.status`
+Cooperative leases on file, glob, or symbol scope with TTL and heartbeat. Required for acquire: `scope`, `goal`. Conflicts return holder, goal, and remaining TTL.
+
+### `decision.record` / `decision.get`
+Record a decision with rationale, alternatives, and dissent (supersedes prior on topic); fetch active decision plus history. Required for record: `topic`, `decision`, `reason`.
+
+### `task.create` / `task.next` / `task.submit`
+Enqueue work with spec and symbol scope; claim oldest-open FIFO (or resume); submit hands to review (owner session only).
+
+### `review.submit` / `review.next` / `review.post`
+Queue a diff; fetch the oldest pending diff by another session; post a verdict. `tests_passed` is required — failing tests reject regardless of vote.
+
+### `room.pending` / `room.join` / `room.post` / `room.status`
+Planning-room turns: list actionable rooms; join or create on a topic; post propose/critique/revise (turn holder only, evidence IDs must resolve); fetch room with posts.
+
+### `baton.pass` / `baton.pickup`
+Sub-400-token ledger-grounded handoff packets between sessions (direct or broadcast pickup).
+
+Full machine-readable schemas: call MCP `tools/list` (e.g. `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | automemory mcp`).

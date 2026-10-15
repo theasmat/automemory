@@ -1,4 +1,4 @@
-# Core Cognitive Engine & Features
+w# Core Cognitive Engine & Features
 
 AutoMemory is engineered from the ground up in native Rust to provide high-speed, local-first persistent memory for AI coding agents.
 
@@ -7,9 +7,8 @@ AutoMemory is engineered from the ground up in native Rust to provide high-speed
 ## 1. Native Rust Architecture (<5ms Latency)
 
 Unlike traditional Python or Node.js memory wrappers that introduce hundreds of megabytes of dependencies and significant startup latency, AutoMemory runs as a single, compiled binary:
-- **Zero Interpreter Overhead**: Startup latency under 1 millisecond.
-- **Minimal RAM Footprint**: Less than 15 MB baseline memory usage.
-- **Deterministic Multi-threading**: Thread-safe database connection pool with WAL mode enabled.
+- **Zero Interpreter Overhead**: Hook pipeline measured ~1.26 ms mean (`cargo bench -p automemory-core --bench perf`; PRD budget is 5 ms p95).
+- **Single-Writer SQLite**: One `Arc<Mutex<Connection>>` in WAL mode — no pool, no lock contention by construction.
 - **Embedded Static Assets**: Built-in Axum HTTP server serves the pre-compiled Nuxt dashboard directly from memory without runtime filesystem dependencies.
 
 ---
@@ -21,14 +20,14 @@ AutoMemory combines full-text BM25 search with mathematical time-decay scoring t
 $$\text{FinalScore} = \text{BM25Rank} \times e^{-\lambda \cdot \Delta t} \times \text{ConfidenceScore}$$
 
 - **Temporal Decay ($\lambda$)**: Older decisions gradually yield to recent revisions unless reinforced by explicit usage.
-- **Contradiction Detection**: Automatically penalizes outdated instructions when contradictory architectural decisions are saved.
-- **Deterministic FTS5 Indexing**: Sub-millisecond keyword lookup across millions of historical events.
+- **Contradiction Detection**: At recall time, memories naming a different version of the same tool than current context are flagged (generic `name version` matching; ports and years excluded).
+- **Deterministic FTS5 Indexing**: ~0.56 ms mean recall over 500 memories (measured, see [OVERVIEW](OVERVIEW.md) §5).
 
 ---
 
-## 3. 100-to-1 Trajectory Distillation
+## 3. Trajectory Distillation
 
-Coding agents produce noisy interaction transcripts: exploratory directory listings, trial-and-error edits, and redundant status checks. AutoMemory applies multi-stage trajectory distillation:
+Coding agents produce noisy interaction transcripts: exploratory directory listings, trial-and-error edits, and redundant status checks. AutoMemory applies multi-stage trajectory distillation (distilling a 40-event session measures ~0.11 ms; no fixed compression ratio is claimed):
 
 ```text
 Raw Interaction Trajectory (100+ Events)
@@ -66,12 +65,12 @@ LLM context windows are precious and expensive. AutoMemory never dumps unbounded
 
 ---
 
-## 6. AST Code Knowledge Graph (Tree-Sitter)
+## 6. File-Level Code Knowledge Graph
 
-AutoMemory integrates native Tree-Sitter parsers to analyze codebase structure:
-- **Symbol & File Entities**: Indexes functions, structs, classes, modules, and documentation files.
-- **Blast-Radius Impact Analysis (`graph.impact`)**: Given a modified function or file, traces callers, dependencies, and imports to predict potential breaking changes.
-- **Zero-Language Server Protocol (LSP) Dependency**: Fast, static syntax graph generation without requiring active language server daemons.
+AutoMemory indexes codebase structure without language servers:
+- **File & Doc Entities**: Indexes files and documentation with SHA-256 content hashes; symbol-level extraction arrives via the `CodeIntel` port.
+- **Blast-Radius Impact Analysis (`graph.impact`)**: Given a modified file or symbol, traces indexed dependents. Results are only as deep as the indexed `imports` relations.
+- **Zero-Language Server Protocol (LSP) Dependency**: Fast static graph generation without requiring active language server daemons.
 
 ---
 
@@ -79,5 +78,5 @@ AutoMemory integrates native Tree-Sitter parsers to analyze codebase structure:
 
 To eliminate database corruption, lock contention, and manual SQL hazards, AutoMemory enforces a strict **Zero-SQL Rule**:
 - Agents and human operators interact strictly via high-level MCP tools (`memory.proposals.*`) or CLI subcommands (`automemory proposal ...`).
-- Raw `sqlite3 ~/.automemory/automemory.db` shell commands are actively intercepted and blocked by the AST guardrail engine.
-- Batch proposal decisions and duplicate-merge archival run atomically within single-transaction locks at speeds exceeding 12,000 proposals/second.
+- Raw `sqlite3 ~/.automemory/automemory.db` shell commands are actively intercepted and blocked by the guardrail engine.
+- Batch proposal decisions and duplicate-merge archival run atomically within single-transaction locks.

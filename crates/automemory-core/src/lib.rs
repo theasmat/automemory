@@ -1,4 +1,5 @@
 pub mod baton;
+pub mod auth;
 pub mod bip39;
 pub mod config;
 pub mod crypto;

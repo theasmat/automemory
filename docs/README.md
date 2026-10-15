@@ -1,22 +1,38 @@
 # AutoMemory Documentation Index
 
-Welcome to the official technical documentation for **AutoMemory** — the local-first, zero-knowledge persistent memory and autonomous intelligence platform for AI coding agents.
+Local-first persistent memory, verified recall, and multi-agent coordination for AI coding agents. Pure Rust, single binary, SQLite WAL.
 
 ---
 
-## 📚 Documentation Chapters
+## Start here
 
-| Document | Description |
+| Document | What it is |
 |---|---|
-| 📦 **[Installation Guide](INSTALLATION.md)** | macOS, Linux, and Windows quick scripts, Cargo installs, prerequisites, and diagnostics. |
-| 🤖 **[Coding Agents Integration](AGENTS.md)** | Deep integration guide for 20 coding agents (Claude, Cursor, Antigravity, Windsurf, Roo, etc.). |
-| 🧠 **[Core Features & Cognitive Architecture](FEATURES.md)** | Native Rust core, BM25 decay search, 100-to-1 trajectory distillation, and failure catalogs. |
-| 🔌 **[Model Context Protocol (MCP) Reference](MCP_TOOLS.md)** | Full reference for all 26 MCP tools with input schemas, parameters, and descriptions. |
-| 🛡️ **[Autonomous Guardrails & Safety](GUARDRAILS.md)** | AST command tokenizer, catastrophic interceptor, and `vibe`/`strict`/`review` autopilot modes. |
-| 🔒 **[Zero-Knowledge Cloud Sync & Vault](SYNC_AND_VAULT.md)** | OpenViking git-ignored plan sync, private GitHub vaults, and Cloudflare edge gateway. |
-| 🖥️ **[Interactive Dashboard & REST API](DASHBOARD.md)** | Embedded web console (`http://localhost:4545`), proposal bulk actions, and WebSocket live pulse. |
-| 🛠️ **[CLI Command Reference](CLI_REFERENCE.md)** | Complete command-line reference and cheat sheet for all subcommands. |
-| 🧪 **[Human Testing & Edge Cases](human_testing_guide.md)** | QA guide with copy-paste prompts and verification steps for real-world scenarios. |
+| [PRD](PRD.md) | Normative product requirements: goals, 16 ports, hook pipeline, trust model, phases |
+| [OVERVIEW](OVERVIEW.md) | Vision, pillars, measured benchmarks, roadmap |
+| [ARCHITECTURE](ARCHITECTURE.md) | As-built technical architecture: runtime, tools, data model |
+| [PRODUCT](PRODUCT.md) | Detailed product spec: registry, extraction, sync, acceptance criteria |
+
+## Use it
+
+| Document | What it is |
+|---|---|
+| [INSTALLATION](INSTALLATION.md) | Installers, Cargo builds, diagnostics |
+| [AGENTS](AGENTS.md) | 20-agent integration matrix, hook events, cross-agent sharing |
+| [HOOKS](HOOKS.md) | Hook event catalog, pipeline config (`hooks.toml`), install/remove |
+| [CLI_REFERENCE](CLI_REFERENCE.md) | Every CLI command with flags |
+| [MCP_TOOLS](MCP_TOOLS.md) | All 59 MCP tools with schemas |
+| [human_testing_guide](human_testing_guide.md) | QA walkthrough with copy-paste prompts |
+
+## Operate it
+
+| Document | What it is |
+|---|---|
+| [GUARDRAILS](GUARDRAILS.md) | Safety modes, rule specs, custom policies |
+| [SYNC_AND_VAULT](SYNC_AND_VAULT.md) | Vault sync, BIP-39 pairing, edge gateway |
+| [DASHBOARD](DASHBOARD.md) | Embedded console, REST, WebSocket pulse |
+| [FEATURES](FEATURES.md) | Retrieval, distillation, failure catalog, constitution |
+| [ACHIEVEMENTS](ACHIEVEMENTS.md) | Verified capability ledger + measurement history |
 
 ---
 

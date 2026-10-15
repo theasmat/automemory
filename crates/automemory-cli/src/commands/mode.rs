@@ -34,6 +34,10 @@ pub fn get(project_slug: Option<String>) -> Result<()> {
 }
 
 pub fn set(mode_str: &str, project_slug: Option<String>) -> Result<()> {
+    automemory_core::auth::require_human(
+        automemory_core::auth::stored_password_hash().as_deref(),
+        "mode set",
+    )?;
     let mode = AutopilotMode::from_str(mode_str)?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)

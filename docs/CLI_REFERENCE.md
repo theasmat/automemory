@@ -131,7 +131,7 @@ automemory mode get [--project <slug>]
 ```
 
 ### `automemory mode set`
-Configures the autopilot mode.
+Configures the autopilot mode. Requires human authorization (see `rule passwd`).
 ```bash
 automemory mode set vibe     # Max velocity, inline warnings
 automemory mode set strict   # Halts on all high-risk commands
@@ -145,23 +145,32 @@ automemory rule list
 ```
 
 ### `automemory rule add`
-Adds a custom regex guardrail rule.
+Adds a custom regex guardrail rule. Requires human authorization (see below).
 ```bash
 automemory rule add --name "Protect Keys" --pattern "(?i)/id_rsa" --critical
 ```
 
 ### `automemory rule toggle`
-Enables or disables an existing rule.
+Enables or disables an existing rule. Requires human authorization (see below).
 ```bash
 automemory rule toggle <rule-id> --enable
 automemory rule toggle <rule-id> --disable
 ```
 
-### `automemory rule delete`
-Removes a custom guardrail rule.
+### `automemory rule remove`
+Removes a custom guardrail rule. Requires human authorization (see below).
 ```bash
-automemory rule delete <rule-id>
+automemory rule remove <rule-id>
 ```
+
+### `automemory rule passwd`
+Sets the human password guarding safety writes (`rule add/remove/toggle`, `hooks enable/disable/move`, `mode set`, dashboard rule/mode edits). Agents cannot satisfy it: it accepts only the `AUTOMEMORY_PASSWORD` env var or an interactive terminal prompt — never piped stdin, never a CLI flag (flags leak to shell history).
+```bash
+automemory rule passwd
+automemory rule passwd --from-env   # read from AUTOMEMORY_PASSWORD instead
+export AUTOMEMORY_PASSWORD=<password>  # non-interactive human scripts
+```
+With no password set, safety writes are allowed once with a warning pointing at `rule passwd`. Passwords are stored as PBKDF2-HMAC-SHA256 hashes, never plaintext.
 
 ---
 
@@ -196,4 +205,82 @@ automemory sync watch [--interval 5] [--project <slug>]
 Inspects local uncommitted plans, sync ledger revisions, and cloud connectivity.
 ```bash
 automemory sync status
+```
+
+---
+
+## 7. Multi-Agent Coordination, Plugins & Eval
+
+### `automemory disconnect`
+Removes exactly what `connect` wrote for one agent (MCP server keys, hooks key, plugin dir). Third-party entries and edited files are left intact.
+```bash
+automemory disconnect cursor
+automemory disconnect agy -g
+```
+
+### `automemory adapter`
+Lists the 20 registered adapters with hook coverage, or re-runs an adapter's installer.
+```bash
+automemory adapter list
+automemory adapter update cursor [-g]
+```
+
+### `automemory hooks`
+Inspects and dry-runs the hook pipeline (`hooks.toml` layers).
+```bash
+automemory hooks list
+echo '{"tool":"edit","paths":["src/a.ts"]}' | automemory hooks test --event pre-tool --input "$(cat)"
+automemory hooks enable <id> | automemory hooks disable <id> | automemory hooks move <id> <priority>
+```
+
+### `automemory plugin`
+Lists the 16 versioned ports and installed manifests; installs/updates with api_version gating, pins versions, rolls back.
+```bash
+automemory plugin list
+automemory plugin install ./my-plugin.toml
+automemory plugin pin <name> | automemory plugin rollback <name>
+```
+
+### `automemory eval`
+Runs the local eval suites (retrieval, stale flags, leases, hook latency); exit 0 iff all pass.
+```bash
+automemory eval run [--json]
+```
+
+### `automemory stop`
+Kill switch: releases every active lease, halting multi-agent work.
+```bash
+automemory stop [--project <slug>]
+```
+
+### `automemory locks` / `automemory unlock`
+```bash
+automemory locks [--project <slug>]
+automemory unlock <scope> [--project <slug>] [--force]
+```
+
+### `automemory decision`
+```bash
+automemory decision record --topic auth --decision "..." --reason "..."
+automemory decision get <topic>
+automemory decision list
+```
+
+### `automemory pin` / `veto` / `revoke`
+```bash
+automemory pin <memory-id>
+automemory veto <memory-id> [--reason "..."]
+automemory revoke [--id <id>] [--session <id>] [--agent <name>]
+```
+
+### `automemory baton`
+```bash
+automemory baton pass --session <id> [--to <id>] [--note "..."]
+automemory baton pickup [--session <id>]
+```
+
+### `automemory memory get` / `digest`
+```bash
+automemory memory get <memory-id>
+automemory memory digest [--span 1h] [--save]
 ```

@@ -1,9 +1,35 @@
 use anyhow::{Context, Result};
-use automemory_core::config::Config;
+use automemory_core::auth;
+use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::db::Database;
 use automemory_core::guardrails::{CustomGuardrailRule, GuardrailRule};
 use chrono::Utc;
 use uuid::Uuid;
+
+/// Sets (or replaces) the human password guarding safety control-plane
+/// writes. With `--from-env`, reads the secret from AUTOMEMORY_PASSWORD
+/// instead of prompting (for non-TTY setup).
+pub fn passwd(from_env: bool) -> Result<()> {
+    let secret = if from_env {
+        std::env::var(auth::PASSWORD_ENV_VAR).with_context(|| {
+            format!(
+                "{} is not set; nothing changed.",
+                auth::PASSWORD_ENV_VAR
+            )
+        })?
+    } else {
+        auth::prompt_new_password()?
+    };
+    if secret.trim().is_empty() {
+        anyhow::bail!("Empty password rejected; nothing changed.");
+    }
+    let mut cfg = GlobalConfig::load().unwrap_or_default();
+    cfg.security.password_hash = Some(auth::hash_password(&secret));
+    cfg.save()?;
+    println!("✓ Human password set. Safety writes (rule/hooks/mode changes, dashboard rule edits) now require it.");
+    println!("  Non-interactive use: export {}=<password>.", auth::PASSWORD_ENV_VAR);
+    Ok(())
+}
 
 pub fn list(project: Option<String>) -> Result<()> {
     let config = Config::default_config();
@@ -52,6 +78,10 @@ pub fn add(
     mitigation: String,
     project: Option<String>,
 ) -> Result<()> {
+    auth::require_human(
+        auth::stored_password_hash().as_deref(),
+        "rule add",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
@@ -89,6 +119,10 @@ pub fn add(
 }
 
 pub fn remove(id: &str) -> Result<()> {
+    auth::require_human(
+        auth::stored_password_hash().as_deref(),
+        "rule remove",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
@@ -103,6 +137,10 @@ pub fn remove(id: &str) -> Result<()> {
 }
 
 pub fn toggle(id: &str, enabled: bool) -> Result<()> {
+    auth::require_human(
+        auth::stored_password_hash().as_deref(),
+        "rule toggle",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;

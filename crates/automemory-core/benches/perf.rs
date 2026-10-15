@@ -1,5 +1,5 @@
 //! PRD-gated performance benches. Run with `cargo bench -p automemory-core`.
-//! Numbers quoted in WHAT_WE_ARE_BUILDING.md §5 must come from here.
+//! Numbers quoted in docs/OVERVIEW.md §5 must come from here.
 
 use automemory_core::db::Database;
 use automemory_core::extraction::TrajectoryDistiller;

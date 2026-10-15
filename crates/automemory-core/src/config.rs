@@ -14,6 +14,8 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub defaults: DefaultSettings,
     #[serde(default)]
+    pub security: SecurityConfig,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
 }
 
@@ -48,9 +50,19 @@ impl Default for GlobalConfig {
             cloud: CloudConfig::default(),
             vault: VaultConfig::default(),
             defaults: DefaultSettings::default(),
+            security: SecurityConfig::default(),
             projects: Vec::new(),
         }
     }
+}
+
+/// Human authorization for safety control-plane writes. The hash (never the
+/// password) lives in config; see `auth.rs` for why keychain/config-file
+/// contents must not gate anything by themselves.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    #[serde(default)]
+    pub password_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
