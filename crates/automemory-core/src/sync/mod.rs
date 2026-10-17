@@ -1,4 +1,5 @@
 pub mod daemon;
+pub mod deltas;
 pub mod git;
 pub mod vault;
 

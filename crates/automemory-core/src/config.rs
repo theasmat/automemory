@@ -228,6 +228,19 @@ impl GlobalConfig {
                 return Some(p);
             }
         }
+        // Worktree fallback: if cwd is inside a linked git worktree, resolve its canonical git root
+        if let Some(git_root) = crate::sync::GitSync::resolve_git_canonical_root(cwd) {
+            for p in &self.projects {
+                let p_dir = Path::new(&p.local_dir);
+                let p_canon = p_dir
+                    .canonicalize()
+                    .ok()
+                    .unwrap_or_else(|| p_dir.to_path_buf());
+                if git_root == p_canon || git_root.starts_with(&p_canon) {
+                    return Some(p);
+                }
+            }
+        }
         None
     }
 

@@ -422,3 +422,9 @@ CREATE TABLE IF NOT EXISTS room_posts (
 
 CREATE INDEX IF NOT EXISTS idx_rooms_turn ON rooms(project_id, state, turn_holder);
 CREATE INDEX IF NOT EXISTS idx_room_posts_room ON room_posts(room_id, created_at);
+
+-- Sync watermarks + applied delta files (incremental op-log sync)
+CREATE TABLE IF NOT EXISTS sync_kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);

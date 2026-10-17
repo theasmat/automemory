@@ -274,6 +274,19 @@ fn run_migrations(conn: &Connection) {
         );
         let _ = conn.execute("PRAGMA user_version = 8", []);
     }
+
+    if version < 9 {
+        let _ = conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS sync_kv (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            "#,
+            [],
+        );
+        let _ = conn.execute("PRAGMA user_version = 9", []);
+    }
 }
 
 #[cfg(test)]

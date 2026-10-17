@@ -9,6 +9,85 @@ impl GitSync {
         dir.as_ref().join(".git").exists()
     }
 
+    /// Resolves the canonical repository root for any path inside a Git repository
+    /// or a Git worktree. For linked worktrees, parses the `.git` pointer file or
+    /// invokes `git rev-parse --git-common-dir` so that multiple worktrees of the
+    /// same repository resolve to the exact same canonical root directory.
+    pub fn resolve_git_canonical_root<P: AsRef<Path>>(dir: P) -> Option<std::path::PathBuf> {
+        let path = dir.as_ref();
+        let canon = path.canonicalize().ok().unwrap_or_else(|| path.to_path_buf());
+
+        // 1. Walk up to locate .git (file or directory)
+        let mut curr = Some(canon.as_path());
+        let mut worktree_root = None;
+        while let Some(d) = curr {
+            let git_entry = d.join(".git");
+            if git_entry.exists() {
+                worktree_root = Some(d.to_path_buf());
+                if git_entry.is_file() {
+                    // Linked worktree: .git file contains "gitdir: <path>"
+                    if let Ok(content) = std::fs::read_to_string(&git_entry) {
+                        for line in content.lines() {
+                            let trimmed = line.trim();
+                            if let Some(gitdir_str) = trimmed.strip_prefix("gitdir:") {
+                                let gitdir_path = std::path::PathBuf::from(gitdir_str.trim());
+                                let resolved = if gitdir_path.is_absolute() {
+                                    gitdir_path
+                                } else {
+                                    d.join(gitdir_path)
+                                };
+                                // gitdir points to <main_repo>/.git/worktrees/<name>
+                                // resolved.parent() -> .git/worktrees
+                                // resolved.parent().parent() -> .git
+                                // resolved.parent().parent().parent() -> <main_repo>
+                                if let Some(main_repo) = resolved
+                                    .parent()
+                                    .and_then(|p| p.parent())
+                                    .and_then(|p| p.parent())
+                                {
+                                    if let Ok(main_canon) = main_repo.canonicalize() {
+                                        return Some(main_canon);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if git_entry.is_dir() {
+                    // Main repository root
+                    return Some(d.to_path_buf());
+                }
+                break;
+            }
+            curr = d.parent();
+        }
+
+        // 2. Fallback via git rev-parse --git-common-dir if gitdir parsing didn't find the main repo
+        let output = Command::new("git")
+            .args(["rev-parse", "--git-common-dir"])
+            .current_dir(path)
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let common_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !common_str.is_empty() {
+                let common_path = std::path::PathBuf::from(&common_str);
+                let full_common = if common_path.is_absolute() {
+                    common_path
+                } else {
+                    path.join(common_path)
+                };
+                if let Ok(canon_common) = full_common.canonicalize() {
+                    // The parent of the common .git directory is the canonical repo root
+                    if let Some(parent) = canon_common.parent() {
+                        return Some(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        worktree_root
+    }
+
     pub fn init_repo<P: AsRef<Path>>(dir: P) -> Result<()> {
         let status = Command::new("git")
             .arg("init")

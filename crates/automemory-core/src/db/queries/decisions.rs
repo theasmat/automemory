@@ -210,6 +210,65 @@ impl Database {
         Ok(decisions)
     }
 
+    /// Fetches one decision by id (used by delta sync; topic queries live in
+    /// [`Database::get_decision`]).
+    pub fn get_decision_by_id(&self, id: &str) -> Result<Option<Decision>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, topic, decision, reason, alternatives, dissent, agent,
+                    symbols, evidence, status, superseded_by, created_at, updated_at
+             FROM decisions WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_decision(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Upserts one decision by id without touching the supersede chain.
+    /// Sync apply path only; human writes go through [`Database::record_decision`].
+    pub fn save_decision_direct(&self, d: &Decision) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO decisions (
+                id, project_id, topic, decision, reason, alternatives, dissent, agent,
+                symbols, evidence, status, superseded_by, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id,
+                topic = excluded.topic,
+                decision = excluded.decision,
+                reason = excluded.reason,
+                alternatives = excluded.alternatives,
+                dissent = excluded.dissent,
+                agent = excluded.agent,
+                symbols = excluded.symbols,
+                evidence = excluded.evidence,
+                status = excluded.status,
+                superseded_by = excluded.superseded_by,
+                updated_at = excluded.updated_at",
+            params![
+                d.id,
+                d.project_id,
+                d.topic,
+                d.decision,
+                d.reason,
+                serde_json::to_string(&d.alternatives)?,
+                d.dissent,
+                d.agent,
+                serde_json::to_string(&d.symbols)?,
+                serde_json::to_string(&d.evidence)?,
+                d.status.to_string(),
+                d.superseded_by,
+                d.created_at.to_rfc3339(),
+                d.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
     fn row_to_decision(row: &rusqlite::Row) -> rusqlite::Result<Decision> {
         let alts_str: String = row.get(5)?;
         let syms_str: String = row.get(8)?;

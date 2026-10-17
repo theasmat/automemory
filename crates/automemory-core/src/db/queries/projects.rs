@@ -192,41 +192,57 @@ impl Database {
     }
 
     pub fn find_project_by_path(&self, path: &str) -> Result<Option<Project>> {
-        let conn = self.conn();
-        // Exact match first, or path starts with registered root
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT p.id, p.slug, p.display_name, p.created_at, p.updated_at,
-                   p.capture_policy, p.context_budget, p.document_config, p.sync_config
-            FROM projects p
-            JOIN project_paths pp ON p.id = pp.project_id
-            WHERE ?1 = pp.local_path OR ?1 LIKE (pp.local_path || '/%')
-            ORDER BY LENGTH(pp.local_path) DESC
-            LIMIT 1
-            "#,
-        )?;
-        let mut rows = stmt.query(params![path])?;
-        if let Some(row) = rows.next()? {
-            let created_at_str: String = row.get(3)?;
-            let updated_at_str: String = row.get(4)?;
-            let cp_str: String = row.get(5)?;
-            let cb_str: String = row.get(6)?;
-            let dc_str: String = row.get(7)?;
-            let sc_str: String = row.get(8)?;
+        let found = {
+            let conn = self.conn();
+            // Exact match first, or path starts with registered root
+            let mut stmt = conn.prepare(
+                r#"
+                SELECT p.id, p.slug, p.display_name, p.created_at, p.updated_at,
+                       p.capture_policy, p.context_budget, p.document_config, p.sync_config
+                FROM projects p
+                JOIN project_paths pp ON p.id = pp.project_id
+                WHERE ?1 = pp.local_path OR ?1 LIKE (pp.local_path || '/%')
+                ORDER BY LENGTH(pp.local_path) DESC
+                LIMIT 1
+                "#,
+            )?;
+            let mut rows = stmt.query(params![path])?;
+            if let Some(row) = rows.next()? {
+                let created_at_str: String = row.get(3)?;
+                let updated_at_str: String = row.get(4)?;
+                let cp_str: String = row.get(5)?;
+                let cb_str: String = row.get(6)?;
+                let dc_str: String = row.get(7)?;
+                let sc_str: String = row.get(8)?;
 
-            Ok(Some(Project {
-                id: row.get(0)?,
-                slug: row.get(1)?,
-                display_name: row.get(2)?,
-                created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
-                updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?.with_timezone(&Utc),
-                capture_policy: serde_json::from_str(&cp_str)?,
-                context_budget: serde_json::from_str(&cb_str)?,
-                document_config: serde_json::from_str(&dc_str)?,
-                sync_config: serde_json::from_str(&sc_str)?,
-            }))
-        } else {
-            Ok(None)
+                Some(Project {
+                    id: row.get(0)?,
+                    slug: row.get(1)?,
+                    display_name: row.get(2)?,
+                    created_at: DateTime::parse_from_rfc3339(&created_at_str)?.with_timezone(&Utc),
+                    updated_at: DateTime::parse_from_rfc3339(&updated_at_str)?.with_timezone(&Utc),
+                    capture_policy: serde_json::from_str(&cp_str)?,
+                    context_budget: serde_json::from_str(&cb_str)?,
+                    document_config: serde_json::from_str(&dc_str)?,
+                    sync_config: serde_json::from_str(&sc_str)?,
+                })
+            } else {
+                None
+            }
+        };
+
+        if let Some(project) = found {
+            return Ok(Some(project));
         }
+
+        // Git worktree fallback: connection lock is dropped, so recursive call is completely deadlock-free
+        if let Some(git_root) = crate::sync::GitSync::resolve_git_canonical_root(std::path::Path::new(path)) {
+            let git_root_str = git_root.to_string_lossy().to_string();
+            if git_root_str != path {
+                return self.find_project_by_path(&git_root_str);
+            }
+        }
+
+        Ok(None)
     }
 }

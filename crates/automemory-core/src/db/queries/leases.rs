@@ -5,6 +5,27 @@ use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
 use uuid::Uuid;
 
+/// Resolves a project identifier (either UUID id or string slug) to a pair (id, slug)
+/// so that queries match regardless of whether callers passed the slug or UUID.
+fn resolve_project_ident_pair(
+    conn: &rusqlite::Connection,
+    project_id: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let p_ref = match project_id {
+        Some(p) if !p.trim().is_empty() => p,
+        _ => return (None, None),
+    };
+    if let Ok((id, slug)) = conn.query_row(
+        "SELECT id, slug FROM projects WHERE id = ?1 OR slug = ?1 LIMIT 1",
+        params![p_ref],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    ) {
+        (Some(id), Some(slug))
+    } else {
+        (Some(p_ref.to_string()), Some(p_ref.to_string()))
+    }
+}
+
 impl Database {
     /// Acquires a new lease or renews an existing lease held by the same session.
     /// If another session holds an active unexpired lease on an overlapping scope, returns a conflict.
@@ -17,14 +38,15 @@ impl Database {
         let _ = conn.execute("DELETE FROM leases WHERE expires_at < ?1", params![now_str]);
 
         // 2. Fetch all active leases in the project (or global)
+        let (p_id, p_slug) = resolve_project_ident_pair(&conn, args.project_id);
         let mut stmt = conn.prepare(
             "SELECT id, project_id, agent, session_id, scope, scope_type, goal, ttl_seconds, acquired_at, heartbeat_at, expires_at
              FROM leases
-             WHERE (project_id IS ?1 OR project_id IS NULL OR ?1 IS NULL)",
+             WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2 OR project_id IS NULL)",
         )?;
 
         let active_leases = stmt
-            .query_map(params![args.project_id], |row| {
+            .query_map(params![p_id, p_slug], |row| {
                 let acquired_str: String = row.get(8)?;
                 let heartbeat_str: String = row.get(9)?;
                 let expires_str: String = row.get(10)?;
@@ -163,14 +185,15 @@ impl Database {
         // Purge expired leases
         let _ = conn.execute("DELETE FROM leases WHERE expires_at < ?1", params![now_str]);
 
+        let (p_id, p_slug) = resolve_project_ident_pair(&conn, project_id);
         let mut stmt = conn.prepare(
             "SELECT id, project_id, agent, session_id, scope, scope_type, goal, ttl_seconds, acquired_at, heartbeat_at, expires_at
              FROM leases
-             WHERE (project_id IS ?1 OR project_id IS NULL OR ?1 IS NULL) AND session_id != ?2",
+             WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2 OR project_id IS NULL) AND session_id != ?3",
         )?;
 
         let other_leases = stmt
-            .query_map(params![project_id, session_id], |row| {
+            .query_map(params![p_id, p_slug, session_id], |row| {
                 let expires_str: String = row.get(10)?;
                 let scope_type_str: String = row.get(5)?;
                 Ok((
@@ -240,18 +263,21 @@ impl Database {
     /// Unlocks a scope regardless of session holder (CLI / Admin override).
     pub fn unlock_scope(&self, project_id: Option<&str>, scope: &str) -> Result<usize> {
         let conn = self.conn();
+        let (p_id, p_slug) = resolve_project_ident_pair(&conn, project_id);
         let count = conn.execute(
-            "DELETE FROM leases WHERE (project_id IS ?1 OR project_id IS NULL OR ?1 IS NULL) AND scope = ?2",
-            params![project_id, scope],
+            "DELETE FROM leases WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2 OR project_id IS NULL) AND scope = ?3",
+            params![p_id, p_slug, scope],
         )?;
         Ok(count)
     }
 
     /// Kill-switch: releases every active lease regardless of holder.
     pub fn release_all_leases(&self, project_id: Option<&str>) -> Result<usize> {
-        let count = self.conn().execute(
-            "DELETE FROM leases WHERE (?1 IS NULL OR project_id = ?1 OR project_id IS NULL)",
-            params![project_id],
+        let conn = self.conn();
+        let (p_id, p_slug) = resolve_project_ident_pair(&conn, project_id);
+        let count = conn.execute(
+            "DELETE FROM leases WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2 OR project_id IS NULL)",
+            params![p_id, p_slug],
         )?;
         Ok(count)
     }
@@ -290,15 +316,16 @@ impl Database {
         // Purge expired leases first
         let _ = conn.execute("DELETE FROM leases WHERE expires_at < ?1", params![now_str]);
 
+        let (p_id, p_slug) = resolve_project_ident_pair(&conn, project_id);
         let mut stmt = conn.prepare(
             "SELECT id, project_id, agent, session_id, scope, scope_type, goal, ttl_seconds, acquired_at, heartbeat_at, expires_at
              FROM leases
-             WHERE (?1 IS NULL OR project_id = ?1)
+             WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2)
              ORDER BY acquired_at DESC",
         )?;
 
         let leases = stmt
-            .query_map(params![project_id], |row| {
+            .query_map(params![p_id, p_slug], |row| {
                 let acquired_str: String = row.get(8)?;
                 let heartbeat_str: String = row.get(9)?;
                 let expires_str: String = row.get(10)?;
