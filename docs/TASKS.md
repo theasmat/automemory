@@ -31,6 +31,7 @@ Open work, derived from [PLAN](PLAN.md) and the current working tree. Update as 
 - [ ] Commit-bound staleness on revert/rewrite
 - [ ] Cross-memory contradiction detection beyond version mismatch
 - [ ] Pre-merge file-overlap check (git-based; leases stay file/glob)
+- [x] `connect` and project `.mcp.json` now launch the native `codebase-memory-mcp` binary (the `npx @codebase-memory/mcp` package does not exist); repo indexed (4819 nodes)
 - [ ] Make codebase-memory-mcp the CodeIntel provider: pinned version, `doctor` check, wire `symbol_exists`/`symbol_hash`/`callers` to it; keep file-hash fallback only
 
 ## Docs hygiene

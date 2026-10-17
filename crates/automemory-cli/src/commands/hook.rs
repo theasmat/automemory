@@ -12,6 +12,7 @@ use chrono::Utc;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{self, IsTerminal, Read};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
 
@@ -90,8 +91,10 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                     "prompt": ctx,
                 })
             );
-            return Ok(());
+        } else {
+            println!("{{}}");
         }
+        return Ok(());
     }
 
     // ── Pending-work nudge: only speaks when something is assigned ─────────
@@ -182,7 +185,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // ── Session Completion & Major Milestone Distillation ────────────────────
     // Intermediate tool calls (view, grep, edit, read) only append to raw telemetry.
     // Full distillation only runs at session stop or major git commit completion.
-    let is_major_milestone = normalized_event
+    let is_major_cmd = normalized_event
         .tool
         .as_ref()
         .and_then(|t| t.input.as_ref())
@@ -191,14 +194,26 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                 .or_else(|| i.get("command"))
                 .and_then(|v| v.as_str())
         })
-        .is_some_and(|cmd| cmd.contains("git commit") || cmd.contains("git merge"));
+        .is_some_and(|cmd| {
+            let c = cmd.to_lowercase();
+            c.contains("git commit") || c.contains("git merge")
+        });
 
     if canonical == Some(CanonicalEvent::Stop)
         || canonical == Some(CanonicalEvent::PostCommit)
-        || is_major_milestone
+        || is_major_cmd
     {
         run_post_tool_distillation(&db, &session_id);
     }
+
+    // Auto-rescan and update document intelligence if any plan/spec/doc was touched
+    auto_rescan_doc_if_applicable(
+        &db,
+        &project_root,
+        effective_project_id,
+        normalized_event.tool.as_ref(),
+        &raw_payload,
+    );
 
     // Release all active leases held by this session upon stop — unless work
     // is owed, in which case the stop is blocked (PRD §7.2) and the human is
@@ -362,6 +377,77 @@ fn run_post_tool_distillation(db: &Database, session_id: &str) {
     let _ = segmenter.process_and_distill_session_with(&distiller, session_id);
 }
 
+/// Automatically rescans and recompiles document intelligence if any tracked document was touched.
+fn auto_rescan_doc_if_applicable(
+    db: &Database,
+    project_root: &str,
+    effective_project_id: Option<&str>,
+    tool_info: Option<&ToolInfo>,
+    raw_payload: &Value,
+) {
+    let tool = match tool_info {
+        Some(t) => t,
+        None => return,
+    };
+    if tool.category != "file_write" && tool.category != "edit" {
+        return;
+    }
+    let (paths, _) = extract_target_paths_and_symbols(
+        &tool.name,
+        tool.input.as_ref().unwrap_or(raw_payload),
+    );
+    let touches_doc = paths.iter().any(|p| {
+        let l = p.to_lowercase();
+        l.ends_with(".md")
+            && (l.contains("plan")
+                || l.contains("doc")
+                || l.contains("spec")
+                || l.contains("prd")
+                || l.contains("adr")
+                || l.contains("rfc")
+                || l.contains("rule")
+                || l.contains("roadmap")
+                || l.contains("architecture")
+                || l.contains("agents")
+                || l.contains("claude"))
+    });
+    if touches_doc {
+        let p_id = effective_project_id.unwrap_or("auto");
+        let root = if project_root.is_empty() {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        } else {
+            PathBuf::from(project_root)
+        };
+        let scanner = automemory_core::docs::DocumentScanner::new(std::sync::Arc::new(db.clone()));
+        let proj = db
+            .get_project_by_id(p_id)
+            .ok()
+            .flatten()
+            .or_else(|| db.get_project_by_slug(p_id).ok().flatten())
+            .unwrap_or_else(|| automemory_core::models::Project {
+                id: p_id.to_string(),
+                slug: p_id.to_string(),
+                display_name: p_id.to_string(),
+                document_config: Default::default(),
+                sync_config: Default::default(),
+                capture_policy: Default::default(),
+                context_budget: Default::default(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        for p in &paths {
+            let full_path = if Path::new(p).is_absolute() {
+                PathBuf::from(p)
+            } else {
+                root.join(p)
+            };
+            if full_path.is_file() {
+                let _ = scanner.process_file(&proj, &root, &full_path);
+            }
+        }
+    }
+}
+
 /// Resolves the project reference based on CLI flags, environment variables,
 /// payload workspace paths, git top-level, or working directory fallback.
 fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> ProjectRef {
@@ -403,7 +489,7 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
             .unwrap_or_else(|_| ".".to_string())
     });
 
-    // 3. Match against registered projects in DB
+    // 3. Match against registered projects in DB (worktree-aware via Database::find_project_by_path)
     if let Ok(Some(p)) = db.find_project_by_path(&current_dir) {
         return ProjectRef {
             id: Some(p.id),
@@ -413,28 +499,26 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
         };
     }
 
-    // 4. Git root detection
-    if let Ok(output) = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(&current_dir)
-        .output()
-    {
-        if output.status.success() {
-            let git_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if let Ok(Some(p)) = db.find_project_by_path(&git_root) {
-                return ProjectRef {
-                    id: Some(p.id),
-                    slug: Some(p.slug),
-                    root_path: git_root,
-                    source_git_remote: None,
-                };
-            }
+    // 4. Git root / worktree canonical root detection
+    let canonical_root =
+        automemory_core::sync::GitSync::resolve_git_canonical_root(std::path::Path::new(&current_dir));
+    if let Some(ref git_root) = canonical_root {
+        let git_root_str = git_root.to_string_lossy().to_string();
+        if let Ok(Some(p)) = db.find_project_by_path(&git_root_str) {
+            return ProjectRef {
+                id: Some(p.id),
+                slug: Some(p.slug),
+                root_path: current_dir,
+                source_git_remote: None,
+            };
         }
     }
 
-    // Fallback: basename of directory
-    let folder = std::path::Path::new(&current_dir)
-        .file_name()
+    // Fallback: derive slug from canonical git root if available, so all worktrees share the same slug!
+    let folder = canonical_root
+        .as_ref()
+        .and_then(|r| r.file_name())
+        .or_else(|| std::path::Path::new(&current_dir).file_name())
         .and_then(|s| s.to_str())
         .unwrap_or("default");
 
@@ -630,6 +714,21 @@ fn extract_target_paths_and_symbols(
             }
         }
     }
+
+    // Ensure both absolute and relative path forms are checked for lease collisions
+    let mut normalized_extras = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_str = cwd.to_string_lossy();
+        for p in &paths {
+            if let Some(rel) = p.strip_prefix(cwd_str.as_ref()) {
+                let trimmed = rel.trim_start_matches('/');
+                if !trimmed.is_empty() && !paths.contains(&trimmed.to_string()) {
+                    normalized_extras.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+    paths.extend(normalized_extras);
 
     (paths, symbols)
 }

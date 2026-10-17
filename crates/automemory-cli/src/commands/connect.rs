@@ -30,8 +30,8 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
 
 fn codebase_memory_config() -> serde_json::Value {
     serde_json::json!({
-        "command": "npx",
-        "args": ["-y", "@codebase-memory/mcp@latest"]
+        "command": "codebase-memory-mcp",
+        "args": []
     })
 }
 
@@ -81,9 +81,25 @@ pub(crate) fn connect_agy(
         let mcp_path = gemini_config.join("mcp_config.json");
         merge_mcp_config(&mcp_path, exe_path)?;
 
+        let global_skill_dir = gemini_config.join("skills").join("automemory");
+        let _ = fs::create_dir_all(&global_skill_dir);
+        let _ = fs::write(global_skill_dir.join("SKILL.md"), automemory_skill_content());
+
+        let plugin_skill_dir = gemini_config
+            .join("plugins")
+            .join("automemory")
+            .join("skills")
+            .join("automemory");
+        let _ = fs::create_dir_all(&plugin_skill_dir);
+        let _ = fs::write(plugin_skill_dir.join("SKILL.md"), automemory_skill_content());
+
         println!(
             "✓ [GLOBAL] Connected to Antigravity / Gemini at {}",
             mcp_path.display()
+        );
+        println!(
+            "  🧠 Installed global skill: {}",
+            global_skill_dir.join("SKILL.md").display()
         );
     } else {
         let agents_dir = workspace_root.join(".agents");
@@ -157,12 +173,41 @@ pub(crate) fn connect_agy(
             serde_json::to_string_pretty(&hooks_val)?,
         )?;
 
+        // 5. Skills (Workspace & Plugin)
+        let ws_skill_dir = agents_dir.join("skills").join("automemory");
+        fs::create_dir_all(&ws_skill_dir)?;
+        fs::write(ws_skill_dir.join("SKILL.md"), automemory_skill_content())?;
+
+        let plugin_skill_dir = plugin_dir.join("skills").join("automemory");
+        fs::create_dir_all(&plugin_skill_dir)?;
+        fs::write(plugin_skill_dir.join("SKILL.md"), automemory_skill_content())?;
+
+        // 6. Rules & Guidelines (AGENTS.md, GEMINI.md, .agents/rules/automemory.md)
+        let rules_dir = agents_dir.join("rules");
+        fs::create_dir_all(&rules_dir)?;
+        fs::write(rules_dir.join("automemory.md"), automemory_rules_content())?;
+
+        let agents_md = workspace_root.join("AGENTS.md");
+        if !agents_md.exists() {
+            let _ = fs::write(&agents_md, automemory_rules_content());
+        }
+        let gemini_md = workspace_root.join("GEMINI.md");
+        if !gemini_md.exists() {
+            let _ = fs::write(&gemini_md, automemory_rules_content());
+        }
+
+        // 7. Git post-commit hook
+        let _ = install_git_post_commit_hook(workspace_root, exe_path);
+
         println!(
             "✓ [WORKSPACE] Connected to Antigravity at {}",
             workspace_root.display()
         );
         println!("  🪝 Registered hooks in: .agents/hooks.json");
         println!("  📦 Created plugin in:   .agents/plugins/automemory/");
+        println!("  🧠 Installed skill in:   .agents/skills/automemory/SKILL.md");
+        println!("  📜 Generated rules in:   AGENTS.md, GEMINI.md, .agents/rules/");
+        println!("  ⚓ Git post-commit hook: active");
     }
 
     Ok(())
@@ -204,7 +249,16 @@ pub(crate) fn connect_claude(
     } else {
         let ws_mcp = workspace_root.join(".mcp.json");
         merge_mcp_config(&ws_mcp, exe_path)?;
+
+        let claude_md = workspace_root.join("CLAUDE.md");
+        if !claude_md.exists() {
+            let _ = fs::write(&claude_md, automemory_rules_content());
+        }
+        let _ = install_git_post_commit_hook(workspace_root, exe_path);
+
         println!("✓ [WORKSPACE] Connected to Claude at {}", ws_mcp.display());
+        println!("  📝 Guidelines configured in CLAUDE.md");
+        println!("  ⚓ Git post-commit hook: active");
     }
 
     Ok(())
@@ -252,6 +306,7 @@ pub(crate) fn connect_cursor(
     // remove it again in `disconnect`; see CURSOR_RULES).
     let cursorrules_path = workspace_root.join(".cursorrules");
     let _ = fs::write(&cursorrules_path, CURSOR_RULES);
+    let _ = install_git_post_commit_hook(workspace_root, exe_path);
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -260,6 +315,7 @@ pub(crate) fn connect_cursor(
         target_path.display()
     );
     println!("  📝 Created/updated .cursorrules guidelines");
+    println!("  ⚓ Git post-commit hook: active");
     Ok(())
 }
 
@@ -874,3 +930,128 @@ pub(crate) fn get_vscode_user_dir(home: &Path) -> PathBuf {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     return home.join(".vscode").join("User");
 }
+
+pub(crate) fn automemory_skill_content() -> &'static str {
+    r#"---
+name: automemory
+description: >
+  Autonomous multi-agent memory, zero-staleness blackboard, cross-worktree advisory leases,
+  and automatic session distillation. Use whenever working on codebases with AutoMemory enabled
+  to automatically recall context, lease files before editing, sync decisions, record lessons,
+  and update memories.
+argument-hint: "[context|status|lease|record]"
+license: MIT
+---
+
+# AutoMemory Autonomous Agent Skill
+
+You are operating with **AutoMemory**—the autonomous cognitive memory, safety guardrail, and multi-agent coordination layer. AutoMemory automatically tracks your actions via out-of-process hooks, prevents collisions across git worktrees, and distills durable memories and success traces.
+
+Follow this autonomous protocol for all tasks in this repository.
+
+---
+
+## 1. Task Initialization & Context Boot
+At the start of any new task, feature, or refactoring:
+1. **Load Active Project Context**:
+   - Call MCP tool `memory.constitution` or `memory.context` to retrieve hot architectural invariants, active rules, and past gotchas.
+   - Call `decision.get` for relevant domains (e.g. `architecture`, `database`, `concurrency`) to ensure your implementation complies with active decisions.
+   - Call `doc.list` if the task involves specifications, plans, or PRDs.
+2. **Check for Inbound Handoff**:
+   - If continuing work from another agent, call `baton.pickup` with your session ID to receive the prior agent's token-budgeted handoff packet.
+
+---
+
+## 2. Resource Leases (Multi-Agent & Worktree Safety)
+Before modifying or refactoring shared files in multi-agent or parallel worktree environments:
+1. **Acquire an Advisory Lease**:
+   - Call `lock.acquire` with:
+     - `scope`: relative file path (e.g. `src/auth.c`), glob (`src/models/*.rs`), or symbol (`auth::login`).
+     - `goal`: concise description of what you are changing and why.
+     - `ttl_seconds`: estimated duration (e.g. 300 to 600s).
+   - If granted: proceed with your edits.
+   - If conflict: inspect `holder_agent`, `goal`, and `remaining_seconds`. Choose another task or wait for expiration.
+2. **Release Upon Completion**:
+   - When file edits and tests are complete, call `lock.release` to free the resource for peer agents.
+
+---
+
+## 3. Autonomous Architectural Decisions & Checkpoints
+When you establish a key architectural policy, choose between alternative libraries/approaches, or resolve a major design choice:
+1. **Record the Decision**:
+   - Call `decision.record` with:
+     - `topic`: domain name (e.g. `storage-engine`, `auth-flow`).
+     - `decision`: clear 1-line statement of the chosen policy.
+     - `reason`: justification and rationale.
+     - `alternatives`: list of rejected options.
+   - This propagates immediately with **0ms staleness** to all parallel agents and worktrees.
+2. **Milestone Memories**:
+   - While AutoMemory's hooks automatically distill sessions upon test success and git commits, you can explicitly preserve critical domain insights or patterns using `memory.save(category="architecture|lesson|pattern", ...)`.
+
+---
+
+## 4. Failure Recovery & Error Diagnosis
+When encountering an unexpected build error, test failure, or runtime issue:
+1. Diagnose the root cause using codebase evidence.
+2. Apply the verified fix.
+3. If the bug was subtle or dangerous, call `failure.save` or `memory.save` with `category: "lesson"` to prevent future agents from repeating the same mistake.
+
+---
+
+## 5. Task Handoff & Completion
+When finishing your assigned task or when reaching context window limits:
+1. Release all active file leases (`lock.release`).
+2. If another agent or subsequent session will continue the work, call `baton.pass` with:
+   - `addressed_to`: name of receiving agent or role.
+   - `context`: concise summary of work done and immediate next steps.
+   - `artifacts`: list of files modified or created.
+"#
+}
+
+pub(crate) fn automemory_rules_content() -> &'static str {
+    r#"# AutoMemory Multi-Agent Coordination Guidelines
+
+This workspace is integrated with **AutoMemory**.
+- **Context Awareness**: At the start of tasks, call `memory.context` or `memory.constitution` to load project invariants and active decisions.
+- **Mutual Exclusion**: Before modifying shared files, call `lock.acquire(scope="<file>", goal="<goal>")` to prevent collisions with parallel agents in other worktrees. Release with `lock.release` when done.
+- **Architectural Policy**: Record non-trivial architectural decisions with `decision.record` so all parallel agents see them with 0ms latency.
+- **Handoffs**: Pass context to peer workers using `baton.pass`.
+- **Pre-Tool Safety**: Pre-tool hooks intercept destructive operations (e.g. recursive root deletions, force pushes). Never attempt raw destructive shell commands.
+"#
+}
+
+pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str) -> Result<()> {
+    let git_dir = if let Some(canonical) = automemory_core::sync::GitSync::resolve_git_canonical_root(workspace_root) {
+        canonical.join(".git")
+    } else {
+        workspace_root.join(".git")
+    };
+
+    if !git_dir.exists() {
+        return Ok(());
+    }
+
+    let hooks_dir = git_dir.join("hooks");
+    let _ = fs::create_dir_all(&hooks_dir);
+    let post_commit_path = hooks_dir.join("post-commit");
+
+    let script = format!(
+        r#"#!/bin/sh
+# AutoMemory Git Post-Commit Hook (auto-updates memory on commit)
+AUTOMEMORY_EXE="{}"
+if [ -x "$AUTOMEMORY_EXE" ]; then
+    "$AUTOMEMORY_EXE" hook --agent git --event post-commit --project auto >/dev/null 2>&1 || true
+fi
+"#,
+        exe_path
+    );
+
+    fs::write(&post_commit_path, script)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&post_commit_path, fs::Permissions::from_mode(0o755));
+    }
+    Ok(())
+}
+
