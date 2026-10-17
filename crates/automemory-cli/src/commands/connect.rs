@@ -83,7 +83,10 @@ pub(crate) fn connect_agy(
 
         let global_skill_dir = gemini_config.join("skills").join("automemory");
         let _ = fs::create_dir_all(&global_skill_dir);
-        let _ = fs::write(global_skill_dir.join("SKILL.md"), automemory_skill_content());
+        let _ = fs::write(
+            global_skill_dir.join("SKILL.md"),
+            automemory_skill_content(),
+        );
 
         let plugin_skill_dir = gemini_config
             .join("plugins")
@@ -91,7 +94,10 @@ pub(crate) fn connect_agy(
             .join("skills")
             .join("automemory");
         let _ = fs::create_dir_all(&plugin_skill_dir);
-        let _ = fs::write(plugin_skill_dir.join("SKILL.md"), automemory_skill_content());
+        let _ = fs::write(
+            plugin_skill_dir.join("SKILL.md"),
+            automemory_skill_content(),
+        );
 
         println!(
             "✓ [GLOBAL] Connected to Antigravity / Gemini at {}",
@@ -180,7 +186,10 @@ pub(crate) fn connect_agy(
 
         let plugin_skill_dir = plugin_dir.join("skills").join("automemory");
         fs::create_dir_all(&plugin_skill_dir)?;
-        fs::write(plugin_skill_dir.join("SKILL.md"), automemory_skill_content())?;
+        fs::write(
+            plugin_skill_dir.join("SKILL.md"),
+            automemory_skill_content(),
+        )?;
 
         // 6. Rules & Guidelines (AGENTS.md, GEMINI.md, .agents/rules/automemory.md)
         let rules_dir = agents_dir.join("rules");
@@ -211,6 +220,191 @@ pub(crate) fn connect_agy(
     }
 
     Ok(())
+}
+
+// ── Claude Code / Codex native hooks ────────────────────────────────────────
+/// Substring identifying hook commands written by `connect`; used to replace
+/// our entries idempotently and to strip them on `disconnect`.
+pub(crate) const HOOK_MARKER: &str = " hook --agent ";
+
+/// (hook event name, matcher, `automemory hook --event` value)
+type HookSpec = (&'static str, Option<&'static str>, &'static str);
+
+pub(crate) const CLAUDE_HOOKS: &[HookSpec] = &[
+    ("SessionStart", Some("startup|resume|clear|compact"), "boot"),
+    ("UserPromptSubmit", None, "prompt"),
+    ("PreToolUse", Some("*"), "pre-tool"),
+    ("PostToolUse", Some("*"), "post-tool"),
+    ("PostToolUseFailure", Some("*"), "post-tool-fail"),
+    ("Stop", None, "stop"),
+];
+
+pub(crate) const CODEX_HOOKS: &[HookSpec] = &[
+    ("SessionStart", Some("startup|resume|clear|compact"), "boot"),
+    ("UserPromptSubmit", None, "prompt"),
+    ("PreToolUse", Some("*"), "pre-tool"),
+    ("PostToolUse", Some("*"), "post-tool"),
+    ("Stop", None, "stop"),
+];
+
+fn is_automemory_group(group: &serde_json::Value) -> bool {
+    group
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .is_some_and(|hs| {
+            hs.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|c| c.contains(HOOK_MARKER) && c.contains("--project auto"))
+            })
+        })
+}
+
+fn shell_quote_exe(exe_path: &str) -> String {
+    if exe_path.contains(char::is_whitespace) {
+        format!("\"{exe_path}\"")
+    } else {
+        exe_path.to_string()
+    }
+}
+
+/// Merges our hooks into a Claude Code / Codex style JSON file
+/// (`{"hooks": {Event: [{matcher, hooks: [{type, command, timeout}]}]}}`).
+/// Existing user hooks and other keys are preserved; our own entries are replaced.
+pub(crate) fn merge_native_hooks(
+    path: &Path,
+    exe_path: &str,
+    agent: &str,
+    specs: &[HookSpec],
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut root: serde_json::Value = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(path)?).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if !root.is_object() {
+        root = serde_json::json!({});
+    }
+    if !root.get("hooks").is_some_and(|h| h.is_object()) {
+        root["hooks"] = serde_json::json!({});
+    }
+    let exe = shell_quote_exe(exe_path);
+    for (event, matcher, cli_event) in specs {
+        let hooks = &mut root["hooks"];
+        let mut groups: Vec<serde_json::Value> = hooks
+            .get(*event)
+            .and_then(|g| g.as_array())
+            .cloned()
+            .unwrap_or_default();
+        groups.retain(|g| !is_automemory_group(g));
+        let mut group = serde_json::json!({
+            "hooks": [{
+                "type": "command",
+                "command": format!("{exe} hook --agent {agent} --event {cli_event} --project auto"),
+                "timeout": 5
+            }]
+        });
+        if let Some(m) = matcher {
+            group["matcher"] = serde_json::json!(m);
+        }
+        groups.push(group);
+        hooks[*event] = serde_json::Value::Array(groups);
+    }
+    fs::write(path, serde_json::to_string_pretty(&root)?)?;
+    Ok(())
+}
+
+/// Removes only our hook groups. Returns true when the file changed.
+/// Empty event arrays and an empty `hooks` object are pruned; the file is
+/// never deleted.
+pub(crate) fn strip_native_hooks(path: &Path) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path)?) else {
+        return Ok(false);
+    };
+    let Some(hooks) = root.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
+        return Ok(false);
+    };
+    let mut changed = false;
+    for groups in hooks.values_mut() {
+        if let Some(arr) = groups.as_array_mut() {
+            let before = arr.len();
+            arr.retain(|g| !is_automemory_group(g));
+            changed |= arr.len() != before;
+        }
+    }
+    hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
+    if hooks.is_empty() {
+        root.as_object_mut().map(|o| o.remove("hooks"));
+    }
+    if changed {
+        fs::write(path, serde_json::to_string_pretty(&root)?)?;
+    }
+    Ok(changed)
+}
+
+/// Codex reads MCP servers from `config.toml` (`[mcp_servers.<name>]`), not JSON.
+/// Appends our table only when absent so user comments and ordering survive.
+pub(crate) fn merge_codex_toml(path: &Path, exe_path: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut text = if path.exists() {
+        fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+    if text.contains("[mcp_servers.automemory]") {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    let exe = serde_json::to_string(exe_path)?; // JSON string == valid TOML basic string
+    text.push_str(&format!(
+        "[mcp_servers.automemory]\ncommand = {exe}\nargs = [\"mcp\"]\n\n[mcp_servers.automemory.env]\nAUTOMEMORY_PROJECT_NAME = \"auto\"\n"
+    ));
+    fs::write(path, text)?;
+    Ok(())
+}
+
+/// Removes `[mcp_servers.automemory]` and its sub-tables from a Codex TOML file.
+pub(crate) fn strip_codex_toml(path: &Path) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let text = fs::read_to_string(path)?;
+    let mut out = Vec::new();
+    let mut skipping = false;
+    let mut changed = false;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            skipping = t == "[mcp_servers.automemory]" || t.starts_with("[mcp_servers.automemory.");
+        }
+        if skipping {
+            changed = true;
+        } else {
+            out.push(line);
+        }
+    }
+    if changed {
+        let mut joined = out.join("\n");
+        joined = joined.trim_end().to_string();
+        if !joined.is_empty() {
+            joined.push('\n');
+        }
+        fs::write(path, joined)?;
+    }
+    Ok(changed)
 }
 
 // ── Claude Code & Claude Desktop ────────────────────────────────────────────
@@ -246,6 +440,9 @@ pub(crate) fn connect_claude(
             "✓ [GLOBAL] Connected to Claude Code at {}",
             claude_config.display()
         );
+        let settings = home.join(".claude").join("settings.json");
+        merge_native_hooks(&settings, exe_path, "claude", CLAUDE_HOOKS)?;
+        println!("  🪝 Registered hooks in: {}", settings.display());
     } else {
         let ws_mcp = workspace_root.join(".mcp.json");
         merge_mcp_config(&ws_mcp, exe_path)?;
@@ -257,6 +454,10 @@ pub(crate) fn connect_claude(
         let _ = install_git_post_commit_hook(workspace_root, exe_path);
 
         println!("✓ [WORKSPACE] Connected to Claude at {}", ws_mcp.display());
+        // Machine-specific binary path: keep out of the committed settings.json.
+        let settings = workspace_root.join(".claude").join("settings.local.json");
+        merge_native_hooks(&settings, exe_path, "claude", CLAUDE_HOOKS)?;
+        println!("  🪝 Registered hooks in: {}", settings.display());
         println!("  📝 Guidelines configured in CLAUDE.md");
         println!("  ⚓ Git post-commit hook: active");
     }
@@ -523,20 +724,27 @@ pub(crate) fn connect_codex(
     exe_path: &str,
     global: bool,
 ) -> Result<()> {
-    let target_path = if global {
-        home.join(".codex").join("config.json")
+    let dir = if global {
+        home.join(".codex")
     } else {
-        workspace_root.join(".codex").join("config.json")
+        workspace_root.join(".codex")
     };
-
-    merge_mcp_config(&target_path, exe_path)?;
+    let config_toml = dir.join("config.toml");
+    merge_codex_toml(&config_toml, exe_path)?;
+    let hooks_json = dir.join("hooks.json");
+    merge_native_hooks(&hooks_json, exe_path, "codex", CODEX_HOOKS)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
         "✓ {} Connected to Codex CLI at {}",
         scope_tag,
-        target_path.display()
+        config_toml.display()
     );
+    println!("  🪝 Registered hooks in: {}", hooks_json.display());
+    println!("  ⚠️  Codex skips new hooks until trusted: run `codex`, open /hooks, review and trust them.");
+    if !global {
+        println!("     Project-level .codex/ is only loaded for trusted projects.");
+    }
     Ok(())
 }
 
@@ -1021,7 +1229,9 @@ This workspace is integrated with **AutoMemory**.
 }
 
 pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let git_dir = if let Some(canonical) = automemory_core::sync::GitSync::resolve_git_canonical_root(workspace_root) {
+    let git_dir = if let Some(canonical) =
+        automemory_core::sync::GitSync::resolve_git_canonical_root(workspace_root)
+    {
         canonical.join(".git")
     } else {
         workspace_root.join(".git")
@@ -1054,4 +1264,3 @@ fi
     }
     Ok(())
 }
-

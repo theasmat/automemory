@@ -36,6 +36,10 @@ enum Removal {
     ContinueJson(PathBuf),
     /// Strip `context_servers.automemory` from a Zed JSON config.
     ZedJson(PathBuf),
+    /// Strip our groups from a Claude Code / Codex hooks JSON (`hooks.<Event>[]`).
+    NativeHooks(PathBuf),
+    /// Strip `[mcp_servers.automemory]` tables from a Codex `config.toml`.
+    CodexToml(PathBuf),
 }
 
 /// Mirror of each `connect_*` target path in `connect.rs`. Workspace paths
@@ -82,11 +86,18 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
                 ]
             }
         }
-        "claude" => vec![Removal::McpServerJson(if global {
-            home.join(".claude.json")
-        } else {
-            ws(&[".mcp.json"])
-        })],
+        "claude" => vec![
+            Removal::McpServerJson(if global {
+                home.join(".claude.json")
+            } else {
+                ws(&[".mcp.json"])
+            }),
+            Removal::NativeHooks(if global {
+                home.join(".claude/settings.json")
+            } else {
+                ws(&[".claude", "settings.local.json"])
+            }),
+        ],
         "claude-desktop" => {
             #[cfg(target_os = "macos")]
             let p = home.join("Library/Application Support/Claude/claude_desktop_config.json");
@@ -143,11 +154,19 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
         } else {
             ws(&[".zed", "settings.json"])
         })],
-        "codex" => vec![Removal::McpServerJson(if global {
-            home.join(".codex/config.json")
-        } else {
-            ws(&[".codex", "config.json"])
-        })],
+        "codex" => {
+            let dir = if global {
+                home.join(".codex")
+            } else {
+                ws(&[".codex"])
+            };
+            vec![
+                // Legacy JSON config written by older versions.
+                Removal::McpServerJson(dir.join("config.json")),
+                Removal::CodexToml(dir.join("config.toml")),
+                Removal::NativeHooks(dir.join("hooks.json")),
+            ]
+        }
         "opencode" => vec![Removal::McpServerJson(if global {
             home.join(".opencode/config.json")
         } else {
@@ -438,6 +457,8 @@ fn apply(op: &Removal) -> Result<bool> {
         Removal::AiderYaml(p) => strip_aider_block(p),
         Removal::ContinueJson(p) => strip_continue_entry(p),
         Removal::ZedJson(p) => strip_zed_entry(p),
+        Removal::NativeHooks(p) => super::connect::strip_native_hooks(p),
+        Removal::CodexToml(p) => super::connect::strip_codex_toml(p),
     }
 }
 
@@ -451,6 +472,8 @@ fn describe(op: &Removal) -> String {
         Removal::AiderYaml(p) => format!("Aider block in {}", p.display()),
         Removal::ContinueJson(p) => format!("Continue entry in {}", p.display()),
         Removal::ZedJson(p) => format!("Zed entry in {}", p.display()),
+        Removal::NativeHooks(p) => format!("AutoMemory hooks in {}", p.display()),
+        Removal::CodexToml(p) => format!("Codex MCP table in {}", p.display()),
     }
 }
 
@@ -640,5 +663,60 @@ mod tests {
             assert!(!gl.is_empty(), "global targets for {}", a.adapter_id());
         }
         assert!(targets("nope", &home, &cwd, false).is_err());
+    }
+
+    #[test]
+    fn native_hooks_roundtrip_preserves_user_hooks() {
+        use super::super::connect::{merge_native_hooks, CLAUDE_HOOKS};
+        let dir = sandbox("native-hooks");
+        let path = dir.join("settings.json");
+        fs::write(
+            &path,
+            r#"{"model":"x","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-lint"}]}]}}"#,
+        )
+        .unwrap();
+        merge_native_hooks(&path, "/opt/am bin/automemory", "claude", CLAUDE_HOOKS).unwrap();
+        merge_native_hooks(&path, "/opt/am bin/automemory", "claude", CLAUDE_HOOKS).unwrap(); // idempotent
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let pre = val["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 2, "user hook kept, ours added once");
+        assert!(pre[1]["hooks"][0]["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("\"/opt/am bin/automemory\" hook --agent claude --event pre-tool"));
+        assert_eq!(val["model"], "x");
+
+        assert!(super::super::connect::strip_native_hooks(&path).unwrap());
+        let val: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(val["hooks"]["PreToolUse"].as_array().unwrap().len(), 1);
+        assert!(val["hooks"].get("Stop").is_none());
+        assert_eq!(val["model"], "x");
+    }
+
+    #[test]
+    fn codex_toml_append_and_strip_keep_user_content() {
+        use super::super::connect::{merge_codex_toml, strip_codex_toml};
+        let dir = sandbox("codex-toml");
+        let path = dir.join("config.toml");
+        fs::write(
+            &path,
+            "model = \"o3\"\n\n[mcp_servers.other]\ncommand = \"x\"\n",
+        )
+        .unwrap();
+        merge_codex_toml(&path, "/bin/automemory").unwrap();
+        merge_codex_toml(&path, "/bin/automemory").unwrap(); // idempotent
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.matches("[mcp_servers.automemory]").count(), 1);
+        let parsed: toml::Table = text.parse().expect("valid TOML");
+        assert_eq!(
+            parsed["mcp_servers"]["automemory"]["args"][0].as_str(),
+            Some("mcp")
+        );
+        assert!(strip_codex_toml(&path).unwrap());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("automemory"));
+        assert!(text.contains("[mcp_servers.other]") && text.contains("model = \"o3\""));
     }
 }

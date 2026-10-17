@@ -83,14 +83,18 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             .assemble_context(effective_project_id, None, 2000)
             .unwrap_or_default();
         if !ctx.trim().is_empty() {
-            println!(
-                "{}",
-                json!({
-                    "context": ctx,
-                    "additionalContext": ctx,
-                    "prompt": ctx,
-                })
-            );
+            if native_hook_style(agent) {
+                println!("{}", native_context("SessionStart", &ctx));
+            } else {
+                println!(
+                    "{}",
+                    json!({
+                        "context": ctx,
+                        "additionalContext": ctx,
+                        "prompt": ctx,
+                    })
+                );
+            }
         } else {
             println!("{{}}");
         }
@@ -100,7 +104,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // ── Pending-work nudge: only speaks when something is assigned ─────────
     if canonical == Some(CanonicalEvent::UserPromptSubmit) {
         if let Some(nudge) = pending_work_nudge(&db, effective_project_id, &session_id) {
-            println!("{}", json!({ "nudge": nudge }));
+            if native_hook_style(agent) {
+                println!("{}", native_context("UserPromptSubmit", &nudge));
+            } else {
+                println!("{}", json!({ "nudge": nudge }));
+            }
         } else {
             println!("{{}}");
         }
@@ -156,7 +164,12 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
         let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
         let merged = merge_decision(&results);
-        if merged.reason.is_empty() {
+        if native_hook_style(agent) {
+            println!(
+                "{}",
+                native_gate_output(gate_event, merged.decision, &merged.reason)
+            );
+        } else if merged.reason.is_empty() {
             println!("{}", json!({"decision": merged.decision.as_str()}));
         } else {
             println!(
@@ -247,6 +260,46 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         println!("{{}}");
     }
     Ok(())
+}
+
+/// Claude Code and Codex share one hook wire format (`hookSpecificOutput`);
+/// Antigravity and the rest use the flat `{"decision": ...}` shape.
+fn native_hook_style(agent: &str) -> bool {
+    matches!(
+        agent.to_ascii_lowercase().as_str(),
+        "claude" | "claude-code" | "claudecode" | "codex" | "openai"
+    )
+}
+
+/// `hookSpecificOutput` carrying extra model-visible context.
+fn native_context(event_name: &str, text: &str) -> Value {
+    json!({
+        "hookSpecificOutput": {
+            "hookEventName": event_name,
+            "additionalContext": text,
+        }
+    })
+}
+
+/// Maps a pipeline decision onto Claude Code / Codex PreToolUse output.
+/// Only a deny blocks; warn and ask surface as context so the agent sees why.
+fn native_gate_output(event: CanonicalEvent, decision: GateDecision, reason: &str) -> Value {
+    let name = if event == CanonicalEvent::PreCommit {
+        "PreToolUse"
+    } else {
+        event.as_str()
+    };
+    match decision {
+        GateDecision::Deny => json!({
+            "hookSpecificOutput": {
+                "hookEventName": name,
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        }),
+        GateDecision::Allow if reason.is_empty() => json!({}),
+        _ => native_context(name, &format!("[AutoMemory] {reason}")),
+    }
 }
 
 /// Resolves the configured notifier, failing closed to stderr on unknown
@@ -392,10 +445,8 @@ fn auto_rescan_doc_if_applicable(
     if tool.category != "file_write" && tool.category != "edit" {
         return;
     }
-    let (paths, _) = extract_target_paths_and_symbols(
-        &tool.name,
-        tool.input.as_ref().unwrap_or(raw_payload),
-    );
+    let (paths, _) =
+        extract_target_paths_and_symbols(&tool.name, tool.input.as_ref().unwrap_or(raw_payload));
     let touches_doc = paths.iter().any(|p| {
         let l = p.to_lowercase();
         l.ends_with(".md")
@@ -500,8 +551,9 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
     }
 
     // 4. Git root / worktree canonical root detection
-    let canonical_root =
-        automemory_core::sync::GitSync::resolve_git_canonical_root(std::path::Path::new(&current_dir));
+    let canonical_root = automemory_core::sync::GitSync::resolve_git_canonical_root(
+        std::path::Path::new(&current_dir),
+    );
     if let Some(ref git_root) = canonical_root {
         let git_root_str = git_root.to_string_lossy().to_string();
         if let Ok(Some(p)) = db.find_project_by_path(&git_root_str) {
@@ -580,7 +632,13 @@ fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Opt
             "replace_file_content" | "edit_file" | "propose_code" => ("edit", "edit"),
             "grep_search" | "codebase_search" => ("search", "grep"),
             "list_dir" | "find_by_name" => ("search", "glob"),
-            "run_command" => ("command", "command"),
+            "run_command" | "Bash" | "shell" | "local_shell" | "exec_command"
+            | "container.exec" => ("command", "command"),
+            "Read" => ("file_read", "read"),
+            "Write" => ("file_write", "write"),
+            "Edit" | "MultiEdit" | "NotebookEdit" | "apply_patch" => ("edit", "edit"),
+            "Grep" => ("search", "grep"),
+            "Glob" => ("search", "glob"),
             other => ("custom", other),
         };
 
@@ -595,6 +653,7 @@ fn normalize_payload(event: &str, raw: &Value) -> (Option<ToolInfo>, String, Opt
         let result_val = tc
             .get("result")
             .or_else(|| tc.get("output"))
+            .or_else(|| tc.get("tool_response"))
             .or_else(|| raw.get("toolResult"))
             .or_else(|| raw.get("result"))
             .or_else(|| raw.get("output"));
@@ -633,6 +692,7 @@ fn normalize_args(args: Option<&Value>) -> Value {
             ("DirectoryPath", "path"),
             ("SearchDirectory", "path"),
             ("CommandLine", "command"),
+            ("cmd", "command"),
             ("Query", "pattern"),
             ("Pattern", "pattern"),
         ]
@@ -645,6 +705,15 @@ fn normalize_args(args: Option<&Value>) -> Value {
                 map.insert(target_key.to_string(), v.clone());
             }
             map.insert(k.clone(), v.clone());
+        }
+        // Codex passes argv arrays (["bash", "-lc", "..."]); guardrails expect a string.
+        if let Some(Value::Array(argv)) = map.get("command") {
+            let joined = argv
+                .iter()
+                .filter_map(|a| a.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            map.insert("command".to_string(), Value::String(joined));
         }
     }
     Value::Object(map)
@@ -715,6 +784,13 @@ fn extract_target_paths_and_symbols(
         }
     }
 
+    // Codex apply_patch carries file paths inside the patch text.
+    for key in ["input", "patch"] {
+        if let Some(text) = tool_args.get(key).and_then(|v| v.as_str()) {
+            paths.extend(patch_paths(text));
+        }
+    }
+
     // Ensure both absolute and relative path forms are checked for lease collisions
     let mut normalized_extras = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
@@ -731,6 +807,19 @@ fn extract_target_paths_and_symbols(
     paths.extend(normalized_extras);
 
     (paths, symbols)
+}
+
+/// File paths named by `*** Add|Update|Delete File:` lines in an apply_patch body.
+fn patch_paths(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|l| {
+            ["*** Add File:", "*** Update File:", "*** Delete File:"]
+                .iter()
+                .find_map(|p| l.strip_prefix(p))
+        })
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
 }
 
 /// Returns true if the tool modifies, overwrites, or deletes files or symbols.

@@ -9,7 +9,7 @@ pub type ConnectFn = fn(&Path, &Path, &str, bool) -> Result<()>;
 
 /// One registry entry per supported agent surface. The `connect` column is
 /// the same installer `automemory connect` uses; `adapter update` re-runs it
-/// to refresh hook/event mappings. Only `agy` installs native hooks today —
+/// to refresh hook/event mappings. `agy`, `claude` and `codex` install native hooks;
 /// every other surface joins over MCP (the degrade ladder, PRD §7.4).
 pub struct ConnectAdapter {
     pub id: &'static str,
@@ -45,6 +45,13 @@ const AGY_EVENTS: &[CanonicalEvent] = &[
     CanonicalEvent::PostToolUse,
     CanonicalEvent::Stop,
 ];
+const CLAUDE_EVENTS: &[CanonicalEvent] = &[
+    CanonicalEvent::SessionStart,
+    CanonicalEvent::UserPromptSubmit,
+    CanonicalEvent::PreToolUse,
+    CanonicalEvent::PostToolUse,
+    CanonicalEvent::Stop,
+];
 const MCP_ONLY: &[CanonicalEvent] = &[];
 
 pub static ADAPTERS: &[ConnectAdapter] = &[
@@ -57,7 +64,7 @@ pub static ADAPTERS: &[ConnectAdapter] = &[
     ConnectAdapter {
         id: "claude",
         aliases: &["claudecode"],
-        events: MCP_ONLY,
+        events: CLAUDE_EVENTS,
         connect: connect::connect_claude,
     },
     ConnectAdapter {
@@ -105,7 +112,7 @@ pub static ADAPTERS: &[ConnectAdapter] = &[
     ConnectAdapter {
         id: "codex",
         aliases: &["openai"],
-        events: MCP_ONLY,
+        events: CLAUDE_EVENTS,
         connect: connect::connect_codex,
     },
     ConnectAdapter {
@@ -241,13 +248,14 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 20);
-        // Only agy installs native hooks; the rest degrade to MCP-only.
+        // agy, claude and codex install native hooks; the rest degrade to MCP-only.
         let hooked: Vec<&ConnectAdapter> = ADAPTERS
             .iter()
             .filter(|a| !a.hook_events().is_empty())
             .collect();
-        assert_eq!(hooked.len(), 1);
-        assert_eq!(hooked[0].adapter_id(), "agy");
+        let mut ids: Vec<&str> = hooked.iter().map(|a| a.adapter_id()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["agy", "claude", "codex"]);
     }
 
     #[test]

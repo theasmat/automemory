@@ -6,7 +6,8 @@ Open work, derived from [PLAN](PLAN.md) and the current working tree. Update as 
 
 - [ ] Review and commit the uncommitted worktree-sync work (`sync/deltas.rs`, `sync/git.rs`, `leases.rs`, `projects.rs`, `decisions.rs`, `schema.sql`, `connect.rs`, `hook.rs`, `config.rs`, `tests/worktree_sync_test.rs`)
 - [ ] Two-agent collision test (Phase 1 gate): zero silent overwrites; record result
-- [ ] Verify Claude Code, Codex, Antigravity adapters end-to-end: install, hooks fire, MCP tools reachable (contract test per agent version)
+- [x] `connect claude|codex` install native hooks (Claude/Codex hookSpecificOutput format, tool-name + argv + apply_patch normalization), Codex MCP via `config.toml`; `disconnect` reverses; unit + simulated-payload tested
+- [ ] Verify in live Claude Code and Codex sessions (Codex: trust hooks via `/hooks`); add contract tests per agent version
 - [ ] Mark the other 17 connectors as unsupported in `connect`/`doctor` output until promoted
 - [ ] Confirm hook p95 < 5 ms (bench reports mean only)
 
