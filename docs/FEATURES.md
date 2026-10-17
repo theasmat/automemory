@@ -1,82 +1,118 @@
-w# Core Cognitive Engine & Features
+# AutoMemory — Features
 
-AutoMemory is engineered from the ground up in native Rust to provide high-speed, local-first persistent memory for AI coding agents.
+What the product does, for whom, and how far along each piece is. How it is built: [ARCHITECTURE](ARCHITECTURE.md). Order of work: [PLAN](PLAN.md). Open work: [TASKS](TASKS.md).
 
----
+## 1. Product
 
-## 1. Native Rust Architecture (<5ms Latency)
+AutoMemory is a local-first daemon that gives every coding agent one shared, verified project memory plus file locks and handoffs. Agents reach it through MCP tools and optional hooks, so nobody re-explains the project each session.
 
-Unlike traditional Python or Node.js memory wrappers that introduce hundreds of megabytes of dependencies and significant startup latency, AutoMemory runs as a single, compiled binary:
-- **Zero Interpreter Overhead**: Hook pipeline measured ~1.26 ms mean (`cargo bench -p automemory-core --bench perf`; PRD budget is 5 ms p95).
-- **Single-Writer SQLite**: One `Arc<Mutex<Connection>>` in WAL mode — no pool, no lock contention by construction.
-- **Embedded Static Assets**: Built-in Axum HTTP server serves the pre-compiled Nuxt dashboard directly from memory without runtime filesystem dependencies.
+| It is | It is not |
+|---|---|
+| Local Rust daemon, SQLite WAL, MCP server, CLI, dashboard | A hosted service or LLM |
+| Memory of *why*: decisions, constraints, gotchas | A code indexer (CodeIntel bridge supplies the graph) |
+| A referee: locks, trust tiers, verification, audit ledger | An LLM that writes answers or judges code |
+| Pull-based: agents query on demand | A default boot-time prompt injector |
+| Modular: every part behind a port | A monolith with fixed hooks |
 
----
+**Problems it targets:** agent collisions (cross-agent merge conflicts reported at 41.7% vs 19.8% same-agent), lost context between agents, stale and contradicted memory, memory poisoning, retrieval noise, destructive commands, and no proof that memory helps. Deeper gap analysis: [research/multi_agent_ecosystem_needs.md](research/multi_agent_ecosystem_needs.md).
 
-## 2. Hybrid Retrieval with Temporal Exponential Decay
+**Primary user:** one developer running 2–3 agents on one project across terminal and desktop apps. Later: small teams.
 
-AutoMemory combines full-text BM25 search with mathematical time-decay scoring to balance historical relevance against freshness:
+**Use cases:** switch agent mid-feature (`memory.about` + `baton.pickup`); parallel agents without overwrites (lease conflict shows holder/goal/age); "what did we decide?" (`memory.ask` with verified/changed/stale status); refactor or revert flips linked memories; plan a risky change in a Planning Room; catastrophic command blocked; swap a hook or adapter without restart.
 
-$$\text{FinalScore} = \text{BM25Rank} \times e^{-\lambda \cdot \Delta t} \times \text{ConfidenceScore}$$
+## 2. v1 scope
 
-- **Temporal Decay ($\lambda$)**: Older decisions gradually yield to recent revisions unless reinforced by explicit usage.
-- **Contradiction Detection**: At recall time, memories naming a different version of the same tool than current context are flagged (generic `name version` matching; ports and years excluded).
-- **Deterministic FTS5 Indexing**: ~0.56 ms mean recall over 500 memories (measured, see [OVERVIEW](OVERVIEW.md) §5).
+| In v1 | Later (only after v1 works) |
+|---|---|
+| Core: ledger, store, plugin host, hook pipeline | More agents beyond the first three (17 connectors already exist, unsupported) |
+| Adapters: **Claude Code, Codex, Antigravity** | Cloudflare managed SaaS / team sharing |
+| Memory, decisions, trust tiers, verification | Symbol-level leases, own AST graph |
+| Locks, baton handoff, cross-review | Headless Runner, Autopilot as default |
+| **Planning Room orchestration** | WASM plugins, neural embeddings |
+| **Nuxt dashboard** (local `serve`) | Automated PRD/ADR generation, policy engine |
+| Guardrails + human password gate | |
+| Git-vault sync with encrypted keys | |
+| Eval harness (memory on vs off) | |
 
----
+Cut list: auto-distill of every session, auto-generated AGENTS.md, shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
 
-## 3. Trajectory Distillation
+## 3. Feature catalog
 
-Coding agents produce noisy interaction transcripts: exploratory directory listings, trial-and-error edits, and redundant status checks. AutoMemory applies multi-stage trajectory distillation (distilling a 40-event session measures ~0.11 ms; no fixed compression ratio is claimed):
+Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or tested in this repo.
 
-```text
-Raw Interaction Trajectory (100+ Events)
-  ├── 1. Noise Filter (Strip read-only probes, idempotent status checks)
-  ├── 2. Structural Diff Slicing (Isolate functional code edits)
-  ├── 3. Verification Pinning (Identify test passes & build validations)
-  └── 4. Procedural Synthesis
-        ▼
-Compact Reusable Skill Playbook (1 Concise Procedure)
-```
+### Memory and recall
+| Feature | Status | Notes |
+|---|---|---|
+| `ask`, `about`, `get`, `topics`, `search`, `recall`, `propose` | ✅ | FTS5 BM25 × time decay × confidence; ~0.56 ms over 500 memories (bench) |
+| Candidate tier, promote on verify/human confirm | ✅ | `propose` rejected without provenance |
+| Scope-aware dedup + version history | ✅ | In-place upsert |
+| Decay, supersede chains, contradiction flag | ✅ | Contradiction = same tool, different version |
+| Vector search | ✅ (local n-gram) | Neural embeddings later |
+| Procedural skills from trajectories | ✅ | `memory.skills` |
+| Failure catalog (`failure.save/resolve`, proactive warning) | ✅ | |
+| Constitution + token-capped context | ✅ | `boot_injection` off by default |
+| Time-span digest (`15m`…`session`) | ✅ | Edits, files, red→green, failures paired with fixes |
 
-The resulting skills are indexed into `memory.skills` and resurfaced when similar tasks are executed.
+### Verification and trust
+| Feature | Status | Notes |
+|---|---|---|
+| Trust tiers 1–5, provenance, revoke | ✅ | Tier 4–5 withheld from default recall |
+| Symbol/file-hash verify on recall | ✅ | File-level; symbol-level via CodeIntel bridge |
+| PostCommit flips linked memories to `changed` | ✅ | |
+| Revert/rewrite staleness, contradiction across memories | ⬜ | Phase 4 |
 
----
+### Coordination
+| Feature | Status | Notes |
+|---|---|---|
+| File/glob leases, TTL, heartbeat, override | ✅ | Advisory |
+| Worktree-shared memory/decisions/leases | 🔧 | Uncommitted work in `sync/` |
+| Baton handoff | ✅ | |
+| Task queue + cross-review (tests as judge) | ✅ | |
+| Planning Room state machine + MCP tools | ✅ | Gated by its own A/B eval |
+| Blackboard / checkpoint tools | ⬜ | From research doc; verify vs `lock.status`/`baton` first |
+| Symbol leases, pre-merge overlap check | ⬜ | Phase 4 |
 
-## 4. Self-Healing Failure Catalog
+### Safety
+| Feature | Status | Notes |
+|---|---|---|
+| Shell tokenizer guardrail, Vibe/Strict/Review | ✅ | ~1.26 ms hook pipeline mean |
+| Custom rules, Zero-SQL rule, review proposals | ✅ | |
+| Human password gate for policy writes | ✅ | |
+| Shadow mode for new rules | ✅ | Measure false-block rate |
 
-When an agent encounters a broken build, failing test, or runtime crash:
-1. **Error Interception**: AutoMemory captures the tool invocation, CLI command, and stderr stream.
-2. **Root-Cause Hypothesis**: Automatically tags error patterns with hypothesized causes.
-3. **Playbook Synthesis**: Once the agent or human applies a successful fix, the solution is linked via `failure.resolve`.
-4. **Proactive Warning**: Next time an agent attempts a command matching a known unresolved gotcha, AutoMemory warns the agent *before* the command executes.
+### Interfaces
+| Feature | Status | Notes |
+|---|---|---|
+| MCP server (59 tools), CLI | ✅ | |
+| Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; polish pending |
+| Hook pipeline, hot reload, custom exec handlers | ✅ | |
+| `next_action` on every tool reply | ✅ | |
 
----
+### Sync
+| Feature | Status | Notes |
+|---|---|---|
+| Git-ignored plan vault, AES-256-GCM, BIP-39 pairing | ✅ | |
+| Cloudflare managed mode | ⬜ later | `workers/` |
 
-## 5. Hot Memory Constitution & Token Budgets
+### Proof
+| Feature | Status | Notes |
+|---|---|---|
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 120 tests |
+| Eval harness (`automemory eval`) | 🔧 | Needs ≥20 real tasks baseline (Phase 2 gate) |
 
-LLM context windows are precious and expensive. AutoMemory never dumps unbounded historical transcripts into the agent prompt:
-- **Token-Capped Synthesis**: Assembles a compact *Hot Memory Constitution* strictly respecting token limits (e.g., 2,000 tokens).
-- **Prioritization Tiering**:
-  1. Critical project architectural invariants and preferences.
-  2. Unresolved gotchas and known failure patterns.
-  3. High-confidence recent decisions.
-  4. Most-relevant distilled skills.
+## 4. Success metrics
 
----
+| Metric | Target |
+|---|---|
+| Silent overwrites | 0 |
+| Hook p95 | < 5 ms |
+| Task success, memory on vs off | Not worse overall; better on non-inferable tasks |
+| Stale-flag precision | ≥ 90% |
+| Install → first lock or recall | < 5 min |
+| Tokens per session vs baseline | Lower |
 
-## 6. File-Level Code Knowledge Graph
+Not measured and therefore not claimed: distillation compression ratio, dedup row counts, third-party latency comparisons.
 
-AutoMemory indexes codebase structure without language servers:
-- **File & Doc Entities**: Indexes files and documentation with SHA-256 content hashes; symbol-level extraction arrives via the `CodeIntel` port.
-- **Blast-Radius Impact Analysis (`graph.impact`)**: Given a modified file or symbol, traces indexed dependents. Results are only as deep as the indexed `imports` relations.
-- **Zero-Language Server Protocol (LSP) Dependency**: Fast static graph generation without requiring active language server daemons.
+## 5. Acceptance criteria (v1)
 
----
-
-## 7. Zero-SQL Governance Invariant
-
-To eliminate database corruption, lock contention, and manual SQL hazards, AutoMemory enforces a strict **Zero-SQL Rule**:
-- Agents and human operators interact strictly via high-level MCP tools (`memory.proposals.*`) or CLI subcommands (`automemory proposal ...`).
-- Raw `sqlite3 ~/.automemory/automemory.db` shell commands are actively intercepted and blocked by the guardrail engine.
-- Batch proposal decisions and duplicate-merge archival run atomically within single-transaction locks.
+New chat continues from prior decisions; projects never leak into each other by default; global preferences apply unless overridden; capture works with no agent cooperation; a failure with a later fix becomes a linked record; works fully offline; synced data is encrypted before leaving the machine.
