@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::models::{MemoryScope, Preference};
 use anyhow::Result;
@@ -66,7 +67,7 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (scope = 'global' OR project_id = '{}')",
-                pid
+                sql_str(pid)
             ));
         }
         sql.push_str(" ORDER BY scope ASC, key ASC");

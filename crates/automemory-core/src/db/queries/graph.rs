@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::graph::{GraphEdge, GraphEntity};
 use anyhow::Result;
@@ -88,16 +89,16 @@ impl Database {
         let mut sql = "SELECT id, project_id, entity_type, name, path, line_start, line_end, metadata, created_at, updated_at FROM graph_entities WHERE 1=1".to_string();
 
         if let Some(pid) = project_id {
-            sql.push_str(&format!(" AND project_id = '{}'", pid));
+            sql.push_str(&format!(" AND project_id = '{}'", sql_str(pid)));
         }
         if let Some(et) = entity_type {
-            sql.push_str(&format!(" AND entity_type = '{}'", et));
+            sql.push_str(&format!(" AND entity_type = '{}'", sql_str(et)));
         }
         if let Some(np) = name_pattern {
-            sql.push_str(&format!(" AND name LIKE '%{}%'", np));
+            sql.push_str(&format!(" AND name LIKE '%{}%'", sql_str(np)));
         }
         if let Some(pp) = path_prefix {
-            sql.push_str(&format!(" AND path LIKE '{}%'", pp));
+            sql.push_str(&format!(" AND path LIKE '{}%'", sql_str(pp)));
         }
 
         sql.push_str(&format!(" ORDER BY path ASC LIMIT {}", limit));

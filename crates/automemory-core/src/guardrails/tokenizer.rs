@@ -36,34 +36,87 @@ impl ParsedCommand {
 pub struct ShellCommandTree {
     pub commands: Vec<ParsedCommand>,
     pub raw_input: String,
+    /// A downloader or decoder (`curl`, `wget`, `base64 -d`) piped straight into a shell.
+    pub pipes_to_shell: bool,
 }
 
 impl ShellCommandTree {
     /// Tokenizes a raw shell command string, resolves quotes/pipes/subshells (`sh -c`, `sudo`, `npx`, `eval`),
     /// and produces a normalized list of individual parsed commands.
     pub fn parse(raw: &str) -> Self {
+        let stripped = strip_heredoc_bodies(raw);
         let mut commands = Vec::new();
-        let segments = split_command_chain(raw);
+        let mut pipes_to_shell = false;
+        let mut prev: Option<Vec<String>> = None;
 
-        for seg in segments {
+        for (seg, piped_from_prev) in split_command_chain(&stripped) {
             let tokens = tokenize_shell_words(&seg);
             if tokens.is_empty() {
+                prev = None;
                 continue;
             }
+            if piped_from_prev {
+                if let Some(upstream) = &prev {
+                    pipes_to_shell |= is_fetcher(upstream) && is_bare_shell(&tokens);
+                }
+            }
 
-            let unwrapped_commands = unwrap_command_tokens(&tokens);
-            commands.extend(unwrapped_commands);
+            commands.extend(unwrap_command_tokens(&tokens));
+            for inner in command_substitutions(&seg) {
+                let sub = Self::parse(&inner);
+                pipes_to_shell |= sub.pipes_to_shell;
+                commands.extend(sub.commands);
+            }
+            prev = Some(tokens);
         }
 
         Self {
             commands,
             raw_input: raw.to_string(),
+            pipes_to_shell,
         }
+    }
+
+    /// Text for regex rules: the command with the printed or searched text of
+    /// `echo`, `grep`, `git commit -m` and friends blanked out, so a command that
+    /// merely mentions a dangerous string is not mistaken for running it. Shell
+    /// substitutions (`$(...)`, backticks) still execute, so they are kept.
+    pub fn rule_text(raw: &str) -> String {
+        split_command_chain(&strip_heredoc_bodies(raw))
+            .into_iter()
+            .map(|(seg, _)| {
+                let tokens = tokenize_shell_words(&seg);
+                if !is_data_only(&tokens) {
+                    return seg;
+                }
+                let mut kept: Vec<&str> = tokens
+                    .iter()
+                    .take(1)
+                    .chain(tokens.iter().skip(1).filter(|t| t.starts_with('-')))
+                    .map(String::as_str)
+                    .collect();
+                let subs = command_substitutions(&seg);
+                kept.extend(subs.iter().map(String::as_str));
+                kept.join(" ")
+            })
+            .collect::<Vec<_>>()
+            .join(" ; ")
     }
 
     /// Returns true if any parsed command is a destructive `rm -rf /` or `rm -rf ~`.
     pub fn is_destructive_rm_root_or_home(&self) -> bool {
+        let mut cwd_is_root = false;
         for cmd in &self.commands {
+            if cmd.is_binary("cd") {
+                cwd_is_root = cmd
+                    .positional_args
+                    .first()
+                    .is_some_and(|a| is_root_or_home_path(a));
+                continue;
+            }
+            if cmd.is_binary("find") && find_deletes_from_root(cmd) {
+                return true;
+            }
             if cmd.is_binary("rm") {
                 let has_recursive = cmd.flags.iter().any(|f| {
                     (f.starts_with('-') && f.contains('r') && f.contains('f'))
@@ -77,14 +130,8 @@ impl ShellCommandTree {
                 if has_recursive {
                     for arg in &cmd.positional_args {
                         let a = arg.trim();
-                        if a == "/"
-                            || a == "/*"
-                            || a == "~"
-                            || a == "~/*"
-                            || a == "$HOME"
-                            || a == "$HOME/*"
-                            || a == "${HOME}"
-                            || a == "${HOME}/*"
+                        if is_root_or_home_path(a)
+                            || (cwd_is_root && matches!(a, "." | "*" | "./*" | ".*"))
                         {
                             return true;
                         }
@@ -141,16 +188,21 @@ impl ShellCommandTree {
                 let has_force = cmd
                     .flags
                     .iter()
-                    .any(|f| f == "--force" || f == "-f" || f == "--force-with-lease");
+                    .any(|f| f == "--force" || f == "-f" || f == "--force-with-lease")
+                    || cmd
+                        .positional_args
+                        .iter()
+                        .skip(1)
+                        .any(|a| a.starts_with('+'));
                 let targets_prod = cmd.positional_args.iter().skip(1).any(|arg| {
-                    let a = arg.to_lowercase();
-                    a == "main"
-                        || a == "master"
-                        || a == "prod"
-                        || a == "production"
-                        || a == "release"
-                        || a.ends_with(":main")
-                        || a.ends_with(":master")
+                    let a = arg.trim_start_matches('+').to_lowercase();
+                    // `src:dst` pushes to dst; `refs/heads/main` is `main`.
+                    let dst = a.rsplit(':').next().unwrap_or("");
+                    let branch = dst.strip_prefix("refs/heads/").unwrap_or(dst);
+                    matches!(
+                        branch,
+                        "main" | "master" | "prod" | "production" | "release"
+                    )
                 });
 
                 if has_force && targets_prod {
@@ -159,6 +211,24 @@ impl ShellCommandTree {
             }
         }
         false
+    }
+
+    /// Recursive chmod/chown on `/` or the home directory.
+    pub fn is_recursive_perm_change_root(&self) -> bool {
+        self.commands.iter().any(|c| {
+            (c.is_binary("chmod") || c.is_binary("chown") || c.is_binary("chgrp"))
+                && c.flags
+                    .iter()
+                    .any(|f| f == "--recursive" || (!f.starts_with("--") && f.contains('R')))
+                && c.positional_args
+                    .iter()
+                    .any(|a| is_root_or_home_path(a.trim()))
+        })
+    }
+
+    /// `curl … | sh` style execution of unreviewed downloaded or decoded text.
+    pub fn is_pipe_to_shell(&self) -> bool {
+        self.pipes_to_shell
     }
 
     /// Returns true if any command is a raw disk format / block overwrite.
@@ -291,8 +361,134 @@ impl ShellCommandTree {
 }
 
 /// Splits a compound command string into individual pipelines / statements.
-fn split_command_chain(raw: &str) -> Vec<String> {
+/// Drops here-document bodies (`<<EOF ... EOF`): they are data fed to a command,
+/// not commands, so a script or note written through `cat <<EOF` is not executed text.
+fn strip_heredoc_bodies(raw: &str) -> String {
+    if !raw.contains("<<") {
+        return raw.to_string();
+    }
+    let mut out = Vec::new();
+    let mut lines = raw.lines();
+    while let Some(line) = lines.next() {
+        out.push(line);
+        let Some(pos) = line.find("<<") else { continue };
+        let rest = line[pos + 2..].trim_start_matches('-').trim_start();
+        let delim: String = rest
+            .trim_start_matches(['\'', '"'])
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if delim.is_empty() || rest.starts_with('<') {
+            continue; // here-string `<<<` or no delimiter
+        }
+        for body in lines.by_ref() {
+            if body.trim() == delim {
+                break;
+            }
+        }
+    }
+    out.join("\n")
+}
+
+/// Commands whose arguments are text to print or search, never code to run.
+fn is_data_only(tokens: &[String]) -> bool {
+    let rest = if tokens.first().is_some_and(|t| t == "sudo") { &tokens[1..] } else { tokens };
+    let Some(bin) = rest.first().map(|t| t.rsplit('/').next().unwrap_or(t)) else {
+        return false;
+    };
+    matches!(bin, "echo" | "printf" | "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack")
+        || (bin == "git"
+            && rest.iter().skip(1).find(|t| !t.starts_with('-')).is_some_and(|t| {
+                matches!(t.as_str(), "commit" | "tag" | "notes")
+            }))
+}
+
+/// Bodies of `$(...)` and `` `...` `` that the shell would run (not inside single quotes).
+fn command_substitutions(seg: &str) -> Vec<String> {
+    let chars: Vec<char> = seg.chars().collect();
+    let mut out = Vec::new();
+    let (mut i, mut in_single) = (0, false);
+    while i < chars.len() {
+        match chars[i] {
+            '\\' if !in_single => i += 1,
+            '\'' => in_single = !in_single,
+            '$' if !in_single && chars.get(i + 1) == Some(&'(') => {
+                let (mut depth, mut j) = (1, i + 2);
+                while j < chars.len() && depth > 0 {
+                    match chars[j] {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                let end = if depth == 0 { j - 1 } else { j };
+                out.push(chars[i + 2..end].iter().collect());
+                i = j.saturating_sub(1);
+            }
+            '`' if !in_single => {
+                if let Some(rel) = chars[i + 1..].iter().position(|&c| c == '`') {
+                    out.push(chars[i + 1..i + 1 + rel].iter().collect());
+                    i += rel + 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
+fn is_root_or_home_path(a: &str) -> bool {
+    matches!(
+        a,
+        "/" | "/*" | "~" | "~/" | "~/*" | "$HOME" | "$HOME/" | "$HOME/*" | "${HOME}" | "${HOME}/*"
+    )
+}
+
+/// `find <root|home> … -delete` or `-exec rm …`.
+fn find_deletes_from_root(cmd: &ParsedCommand) -> bool {
+    let starts_at_root = cmd
+        .raw_tokens
+        .iter()
+        .skip(1)
+        .take_while(|t| !t.starts_with('-'))
+        .any(|t| is_root_or_home_path(t.trim()));
+    let deletes = cmd.raw_tokens.iter().any(|t| t == "-delete")
+        || cmd
+            .raw_tokens
+            .windows(2)
+            .any(|w| (w[0] == "-exec" || w[0] == "-execdir") && w[1].ends_with("rm"));
+    starts_at_root && deletes
+}
+
+fn is_fetcher(tokens: &[String]) -> bool {
+    match tokens.first().map(String::as_str) {
+        Some("curl" | "wget") => true,
+        Some("base64") => tokens
+            .iter()
+            .any(|t| t == "-d" || t == "-D" || t == "--decode"),
+        _ => false,
+    }
+}
+
+/// A shell reading its script from stdin (no `-c`), optionally under sudo.
+fn is_bare_shell(tokens: &[String]) -> bool {
+    let rest = if tokens.first().is_some_and(|t| t == "sudo") {
+        &tokens[1..]
+    } else {
+        tokens
+    };
+    matches!(
+        rest.first().map(String::as_str),
+        Some("sh" | "bash" | "zsh" | "dash")
+    ) && !rest.iter().any(|t| t == "-c")
+}
+
+/// Splits on `;`, `&&`, `||` and `|`. The flag marks a segment fed by a single pipe.
+fn split_command_chain(raw: &str) -> Vec<(String, bool)> {
     let mut segments = Vec::new();
+    let mut piped = false; // the segment being built follows a single `|`
     let mut current = String::new();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
@@ -334,19 +530,22 @@ fn split_command_chain(raw: &str) -> Vec<String> {
         }
 
         if !in_single_quote && !in_double_quote {
-            if c == ';' || c == '|' {
+            if c == ';' || c == '|' || c == '\n' {
                 if c == '|' && i + 1 < len && chars[i + 1] == '|' {
-                    segments.push(current.trim().to_string());
+                    segments.push((current.trim().to_string(), piped));
+                    piped = false;
                     current.clear();
                     i += 2;
                     continue;
                 }
-                segments.push(current.trim().to_string());
+                segments.push((current.trim().to_string(), piped));
+                piped = c == '|';
                 current.clear();
                 i += 1;
                 continue;
             } else if c == '&' && i + 1 < len && chars[i + 1] == '&' {
-                segments.push(current.trim().to_string());
+                segments.push((current.trim().to_string(), piped));
+                piped = false;
                 current.clear();
                 i += 2;
                 continue;
@@ -358,7 +557,7 @@ fn split_command_chain(raw: &str) -> Vec<String> {
     }
 
     if !current.trim().is_empty() {
-        segments.push(current.trim().to_string());
+        segments.push((current.trim().to_string(), piped));
     }
 
     segments
@@ -585,5 +784,25 @@ mod tests {
         // Benign lookalikes must stay quiet.
         assert!(!ShellCommandTree::parse("dd if=/dev/zero of=backup.img").is_raw_disk_format());
         assert!(!ShellCommandTree::parse("rm -rf ./target").is_destructive_rm_root_or_home());
+    }
+
+    #[test]
+    fn heredoc_bodies_are_data_not_commands() {
+        let danger = ["r", "m -", "rf /"].concat();
+        let script = format!("cat > notes.md <<'EOF'\nrun {danger} to wipe\nEOF\nls");
+        let t = ShellCommandTree::parse(&script);
+        assert!(!t.is_destructive_rm_root_or_home());
+        assert!(!ShellCommandTree::rule_text(&script).contains(&danger));
+        // A command after the heredoc still counts.
+        let real = format!("cat <<EOF\nhello\nEOF\n{danger}");
+        assert!(ShellCommandTree::parse(&real).is_destructive_rm_root_or_home());
+        // `<<<` here-strings are not heredocs.
+        assert!(!strip_heredoc_bodies("grep x <<< \"a\"").is_empty());
+    }
+
+    #[test]
+    fn a_newline_separates_commands() {
+        let danger = ["r", "m -", "rf /"].concat();
+        assert!(ShellCommandTree::parse(&format!("ls\n{danger}")).is_destructive_rm_root_or_home());
     }
 }

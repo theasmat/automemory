@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::guardrails::rules::CustomGuardrailRule;
 use anyhow::Result;
@@ -47,7 +48,7 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (project_id IS NULL OR project_id = '{}')",
-                pid
+                sql_str(pid)
             ));
         }
         sql.push_str(" ORDER BY created_at DESC");

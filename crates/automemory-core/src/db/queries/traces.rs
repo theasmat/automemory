@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::models::SuccessTrace;
 use anyhow::Result;
@@ -61,8 +62,8 @@ impl Database {
         let mut sql = "SELECT id, project_id, title, category, status, preconditions, steps, reproducibility_score, caveats, source_task_id, evidence_event_ids, created_at, updated_at FROM success_traces WHERE 1=1".to_string();
         if let Some(pid) = project_id {
             sql.push_str(&format!(
-                " AND (project_id IS NULL OR project_id = '{}')",
-                pid
+                " AND (project_id = '{0}' OR project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
+                sql_str(pid)
             ));
         }
         sql.push_str(" ORDER BY reproducibility_score DESC, updated_at DESC LIMIT ?1");
@@ -118,5 +119,48 @@ impl Database {
             created_at,
             updated_at,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn trace(id: &str, project: Option<&str>) -> SuccessTrace {
+        SuccessTrace {
+            id: id.into(),
+            project_id: project.map(Into::into),
+            title: id.into(),
+            category: "testing".into(),
+            status: "active".into(),
+            preconditions: vec![],
+            steps: vec![],
+            reproducibility_score: 0.9,
+            caveats: vec![],
+            source_task_id: None,
+            evidence_event_ids: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn project_filter_survives_quotes_and_does_not_leak_other_projects() {
+        let db = Database::open_in_memory().unwrap();
+        db.save_trace(&trace("mine", Some("bob's-app"))).unwrap();
+        db.save_trace(&trace("other", Some("other-app"))).unwrap();
+        db.save_trace(&trace("orphan", None)).unwrap();
+
+        let ids = |p: &str| -> Vec<String> {
+            db.list_traces(Some(p), 10)
+                .unwrap()
+                .into_iter()
+                .map(|t| t.id)
+                .collect()
+        };
+        assert_eq!(ids("bob's-app"), ["mine"]); // apostrophe is data, not syntax
+        assert!(ids("x' OR '1'='1").is_empty()); // injection returns nothing
+        assert_eq!(db.list_traces(None, 10).unwrap().len(), 3); // unscoped listing still sees all
     }
 }

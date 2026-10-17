@@ -4,7 +4,7 @@ use automemory_core::models::*;
 use automemory_core::retrieval::RetrievalEngine;
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -98,8 +98,12 @@ pub struct DecideProposalPayload {
 
 pub async fn api_proposals_decide(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<DecideProposalPayload>,
 ) -> impl IntoResponse {
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "decide proposal") {
+        return denied;
+    }
     match state.db.decide_proposal(&payload.id, payload.approved) {
         Ok(true) => {
             let _ = state.broadcast_tx.send(
@@ -149,8 +153,12 @@ pub struct DecideAllProposalsPayload {
 
 pub async fn api_proposals_decide_all(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<DecideAllProposalsPayload>,
 ) -> impl IntoResponse {
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "decide all proposals") {
+        return denied;
+    }
     match state.db.decide_all_proposals(
         payload.project_id.as_deref(),
         payload.proposal_type.as_deref(),

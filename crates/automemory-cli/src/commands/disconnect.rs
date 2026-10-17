@@ -719,4 +719,28 @@ mod tests {
         assert!(!text.contains("automemory"));
         assert!(text.contains("[mcp_servers.other]") && text.contains("model = \"o3\""));
     }
+
+    #[test]
+    fn connect_refuses_to_overwrite_unparseable_config() {
+        use super::super::connect::{merge_native_hooks, read_json_or_empty, CLAUDE_HOOKS};
+        let dir = sandbox("broken-json");
+        let path = dir.join("settings.json");
+        let broken = r#"{"important": true,"#; // e.g. mid-write by the agent
+        fs::write(&path, broken).unwrap();
+        let err = merge_native_hooks(&path, "/bin/automemory", "claude", CLAUDE_HOOKS).unwrap_err();
+        assert!(err.to_string().contains("not valid JSON"), "{err}");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            broken,
+            "file must be untouched"
+        );
+
+        // Missing and blank files are fine: they start as empty objects.
+        assert_eq!(
+            read_json_or_empty(&dir.join("nope.json")).unwrap(),
+            serde_json::json!({})
+        );
+        fs::write(&path, "  \n").unwrap();
+        assert_eq!(read_json_or_empty(&path).unwrap(), serde_json::json!({}));
+    }
 }

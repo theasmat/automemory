@@ -27,6 +27,31 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T | 
   }
 }
 
+/**
+ * fetch for safety-gated writes. When a human password is set the server answers 403;
+ * ask once, remember it for this tab only (sessionStorage) and retry.
+ */
+async function humanFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const withPassword = (password: string | null): RequestInit => ({
+    ...options,
+    headers: { ...(options.headers as Record<string, string>), ...(password ? { 'X-AutoMemory-Password': password } : {}) },
+  });
+  let password: string | null = null;
+  try { password = sessionStorage.getItem('am_human_password'); } catch { /* storage blocked */ }
+  let res = await fetch(endpoint, withPassword(password));
+  if (res.status === 403) {
+    const entered = window.prompt('AutoMemory human password required for this change:');
+    if (entered) {
+      try { sessionStorage.setItem('am_human_password', entered); } catch { /* storage blocked */ }
+      res = await fetch(endpoint, withPassword(entered));
+      if (res.status === 403) {
+        try { sessionStorage.removeItem('am_human_password'); } catch { /* storage blocked */ }
+      }
+    }
+  }
+  return res;
+}
+
 export const api = {
   async getStats(): Promise<SystemStats | null> {
     return request<SystemStats>('/api/stats');
@@ -94,7 +119,7 @@ export const api = {
 
   async decideProposal(id: string, approved: boolean): Promise<boolean> {
     try {
-      const res = await fetch('/api/proposals/decide', {
+      const res = await humanFetch('/api/proposals/decide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, approved }),
@@ -114,7 +139,7 @@ export const api = {
 
   async decideAllProposals(approved: boolean, proposalType?: string | null, projectId?: string | null): Promise<any> {
     try {
-      const res = await fetch('/api/proposals/decide_all', {
+      const res = await humanFetch('/api/proposals/decide_all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved, proposal_type: proposalType, project_id: projectId }),
@@ -139,7 +164,7 @@ export const api = {
 
   async setMode(mode: string, project?: string | null): Promise<boolean> {
     try {
-      const res = await fetch('/api/mode', {
+      const res = await humanFetch('/api/mode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode, project: project || 'default' }),
@@ -214,7 +239,7 @@ export const api = {
     project_id?: string | null;
   }): Promise<boolean> {
     try {
-      const res = await fetch('/api/guardrails/rules', {
+      const res = await humanFetch('/api/guardrails/rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -227,7 +252,7 @@ export const api = {
 
   async deleteGuardrailRule(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/guardrails/rules/${encodeURIComponent(id)}`, {
+      const res = await humanFetch(`/api/guardrails/rules/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       return res.ok;
@@ -238,7 +263,7 @@ export const api = {
 
   async toggleGuardrailRule(id: string, enabled: boolean): Promise<boolean> {
     try {
-      const res = await fetch(`/api/guardrails/rules/${encodeURIComponent(id)}/toggle`, {
+      const res = await humanFetch(`/api/guardrails/rules/${encodeURIComponent(id)}/toggle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),

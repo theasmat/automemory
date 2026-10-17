@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::models::{
     Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, MemoryVersion,
@@ -196,14 +197,14 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (scope = 'global' OR project_id = '{0}' OR project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
-                pid
+                sql_str(pid)
             ));
         }
         if let Some(s) = status {
-            sql.push_str(&format!(" AND status = '{}'", s));
+            sql.push_str(&format!(" AND status = '{}'", sql_str(s)));
         }
         if let Some(mt) = mem_type {
-            sql.push_str(&format!(" AND memory_type = '{}'", mt));
+            sql.push_str(&format!(" AND memory_type = '{}'", sql_str(mt)));
         }
         sql.push_str(" ORDER BY confidence DESC, updated_at DESC LIMIT ?1");
 
@@ -289,7 +290,7 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (m.scope = 'global' OR m.project_id = '{0}' OR m.project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR m.project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
-                pid
+                sql_str(pid)
             ));
         }
 
@@ -487,7 +488,7 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (m.scope = 'global' OR m.project_id = '{}')",
-                pid
+                sql_str(pid)
             ));
         }
 

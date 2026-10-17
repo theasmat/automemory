@@ -20,12 +20,47 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         return connect_all(&home, &cwd, &exe_path, global);
     }
     match super::adapter::find_adapter(agent) {
-        Some(adapter) => super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global),
+        Some(adapter) => {
+            if !matches!(adapter.id, "agy" | "claude" | "codex") {
+                println!(
+                    "note: '{}' is experimental (MCP config only, untested in v1).\n",
+                    adapter.id
+                );
+            }
+            super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global)
+        }
         None => {
             println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all", agent);
             Ok(())
         }
     }
+}
+
+/// Reads a JSON config. A missing or blank file is an empty object; a file
+/// that exists but does not parse is an error, so we never overwrite (and
+/// destroy) a config the user or the agent is still editing.
+pub(crate) fn read_json_or_empty(path: &Path) -> Result<serde_json::Value> {
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let text = fs::read_to_string(path)?;
+    if text.trim().is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+    serde_json::from_str(&text).map_err(|e| {
+        anyhow::anyhow!(
+            "refusing to modify {}: not valid JSON ({e}). Fix or move the file, then re-run connect.",
+            path.display()
+        )
+    })
+}
+
+/// Writes via a temp file and rename so a reader never sees a half-written config.
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<()> {
+    let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+    fs::write(&tmp, text)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
 }
 
 fn codebase_memory_config() -> serde_json::Value {
@@ -49,12 +84,7 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
     if let Some(parent) = target_file.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut val = if target_file.exists() {
-        serde_json::from_str(&fs::read_to_string(target_file)?)
-            .unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut val = read_json_or_empty(&target_file)?;
 
     if val.get("mcpServers").is_none() {
         val["mcpServers"] = serde_json::json!({});
@@ -63,7 +93,7 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
     val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
     val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
-    fs::write(target_file, serde_json::to_string_pretty(&val)?)?;
+    write_atomic(target_file, &serde_json::to_string_pretty(&val)?)?;
     Ok(())
 }
 
@@ -280,13 +310,12 @@ pub(crate) fn merge_native_hooks(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut root: serde_json::Value = if path.exists() {
-        serde_json::from_str(&fs::read_to_string(path)?).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut root: serde_json::Value = read_json_or_empty(path)?;
     if !root.is_object() {
-        root = serde_json::json!({});
+        anyhow::bail!(
+            "refusing to modify {}: top-level JSON is not an object",
+            path.display()
+        );
     }
     if !root.get("hooks").is_some_and(|h| h.is_object()) {
         root["hooks"] = serde_json::json!({});
@@ -313,7 +342,7 @@ pub(crate) fn merge_native_hooks(
         groups.push(group);
         hooks[*event] = serde_json::Value::Array(groups);
     }
-    fs::write(path, serde_json::to_string_pretty(&root)?)?;
+    write_atomic(path, &serde_json::to_string_pretty(&root)?)?;
     Ok(())
 }
 
@@ -343,7 +372,7 @@ pub(crate) fn strip_native_hooks(path: &Path) -> Result<bool> {
         root.as_object_mut().map(|o| o.remove("hooks"));
     }
     if changed {
-        fs::write(path, serde_json::to_string_pretty(&root)?)?;
+        write_atomic(path, &serde_json::to_string_pretty(&root)?)?;
     }
     Ok(changed)
 }
@@ -623,12 +652,7 @@ pub(crate) fn connect_continue(
         fs::create_dir_all(parent)?;
     }
 
-    let mut val = if target_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&target_path)?)
-            .unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut val = read_json_or_empty(&target_path)?;
 
     if val.get("experimental").is_none() {
         val["experimental"] = serde_json::json!({});
@@ -660,7 +684,7 @@ pub(crate) fn connect_continue(
         }
     }
 
-    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+    write_atomic(&target_path, &serde_json::to_string_pretty(&val)?)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -688,12 +712,7 @@ pub(crate) fn connect_zed(
         fs::create_dir_all(parent)?;
     }
 
-    let mut val = if target_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&target_path)?)
-            .unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut val = read_json_or_empty(&target_path)?;
 
     if val.get("context_servers").is_none() {
         val["context_servers"] = serde_json::json!({});
@@ -706,7 +725,7 @@ pub(crate) fn connect_zed(
         }
     });
 
-    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+    write_atomic(&target_path, &serde_json::to_string_pretty(&val)?)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -759,30 +778,37 @@ pub(crate) fn connect_all(
     println!("       AutoMemory Multi-Agent Universal Connector       ");
     println!("========================================================");
 
-    let _ = connect_agy(home, workspace_root, exe_path, global);
-    let _ = connect_claude(home, workspace_root, exe_path, global);
-    let _ = connect_claude_desktop(home, workspace_root, exe_path, global);
-    let _ = connect_cursor(workspace_root, home, exe_path, global);
-    let _ = connect_windsurf(home, workspace_root, exe_path, global);
-    let _ = connect_continue(home, workspace_root, exe_path, global);
-    let _ = connect_cline(home, workspace_root, exe_path, global);
-    let _ = connect_roo(home, workspace_root, exe_path, global);
-    let _ = connect_kilo(home, workspace_root, exe_path, global);
-    let _ = connect_zed(home, workspace_root, exe_path, global);
-    let _ = connect_codex(home, workspace_root, exe_path, global);
-    let _ = connect_opencode(home, workspace_root, exe_path, global);
-    let _ = connect_goose(home, workspace_root, exe_path, global);
-    let _ = connect_aider(home, workspace_root, exe_path, global);
-    let _ = connect_warp(home, workspace_root, exe_path, global);
-    let _ = connect_gemini_cli(home, workspace_root, exe_path, global);
-    let _ = connect_devin(home, workspace_root, exe_path, global);
-    let _ = connect_copilot(home, workspace_root, exe_path, global);
-    let _ = connect_openclaw(home, workspace_root, exe_path, global);
-    let _ = connect_hermes(home, workspace_root, exe_path, global);
+    // v1 supports three agents. The other connectors write MCP config only and are
+    // untested, so they are connected one at a time on request (`connect <name>`).
+    let mut failures = Vec::new();
+    for (name, result) in [
+        ("agy", connect_agy(home, workspace_root, exe_path, global)),
+        (
+            "claude",
+            connect_claude(home, workspace_root, exe_path, global),
+        ),
+        (
+            "codex",
+            connect_codex(home, workspace_root, exe_path, global),
+        ),
+    ] {
+        if let Err(e) = result {
+            eprintln!("✗ {name}: {e}");
+            failures.push(name);
+        }
+    }
 
     println!("========================================================");
-    println!("✓ All 20 coding agent hosts configured successfully!");
+    if failures.is_empty() {
+        println!("✓ Connected the supported agents: agy, claude, codex.");
+    }
+    println!("  Experimental (MCP only, untested): run `automemory connect <name>` for any of");
+    println!("  claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, opencode,");
+    println!("  goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes.");
     println!("========================================================");
+    if !failures.is_empty() {
+        anyhow::bail!("failed to connect: {}", failures.join(", "));
+    }
     Ok(())
 }
 
@@ -968,19 +994,14 @@ pub(crate) fn connect_gemini_cli(
         fs::create_dir_all(parent)?;
     }
 
-    let mut val = if target_path.exists() {
-        serde_json::from_str(&fs::read_to_string(&target_path)?)
-            .unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
+    let mut val = read_json_or_empty(&target_path)?;
 
     if val.get("mcpServers").is_none() {
         val["mcpServers"] = serde_json::json!({});
     }
     val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
 
-    fs::write(&target_path, serde_json::to_string_pretty(&val)?)?;
+    write_atomic(&target_path, &serde_json::to_string_pretty(&val)?)?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(

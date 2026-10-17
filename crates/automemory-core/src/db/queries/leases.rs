@@ -30,9 +30,22 @@ impl Database {
     /// Acquires a new lease or renews an existing lease held by the same session.
     /// If another session holds an active unexpired lease on an overlapping scope, returns a conflict.
     pub fn acquire_lease(&self, args: LeaseAcquireArgs<'_>) -> Result<LeaseAcquireResult> {
+        // Hooks are separate processes, so the in-process mutex is not enough:
+        // IMMEDIATE takes SQLite's write lock before the conflict read, making
+        // check-then-insert atomic across processes.
+        let conn = self.conn();
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let result = Self::acquire_lease_in_tx(&conn, args);
+        conn.execute_batch(if result.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
+        result
+    }
+
+    fn acquire_lease_in_tx(
+        conn: &rusqlite::Connection,
+        args: LeaseAcquireArgs<'_>,
+    ) -> Result<LeaseAcquireResult> {
         let now = Utc::now();
         let now_str = now.to_rfc3339();
-        let conn = self.conn();
 
         // 1. Purge expired leases
         let _ = conn.execute("DELETE FROM leases WHERE expires_at < ?1", params![now_str]);
@@ -414,6 +427,47 @@ fn scopes_conflict(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Separate connections stand in for separate hook processes.
+    #[test]
+    fn concurrent_connections_never_double_grant_one_scope() {
+        let path = std::env::temp_dir().join(format!("am-lease-race-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), ext));
+        }
+        Database::open(&path).unwrap(); // create schema once
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    let db = Database::open(&path).unwrap();
+                    let session = format!("s{i}");
+                    matches!(
+                        db.acquire_lease(LeaseAcquireArgs {
+                            project_id: Some("p"),
+                            agent: "a",
+                            session_id: &session,
+                            scope: "src/x.rs",
+                            scope_type: LeaseScopeType::File,
+                            goal: "race",
+                            ttl_seconds: 60,
+                        })
+                        .unwrap(),
+                        LeaseAcquireResult::Acquired { .. }
+                    )
+                })
+            })
+            .collect();
+        let granted = handles
+            .into_iter()
+            .filter_map(|h| h.join().ok())
+            .filter(|g| *g)
+            .count();
+        assert_eq!(granted, 1, "exactly one session may hold the scope");
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{}", path.display(), ext));
+        }
+    }
 
     #[test]
     fn test_scope_matching() {

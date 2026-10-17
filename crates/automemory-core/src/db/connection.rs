@@ -35,7 +35,7 @@ impl Database {
         // Initialize schema
         conn.execute_batch(SCHEMA_SQL)
             .context("Failed to execute database schema")?;
-        run_migrations(&conn);
+        run_migrations(&conn).context("Failed to migrate database schema")?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -48,7 +48,7 @@ impl Database {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA_SQL)
             .context("Failed to execute schema in memory")?;
-        run_migrations(&conn);
+        run_migrations(&conn).context("Failed to migrate database schema")?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -56,7 +56,11 @@ impl Database {
     }
 
     pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().expect("SQLite mutex poisoned")
+        // A panic in another thread poisons the mutex but leaves the SQLite handle
+        // intact; keep serving instead of cascading the panic through the daemon.
+        self.conn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Snapshot the live database to `dest` with `VACUUM INTO` (compact + defragmented copy).
@@ -76,46 +80,80 @@ impl Database {
     }
 }
 
-fn run_migrations(conn: &Connection) {
+/// Newest schema version; bump with each new `if version < N` step below.
+const LATEST_SCHEMA_VERSION: i32 = 9;
+
+/// Runs pending migrations atomically. Hooks are separate processes that may all
+/// open the database on first use after an upgrade, so the work happens under
+/// `BEGIN IMMEDIATE` and the version is bumped only if every step succeeded.
+fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
+    let version: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version >= LATEST_SCHEMA_VERSION {
+        return Ok(());
+    }
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = apply_migrations(conn);
+    conn.execute_batch(if result.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
+    result
+}
+
+/// One migration statement. A repeated `ADD COLUMN` is fine (the step already ran);
+/// any other failure aborts the whole migration instead of being swallowed.
+fn step(conn: &Connection, sql: &str, _no_params: [i32; 0]) -> rusqlite::Result<()> {
+    match conn.execute_batch(sql) {
+        Ok(()) => Ok(()),
+        Err(e) if e.to_string().contains("duplicate column name") => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
     let version: i32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap_or(0);
 
     if version < 2 {
-        let _ = conn.execute(
+        step(
+            conn,
             "ALTER TABLE tracked_documents ADD COLUMN category TEXT DEFAULT 'general'",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(
+            conn,
             "ALTER TABLE tracked_documents ADD COLUMN title TEXT DEFAULT ''",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(
+            conn,
             "ALTER TABLE tracked_documents ADD COLUMN remote_synced_hash TEXT",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(
+            conn,
             "ALTER TABLE tracked_documents ADD COLUMN l0_abstract TEXT",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(
+            conn,
             "ALTER TABLE tracked_documents ADD COLUMN l1_overview TEXT",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(
+            conn,
             "CREATE INDEX IF NOT EXISTS idx_tool_events_timestamp ON tool_events(timestamp)",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(conn, 
             "CREATE INDEX IF NOT EXISTS idx_tool_events_proj_time ON tool_events(project_id, timestamp)",
             [],
-        );
-        let _ = conn.execute(
+        )?;
+        step(conn, 
             "CREATE INDEX IF NOT EXISTS idx_memories_scope_summary ON memories(scope, summary, project_id)",
             [],
-        );
+        )?;
         // Deduplicate existing redundant active memories in the same scope
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             DELETE FROM memories WHERE id NOT IN (
                 SELECT id FROM (
@@ -129,12 +167,13 @@ fn run_migrations(conn: &Connection) {
             ) AND status = 'active'
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 2", []);
+        )?;
+        step(conn, "PRAGMA user_version = 2", [])?;
     }
 
     if version < 3 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS leases (
                 id TEXT PRIMARY KEY,
@@ -154,12 +193,13 @@ fn run_migrations(conn: &Connection) {
             CREATE INDEX IF NOT EXISTS idx_leases_session ON leases(session_id);
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 3", []);
+        )?;
+        step(conn, "PRAGMA user_version = 3", [])?;
     }
 
     if version < 4 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS decisions (
                 id TEXT PRIMARY KEY,
@@ -181,12 +221,13 @@ fn run_migrations(conn: &Connection) {
             CREATE INDEX IF NOT EXISTS idx_decisions_status ON decisions(status);
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 4", []);
+        )?;
+        step(conn, "PRAGMA user_version = 4", [])?;
     }
 
     if version < 5 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS batons (
                 id TEXT PRIMARY KEY,
@@ -200,8 +241,8 @@ fn run_migrations(conn: &Connection) {
             CREATE INDEX IF NOT EXISTS idx_batons_pickup ON batons(project_id, to_session, created_at);
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 5", []);
+        )?;
+        step(conn, "PRAGMA user_version = 5", [])?;
     }
 
     if version < 6 {
@@ -213,13 +254,14 @@ fn run_migrations(conn: &Connection) {
             "CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_session)",
         ] {
-            let _ = conn.execute(ddl, []);
+            step(conn, ddl, [])?;
         }
-        let _ = conn.execute("PRAGMA user_version = 6", []);
+        step(conn, "PRAGMA user_version = 6", [])?;
     }
 
     if version < 7 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS reviews (
                 id TEXT PRIMARY KEY,
@@ -239,12 +281,13 @@ fn run_migrations(conn: &Connection) {
             CREATE INDEX IF NOT EXISTS idx_reviews_queue ON reviews(project_id, status, created_at);
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 7", []);
+        )?;
+        step(conn, "PRAGMA user_version = 7", [])?;
     }
 
     if version < 8 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS rooms (
                 id TEXT PRIMARY KEY,
@@ -271,12 +314,13 @@ fn run_migrations(conn: &Connection) {
             CREATE INDEX IF NOT EXISTS idx_room_posts_room ON room_posts(room_id, created_at);
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 8", []);
+        )?;
+        step(conn, "PRAGMA user_version = 8", [])?;
     }
 
     if version < 9 {
-        let _ = conn.execute(
+        step(
+            conn,
             r#"
             CREATE TABLE IF NOT EXISTS sync_kv (
                 key TEXT PRIMARY KEY,
@@ -284,9 +328,10 @@ fn run_migrations(conn: &Connection) {
             );
             "#,
             [],
-        );
-        let _ = conn.execute("PRAGMA user_version = 9", []);
+        )?;
+        step(conn, "PRAGMA user_version = 9", [])?;
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -304,5 +349,14 @@ mod tests {
         let size = dest.metadata().expect("backup metadata").len();
         assert!(size > 0, "backup must be non-empty");
         let _ = std::fs::remove_file(&dest);
+    }
+
+    #[test]
+    fn migration_step_tolerates_repeat_add_column_but_not_other_errors() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (a INTEGER)").unwrap();
+        step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap();
+        step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap(); // already applied
+        assert!(step(&conn, "ALTER TABLE missing ADD COLUMN c TEXT", []).is_err());
     }
 }

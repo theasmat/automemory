@@ -35,9 +35,21 @@ Open work, derived from [PLAN](PLAN.md) and the current working tree. Update as 
 - [x] `connect` and project `.mcp.json` now launch the native `codebase-memory-mcp` binary (the `npx @codebase-memory/mcp` package does not exist); repo indexed (4819 nodes)
 - [ ] Make codebase-memory-mcp the CodeIntel provider: pinned version, `doctor` check, wire `symbol_exists`/`symbol_hash`/`callers` to it; keep file-hash fallback only
 
+## Audit follow-ups
+
+- [x] connect/disconnect refuse unparseable JSON and write atomically
+- [x] Dashboard origin/host guard, password on proposal decisions
+- [x] Lease check-then-insert is one immediate transaction (multi-connection race test)
+- [x] Project filters escaped; traces/skills no longer leak project-less rows
+- [x] Guardrail: no false blocks on printed text, here-documents or file content; find/chmod/+refspec/cd-then-delete/newline covered; pipe-to-shell flagged
+- [x] Migrations atomic and no longer swallow errors; poisoned mutex no longer panics; delta sync uncapped
+- [ ] Park or delete the 17 unsupported connectors (`connect all` now configures only agy, claude, codex)
+- [ ] Surface guardrail warnings to the agent (Claude/Codex hook output carries only denies today; warnings go to stderr)
+- [ ] Not audited yet: `workers/sync-gateway` auth, MCP HTTP gateway auth, crypto
+
 ## Docs hygiene
 
-- [ ] Keep MCP tool count and test count in ARCHITECTURE/FEATURES in sync with code (59 tools, 120 tests at last check)
+- [ ] Keep MCP tool count and test count in ARCHITECTURE/FEATURES in sync with code (59 tools, 157 tests at last check)
 - [ ] Generate CLI/MCP reference from code if a reference doc is wanted again
 
 ## Later (after v1 passes its gates)

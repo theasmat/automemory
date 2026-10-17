@@ -97,7 +97,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 120 tests |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 157 tests |
 | Eval harness (`automemory eval`) | 🔧 | Needs ≥20 real tasks baseline (Phase 2 gate) |
 
 ## 4. Success metrics

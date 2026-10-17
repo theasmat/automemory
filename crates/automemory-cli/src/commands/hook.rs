@@ -835,3 +835,84 @@ fn is_mutation_tool(tool_name: &str) -> bool {
         || lower.contains("apply")
         || lower.contains("save")
 }
+
+#[cfg(test)]
+mod native_hook_tests {
+    use super::*;
+
+    #[test]
+    fn claude_and_codex_get_hook_specific_output_others_keep_flat_shape() {
+        assert!(native_hook_style("claude") && native_hook_style("Codex"));
+        assert!(!native_hook_style("agy") && !native_hook_style("cursor"));
+
+        let deny = native_gate_output(CanonicalEvent::PreToolUse, GateDecision::Deny, "nope");
+        assert_eq!(deny["hookSpecificOutput"]["permissionDecision"], "deny");
+        assert_eq!(
+            deny["hookSpecificOutput"]["permissionDecisionReason"],
+            "nope"
+        );
+
+        assert_eq!(
+            native_gate_output(CanonicalEvent::PreToolUse, GateDecision::Allow, ""),
+            json!({})
+        );
+        let warn = native_gate_output(CanonicalEvent::PreToolUse, GateDecision::Warn, "careful");
+        assert!(warn["hookSpecificOutput"]
+            .get("permissionDecision")
+            .is_none());
+        assert!(warn["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("careful"));
+        // PreCommit is reported to the agent as the PreToolUse it really is.
+        let commit = native_gate_output(CanonicalEvent::PreCommit, GateDecision::Deny, "x");
+        assert_eq!(commit["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+    }
+
+    #[test]
+    fn claude_and_codex_tool_payloads_normalize_to_canonical_tools() {
+        let claude =
+            json!({"session_id": "s", "tool_name": "Bash", "tool_input": {"command": "ls"}});
+        let (tool, session, _) = normalize_payload("pre-tool", &claude);
+        let tool = tool.unwrap();
+        assert_eq!(
+            (tool.name.as_str(), tool.category.as_str()),
+            ("command", "command")
+        );
+        assert_eq!(session, "s");
+
+        let edit =
+            json!({"session_id": "s", "tool_name": "Edit", "tool_input": {"file_path": "a.rs"}});
+        assert_eq!(normalize_payload("pre-tool", &edit).0.unwrap().name, "edit");
+
+        // Codex passes argv arrays and `cmd`; guardrails need one string.
+        let codex = json!({"session_id": "s", "tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "ls -la"]}});
+        let tool = normalize_payload("pre-tool", &codex).0.unwrap();
+        assert_eq!(tool.input.unwrap()["command"], "bash -lc ls -la");
+        let exec =
+            json!({"session_id": "s", "tool_name": "exec_command", "tool_input": {"cmd": "pwd"}});
+        assert_eq!(
+            normalize_payload("pre-tool", &exec)
+                .0
+                .unwrap()
+                .input
+                .unwrap()["command"],
+            "pwd"
+        );
+    }
+
+    #[test]
+    fn apply_patch_paths_are_extracted_for_lease_checks() {
+        let patch = "*** Begin Patch\n*** Add File: src/new.rs\n+x\n*** Update File: src/old.rs\n*** Delete File: gone.rs\n*** End Patch";
+        assert_eq!(patch_paths(patch), ["src/new.rs", "src/old.rs", "gone.rs"]);
+        let (paths, _) = extract_target_paths_and_symbols("edit", &json!({ "input": patch }));
+        assert!(paths.contains(&"src/old.rs".to_string()));
+    }
+
+    #[test]
+    fn tool_response_is_recorded_as_output() {
+        let raw = json!({"session_id": "s", "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {"stdout": "ok"}});
+        let tool = normalize_payload("post-tool", &raw).0.unwrap();
+        assert_eq!(tool.output.unwrap()["stdout"], "ok");
+    }
+}

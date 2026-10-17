@@ -1,3 +1,4 @@
+use super::sql_str;
 use crate::db::Database;
 use crate::models::FailureRecord;
 use anyhow::Result;
@@ -68,11 +69,11 @@ impl Database {
         if let Some(pid) = project_id {
             sql.push_str(&format!(
                 " AND (project_id IS NULL OR project_id = '{}')",
-                pid
+                sql_str(pid)
             ));
         }
         if let Some(s) = status {
-            sql.push_str(&format!(" AND status = '{}'", s));
+            sql.push_str(&format!(" AND status = '{}'", sql_str(s)));
         }
         sql.push_str(" ORDER BY updated_at DESC LIMIT ?1");
 

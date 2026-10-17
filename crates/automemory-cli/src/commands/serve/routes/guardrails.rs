@@ -15,7 +15,7 @@ use std::str::FromStr;
 /// Human gate for dashboard safety writes. The browser dashboard prompts for
 /// the password and sends it as `X-AutoMemory-Password`; scripts use the same
 /// header. Unset password warns once and allows (fresh installs stay usable).
-fn require_human_header(
+pub(crate) fn require_human_header(
     headers: &HeaderMap,
     action: &str,
 ) -> Result<(), (StatusCode, Json<Value>)> {

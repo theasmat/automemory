@@ -1,3 +1,9 @@
+/// Escapes a value for use inside a single-quoted SQLite string literal.
+/// Dynamic filters are assembled as text, so every interpolated value goes through this.
+pub(crate) fn sql_str(v: impl std::fmt::Display) -> String {
+    v.to_string().replace('\'', "''")
+}
+
 pub mod batons;
 pub mod decisions;
 pub mod documents;

@@ -11,7 +11,7 @@ use automemory_core::docs::DocumentWatcher;
 use automemory_core::extraction::{ConsolidationWorker, ExtractionWorker};
 use automemory_core::sync::AutoSyncDaemon;
 use automemory_mcp::{mcp_router, McpServer};
-use axum::{routing::get, Router};
+use axum::{response::IntoResponse, routing::get, Router};
 use chrono::Utc;
 use serde_json::json;
 use state::AppState;
@@ -19,7 +19,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::cors::CorsLayer;
 use ws::ws_handler;
 
 pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
@@ -134,7 +133,10 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         .merge(mcp_app)
         .merge(api_app)
         .fallback(static_asset_handler)
-        .layer(CorsLayer::permissive());
+        .layer(axum::middleware::from_fn_with_state(
+            port,
+            local_origin_guard,
+        ));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("┌────────────────────────────────────────────────────────┐");
@@ -159,4 +161,82 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Blocks browser-driven attacks on the localhost API. A web page the user
+/// visits can POST to 127.0.0.1 (CSRF) or reach us through a rebinding DNS
+/// name, so: the `Host` must be our own loopback address, and any `Origin`
+/// (browsers always send one on cross-site requests) must be the dashboard
+/// itself. Non-browser clients (curl, MCP over HTTP) send no `Origin` and pass.
+async fn local_origin_guard(
+    axum::extract::State(port): axum::extract::State<u16>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::{header, StatusCode};
+    let allowed = |v: &str, scheme: &str| {
+        v == format!("{scheme}127.0.0.1:{port}") || v == format!("{scheme}localhost:{port}")
+    };
+    let host_ok = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|h| allowed(h, ""));
+    let origin_ok = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .is_none_or(|o| allowed(o, "http://"));
+    if host_ok && origin_ok {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            "AutoMemory: cross-origin request blocked",
+        )
+            .into_response()
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+    use axum::{body::Body, http::Request, routing::post, Router};
+    use tower::ServiceExt;
+
+    fn app() -> Router {
+        Router::new().route("/x", post(|| async { "ok" })).layer(
+            axum::middleware::from_fn_with_state(4545u16, local_origin_guard),
+        )
+    }
+
+    async fn status(host: &str, origin: Option<&str>) -> u16 {
+        let mut b = Request::builder()
+            .method("POST")
+            .uri("/x")
+            .header("host", host);
+        if let Some(o) = origin {
+            b = b.header("origin", o);
+        }
+        app()
+            .oneshot(b.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+    }
+
+    #[tokio::test]
+    async fn guard_allows_dashboard_and_cli_blocks_foreign_origin_and_rebinding() {
+        assert_eq!(status("127.0.0.1:4545", None).await, 200);
+        assert_eq!(
+            status("localhost:4545", Some("http://localhost:4545")).await,
+            200
+        );
+        assert_eq!(
+            status("127.0.0.1:4545", Some("https://evil.example")).await,
+            403
+        );
+        assert_eq!(status("evil.example:4545", None).await, 403);
+    }
 }

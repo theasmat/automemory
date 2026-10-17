@@ -53,6 +53,9 @@ pub struct ApplyReport {
 
 const APPLIED_KEY: &str = "applied_fingerprints";
 
+/// Sync must never drop records, so listings are not capped and errors propagate.
+const ALL_ROWS: usize = i64::MAX as usize;
+
 fn get_kv(db: &Database, key: &str) -> Result<Option<String>> {
     let conn = db.conn();
     let mut stmt = conn.prepare("SELECT value FROM sync_kv WHERE key = ?1")?;
@@ -138,35 +141,35 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
         }
     };
 
-    for m in db.list_memories(None, None, None, 10000).unwrap_or_default() {
+    for m in db.list_memories(None, None, None, ALL_ROWS)? {
         let updated = m.updated_at;
         let pid = m.project_id.clone();
         let id = m.id.clone();
         let payload = serde_json::to_value(&m).unwrap_or(serde_json::Value::Null);
         consider("memory", id, pid, updated, payload);
     }
-    for t in db.list_traces(None, 5000).unwrap_or_default() {
+    for t in db.list_traces(None, ALL_ROWS)? {
         let updated = t.updated_at;
         let pid = t.project_id.clone();
         let id = t.id.clone();
         let payload = serde_json::to_value(&t).unwrap_or(serde_json::Value::Null);
         consider("trace", id, pid, updated, payload);
     }
-    for f in db.list_failures(None, None, 5000).unwrap_or_default() {
+    for f in db.list_failures(None, None, ALL_ROWS)? {
         let updated = f.updated_at;
         let pid = f.project_id.clone();
         let id = f.id.clone();
         let payload = serde_json::to_value(&f).unwrap_or(serde_json::Value::Null);
         consider("failure", id, pid, updated, payload);
     }
-    for s in db.list_skills(None, 10000).unwrap_or_default() {
+    for s in db.list_skills(None, ALL_ROWS)? {
         let updated = s.updated_at;
         let pid = s.project_id.clone();
         let id = s.id.clone();
         let payload = serde_json::to_value(&s).unwrap_or(serde_json::Value::Null);
         consider("skill", id, pid, updated, payload);
     }
-    for d in db.list_decisions(None, None, 10000).unwrap_or_default() {
+    for d in db.list_decisions(None, None, ALL_ROWS)? {
         let updated = d.updated_at;
         let pid = d.project_id.clone();
         let id = d.id.clone();
@@ -350,10 +353,24 @@ fn apply_op(
         "memory" => {
             let mem: Memory = serde_json::from_value(op.payload.clone())?;
             match load!(get_memory_by_id) {
-                None => merge_one(db, applied, op, None, None, || db.save_memory_direct(&mem), report),
-                Some((fp, updated)) => merge_one(db, applied, op, Some(fp), Some(updated), || {
-                    db.save_memory_direct(&mem)
-                }, report),
+                None => merge_one(
+                    db,
+                    applied,
+                    op,
+                    None,
+                    None,
+                    || db.save_memory_direct(&mem),
+                    report,
+                ),
+                Some((fp, updated)) => merge_one(
+                    db,
+                    applied,
+                    op,
+                    Some(fp),
+                    Some(updated),
+                    || db.save_memory_direct(&mem),
+                    report,
+                ),
             }
         }
         "trace" => {
@@ -363,9 +380,15 @@ fn apply_op(
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
-                    merge_one(db, applied, op, Some(fp), Some(updated), || {
-                        db.save_trace(&t)
-                    }, report)
+                    merge_one(
+                        db,
+                        applied,
+                        op,
+                        Some(fp),
+                        Some(updated),
+                        || db.save_trace(&t),
+                        report,
+                    )
                 }
             }
         }
@@ -376,9 +399,15 @@ fn apply_op(
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
-                    merge_one(db, applied, op, Some(fp), Some(updated), || {
-                        db.save_failure(&f)
-                    }, report)
+                    merge_one(
+                        db,
+                        applied,
+                        op,
+                        Some(fp),
+                        Some(updated),
+                        || db.save_failure(&f),
+                        report,
+                    )
                 }
             }
         }
@@ -389,22 +418,42 @@ fn apply_op(
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
-                    merge_one(db, applied, op, Some(fp), Some(updated), || {
-                        db.save_skill(&s)
-                    }, report)
+                    merge_one(
+                        db,
+                        applied,
+                        op,
+                        Some(fp),
+                        Some(updated),
+                        || db.save_skill(&s),
+                        report,
+                    )
                 }
             }
         }
         "decision" => {
             let d: Decision = serde_json::from_value(op.payload.clone())?;
             match db.get_decision_by_id(&op.id)? {
-                None => merge_one(db, applied, op, None, None, || db.save_decision_direct(&d), report),
+                None => merge_one(
+                    db,
+                    applied,
+                    op,
+                    None,
+                    None,
+                    || db.save_decision_direct(&d),
+                    report,
+                ),
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
-                    merge_one(db, applied, op, Some(fp), Some(updated), || {
-                        db.save_decision_direct(&d)
-                    }, report)
+                    merge_one(
+                        db,
+                        applied,
+                        op,
+                        Some(fp),
+                        Some(updated),
+                        || db.save_decision_direct(&d),
+                        report,
+                    )
                 }
             }
         }
@@ -442,17 +491,11 @@ pub fn apply_all_deltas(
                 continue;
             }
             let current: Option<String> = match op.kind.as_str() {
-                "memory" => db
-                    .get_memory_by_id(&op.id)?
-                    .map(|m| fingerprint_of(&m)),
+                "memory" => db.get_memory_by_id(&op.id)?.map(|m| fingerprint_of(&m)),
                 "trace" => db.get_trace_by_id(&op.id)?.map(|t| fingerprint_of(&t)),
-                "failure" => db
-                    .get_failure_by_id(&op.id)?
-                    .map(|f| fingerprint_of(&f)),
+                "failure" => db.get_failure_by_id(&op.id)?.map(|f| fingerprint_of(&f)),
                 "skill" => db.get_skill_by_id(&op.id)?.map(|s| fingerprint_of(&s)),
-                "decision" => db
-                    .get_decision_by_id(&op.id)?
-                    .map(|d| fingerprint_of(&d)),
+                "decision" => db.get_decision_by_id(&op.id)?.map(|d| fingerprint_of(&d)),
                 _ => None,
             };
             if let Some(fp) = current {
@@ -497,7 +540,8 @@ mod tests {
     }
 
     fn test_vault(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("automemory-delta-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("automemory-delta-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -578,8 +622,9 @@ mod tests {
         let kept = dst.get_memory_by_id("m-9").unwrap().unwrap();
         assert_eq!(kept.summary, "edited locally");
         let pending = dst.list_pending_proposals(None).unwrap();
-        assert!(pending.iter().any(|p| p.proposal_type == "sync_conflict"
-            && p.target_id == "memory:m-9"));
+        assert!(pending
+            .iter()
+            .any(|p| p.proposal_type == "sync_conflict" && p.target_id == "memory:m-9"));
 
         // Re-pull does not duplicate the proposal.
         let again = apply_all_deltas(&dst, &dir, "dev-b").unwrap();

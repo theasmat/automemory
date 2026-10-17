@@ -88,7 +88,7 @@ Hook management: `automemory hooks enable|disable|move|add|test`, shadow mode (l
 
 ## 5. Data model
 
-One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
+One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`, run atomically under `BEGIN IMMEDIATE`; a failed step aborts and rolls back instead of bumping the version. Lease acquisition is also one `BEGIN IMMEDIATE` transaction, because every hook is its own process. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
 
 **Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_embeddings`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`.
 
@@ -128,6 +128,7 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 - Critical (all modes): root/home deletion, raw disk write/format, protected-branch force-push, DB drop/truncate, plaintext secrets in commands.
 - High-risk (Strict/Review): prod migrations, destructive git reset/clean, infra teardown, secret-file edits, raw `sqlite3` on AutoMemory's DB (Zero-SQL rule).
 - Custom rules via `automemory rule add|list|toggle|remove`.
+- Regex rules see what would execute: the printed text of `echo`/`grep`/`git commit -m` and here-document bodies are ignored, `$(...)`/backticks still count, newlines separate commands, and file tools (Write/Edit) are judged by path, never content. Extra critical checks: `find <root> -delete`, a `cd` to root followed by a recursive delete, recursive `chmod/chown` on root, `+main` pushes; `curl|sh` style pipes are high-risk.
 - **Human password gate:** rule/mode/hook-pipeline mutations and dashboard write endpoints require a human password (PBKDF2-HMAC-SHA256, 600k rounds). CLI accepts it only from `AUTOMEMORY_PASSWORD` or a `/dev/tty` prompt; piped stdin (how agents run) fails closed. Dashboard uses `X-AutoMemory-Password`.
 
 ## 9. Interfaces
@@ -145,7 +146,7 @@ Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace
 
 **CLI.** `init`, `doctor`, `connect <agent|all> [-g]`, `disconnect`, `serve --port`, `mcp`, `memory list|search|save|get|archive|digest`, `proposal summary|list|decide|approve-all|reject-all`, `mode get|set`, `rule …`, `sync pair|push|pull|watch|status`, `adapter`, `hooks`, `plugin`, `eval`, `stop`, `locks`/`unlock`, `decision`, `pin|veto|revoke`, `baton`. Run `automemory <cmd> --help` for flags; that is the reference.
 
-**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, graph, skills, failures. Write endpoints are password-gated.
+**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, graph, skills, failures. Every request must carry a loopback `Host` and, if it has an `Origin`, the dashboard's own origin (blocks CSRF and DNS rebinding; no CORS). Proposal decisions and guardrail/mode writes also need the human password header when one is set; the UI prompts once per tab.
 
 ## 10. Sync and security
 
