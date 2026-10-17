@@ -20,7 +20,7 @@ Workspace layout:
 
 | Crate | Role |
 |---|---|
-| `automemory-core` | Domain logic: `db/` (SQLite, migrations, queries), `guardrails/`, `extraction/` (distiller, time-span digest, skills), `retrieval/`, `graph/` (file graph + CodeIntel port), `crypto/`, `sync/`, `models/` |
+| `automemory-core` | Domain logic: `db/` (SQLite, migrations, queries), `guardrails/`, `extraction/` (distiller, time-span digest, skills), `retrieval/`, `graph/` (CodeIntel port + file-hash fallback only), `crypto/`, `sync/`, `models/` |
 | `automemory-cli` | CLI, hook handler, `serve` daemon, embedded dashboard assets |
 | `automemory-mcp` | JSON-RPC 2.0 MCP server over stdio and HTTP |
 | `clients/web` | Nuxt 3 dashboard source |
@@ -48,7 +48,7 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 |---|---|---|
 | AgentAdapter | Install hooks/MCP config; map native → canonical events | Claude Code, Codex, Antigravity (v1); 17 more connectors exist, unsupported until promoted |
 | HookHandler | One pipeline stage: allow / warn / block / annotate | Lease check, guardrail, nudge, ledger logger |
-| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | File-hash fallback; codebase-memory-mcp bridge (`ingest_graph_data`) |
+| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** (external; AutoMemory builds no AST graph). File-hash fallback when absent |
 | MemoryStore | Persist memories, decisions, ledger | SQLite WAL |
 | Retriever | Rank candidates | FTS5 BM25 × decay × confidence; local n-gram vector projection |
 | EmbeddingProvider | Text → vectors | Local n-gram projection (not neural) |
@@ -114,11 +114,11 @@ Context assembly order: locked preferences → project identity → high-confide
 
 ## 7. Locks, handoff, orchestration
 
-- **Leases:** file/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Symbol-level via CodeIntel *(planned)*.
+- **Leases:** file/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Leases stay file/glob; no symbol-level leases.
 - **Baton:** < 400-token handoff built from the ledger (`baton.pass` / `baton.pickup`).
 - **Tasks/review:** `task.create|next|submit`, cross-review with tests as judge (`review.next|post|submit`).
 - **Planning Room** (v1 scope): turn-gated state machine (propose → critique → revise, human tiebreak). A room advances only when the turn holder posts; the daemon rejects posts whose evidence IDs do not resolve. Every tool reply ends with a daemon-written `next_action`; posts from other agents are returned as quoted data with author and trust tier. Stored rationale is 3–5 lines, never raw reasoning.
-- **Autonomy profiles:** Observe (record/warn), Assist (default; human approves each stage), Autopilot (opt-in per repo). Always stops for: schema/migration, auth/secrets, deletion, edits outside agreed symbols, same test failing 3×, budget exceeded, unresolved disagreement after round cap. Kill switch: `automemory stop`.
+- **Autonomy profiles:** Observe (record/warn), Assist (default; human approves each stage), Autopilot (opt-in per repo). Always stops for: schema/migration, auth/secrets, deletion, edits outside agreed files, same test failing 3×, budget exceeded, unresolved disagreement after round cap. Kill switch: `automemory stop`.
 - **Worktree sync:** memory, decisions and advisory leases are shared across git worktrees via canonical git-root resolution (in progress, see TASKS).
 
 ## 8. Guardrails

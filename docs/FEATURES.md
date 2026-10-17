@@ -26,7 +26,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 |---|---|
 | Core: ledger, store, plugin host, hook pipeline | More agents beyond the first three (17 connectors already exist, unsupported) |
 | Adapters: **Claude Code, Codex, Antigravity** | Cloudflare managed SaaS / team sharing |
-| Memory, decisions, trust tiers, verification | Symbol-level leases, own AST graph |
+| Memory, decisions, trust tiers, verification | More agents beyond the first three |
 | Locks, baton handoff, cross-review | Headless Runner, Autopilot as default |
 | **Planning Room orchestration** | WASM plugins, neural embeddings |
 | **Nuxt dashboard** (local `serve`) | Automated PRD/ADR generation, policy engine |
@@ -34,7 +34,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 | Git-vault sync with encrypted keys | |
 | Eval harness (memory on vs off) | |
 
-Cut list: auto-distill of every session, auto-generated AGENTS.md, shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
+Cut list: symbol-level leases, own AST/code graph (codebase-memory-mcp supplies it), auto-distill of every session, auto-generated AGENTS.md, shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
 
 ## 3. Feature catalog
 
@@ -57,7 +57,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Feature | Status | Notes |
 |---|---|---|
 | Trust tiers 1–5, provenance, revoke | ✅ | Tier 4–5 withheld from default recall |
-| Symbol/file-hash verify on recall | ✅ | File-level; symbol-level via CodeIntel bridge |
+| Symbol/file-hash verify on recall | ✅ | File hashes built in; symbols from codebase-memory-mcp |
 | PostCommit flips linked memories to `changed` | ✅ | |
 | Revert/rewrite staleness, contradiction across memories | ⬜ | Phase 4 |
 
@@ -70,7 +70,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Task queue + cross-review (tests as judge) | ✅ | |
 | Planning Room state machine + MCP tools | ✅ | Gated by its own A/B eval |
 | Blackboard / checkpoint tools | ⬜ | From research doc; verify vs `lock.status`/`baton` first |
-| Symbol leases, pre-merge overlap check | ⬜ | Phase 4 |
+| Pre-merge file-overlap check (git diff vs other branches) | ⬜ | Phase 4 |
 
 ### Safety
 | Feature | Status | Notes |

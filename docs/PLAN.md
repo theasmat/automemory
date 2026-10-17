@@ -11,7 +11,7 @@ Rule: every phase ends with a measurement. Later phases start only if the gate p
 | 1 | Daemon, ledger, plugin host, hook pipeline, Claude Code adapter, file locks | Zero silent overwrites in a two-agent test; hook p95 < 5 ms | Built; two-agent test to confirm |
 | 2 | Eval harness | Baseline on ≥ 20 real tasks | In progress |
 | 3 | Memory with trust tiers, `ask/about/propose`, decisions, CodeIntel bridge, verify + stale flags | Memory-on not worse than off; stale-flag precision ≥ 90% | Built; gate unmeasured |
-| 4 | Commit-bound staleness, contradiction detection, guardrail shadow mode, symbol leases, pre-merge overlap | Fewer stale hits and merge conflicts than phase 3 | Partial |
+| 4 | Commit-bound staleness, contradiction detection, guardrail shadow mode, pre-merge file-overlap check | Fewer stale hits and merge conflicts than phase 3 | Partial |
 | 5 | Cross-review with tests as judge, baton, Codex adapter, Antigravity adapter | Success ≥ solo agent; acceptable cost | Built; gate unmeasured |
 | 6 | Planning Room (two agents, one round) for high-stakes design only; Nuxt dashboard polish | Beats solo + tests on a defined task set, else Room dropped | Built; A/B pending |
 | 7 | Add agents beyond the first three; Cloudflare SaaS; headless Runner; Autopilot; neural vectors | Each justified by measured need | Not started |

@@ -30,7 +30,8 @@ Open work, derived from [PLAN](PLAN.md) and the current working tree. Update as 
 - [ ] `memory list --group-by category|time|agent` — confirm shipped or add
 - [ ] Commit-bound staleness on revert/rewrite
 - [ ] Cross-memory contradiction detection beyond version mismatch
-- [ ] Symbol-level leases and pre-merge overlap check (needs CodeIntel symbols)
+- [ ] Pre-merge file-overlap check (git-based; leases stay file/glob)
+- [ ] Make codebase-memory-mcp the CodeIntel provider: pinned version, `doctor` check, wire `symbol_exists`/`symbol_hash`/`callers` to it; keep file-hash fallback only
 
 ## Docs hygiene
 
