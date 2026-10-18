@@ -19,7 +19,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T1 | Claude Code: hooks fire and events are recorded | PASS | 2026-10-19 |
 | T2 | Antigravity: hooks fire, no hook errors | PASS (data) | 2026-10-19 |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PASS | 2026-10-19 |
-| T4 | Two agents, one file: automatic lock and collision message | PENDING | |
+| T4 | Two agents, one file: automatic lock and collision message | PARTIAL | 2026-10-19 |
 | T5 | Hand-off: a new session continues where the last one stopped | PENDING | |
 | T6 | Safety: a destructive command is denied | PENDING | |
 | T7 | Instruction files: `export-rules` block read by another agent | PENDING | |
@@ -194,4 +194,19 @@ Notes / open
 - Claude called `decision_record` twice (after loading the tool through ToolSearch). Check `automemory decision list` for a duplicate or superseded entry.
 - The decision's agent is stored as "agent": the MCP call did not say who made it, so the dashboard cannot show "Claude Code".
   (Idea: fill the agent from the hook session when the MCP client does not.)
+
+### 2026-10-19 T4 Collision: PARTIAL (step 2 only so far)
+
+Run: Claude started the six-edit task on shop/checkout.py; Antigravity was asked to add `# reviewed by agy` as the first line.
+
+Result so far
+- Live view (`watch automemory locks`): `shop/checkout.py | file | claude | goal "editing shop/checkout.py" | TTL 552s`. The lock was taken
+  automatically by Claude's first edit.
+- Antigravity did **not** try the edit. It first used AutoMemory MCP tools (lock status, active leases) and read the skill file, then
+  refused: "locked by another agent... Held by claude... Goal: editing shop/checkout.py... Lease ID ...", and quoted the project guideline
+  ("if an edit is reported as held by another agent, pick other work or wait"). It offered to wait.
+- Good: cooperative behaviour from the generated guidance, and the lock details are visible to another agent.
+- Not tested: the **hook-level gate** (Strict mode blocking an actual edit by another agent), because the agent checked first.
+  Needs the "edit directly, do not check locks" variant (T4b below).
+- Not yet reported: retry while Claude is open, Claude exit, retry after release, `git diff --stat`, coverage.
 
