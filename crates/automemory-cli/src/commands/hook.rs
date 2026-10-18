@@ -444,7 +444,11 @@ fn save_session_checkpoint(db: &Database, session_id: &str) {
     if digest.metrics.edits_count == 0 {
         return;
     }
-    if let Ok(mem) = engine.synthesize_milestone_memory(&digest, Some("Session checkpoint")) {
+    // Stop fires after every agent turn. A summary that is stable per session lets
+    // save_memory update one row in place instead of adding one per turn.
+    if let Ok(mut mem) = engine.synthesize_milestone_memory(&digest, Some("Session checkpoint")) {
+        let short: String = session_id.chars().take(8).collect();
+        mem.summary = format!("Session checkpoint {short}");
         let _ = db.save_memory(&mem);
     }
 }

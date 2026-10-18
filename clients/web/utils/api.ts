@@ -39,12 +39,14 @@ async function humanFetch(endpoint: string, options: RequestInit = {}): Promise<
   let password: string | null = null;
   try { password = sessionStorage.getItem('am_human_password'); } catch { /* storage blocked */ }
   let res = await fetch(endpoint, withPassword(password));
-  if (res.status === 403) {
+  // Only the password gate asks for a password; the origin/host guard's 403 does not.
+  const needsPassword = async (r: Response) => r.status === 403 && /password/i.test(await r.clone().text());
+  if (await needsPassword(res)) {
     const entered = window.prompt('AutoMemory human password required for this change:');
     if (entered) {
       try { sessionStorage.setItem('am_human_password', entered); } catch { /* storage blocked */ }
       res = await fetch(endpoint, withPassword(entered));
-      if (res.status === 403) {
+      if (await needsPassword(res)) {
         try { sessionStorage.removeItem('am_human_password'); } catch { /* storage blocked */ }
       }
     }

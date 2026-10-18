@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const BIN_NAME: &str = "codebase-memory-mcp";
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -92,20 +92,21 @@ impl<'a> CbmCodeIntel<'a> {
             .stderr(Stdio::null())
             .spawn()
             .ok()?;
-        let start = Instant::now();
-        loop {
-            match child.try_wait().ok()? {
-                Some(_) => break,
-                None if start.elapsed() > CALL_TIMEOUT => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                None => std::thread::sleep(Duration::from_millis(5)),
-            }
-        }
-        let mut raw = String::new();
-        child.stdout.take()?.read_to_string(&mut raw).ok()?;
+        // Drain stdout on a thread: a reply over the pipe buffer (~64 KB) would otherwise
+        // block the engine on write and look like a timeout.
+        let mut stdout = child.stdout.take()?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = stdout.read_to_string(&mut buf);
+            let _ = tx.send(buf);
+        });
+        let Ok(raw) = rx.recv_timeout(CALL_TIMEOUT) else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        };
+        let _ = child.wait();
         let envelope: Value = serde_json::from_str(&raw).ok()?;
         if envelope["isError"].as_bool() == Some(true) {
             return None;
@@ -229,7 +230,10 @@ impl CodeIntel for CbmCodeIntel<'_> {
 
 /// The CodeIntel to use for `project_root`: the engine when installed, else the local graph.
 pub fn code_intel_for<'a>(db: &'a Database, project_root: &Path) -> Box<dyn CodeIntel + 'a> {
-    match CbmCodeIntel::detect(db, project_root) {
+    // The engine names a project after the repository root, not the folder we happen to run in.
+    let root = crate::sync::GitSync::resolve_git_canonical_root(project_root)
+        .unwrap_or_else(|| project_root.to_path_buf());
+    match CbmCodeIntel::detect(db, &root) {
         Some(c) => Box::new(c),
         None => Box::new(GraphCodeIntel::new(db)),
     }
@@ -285,6 +289,22 @@ esac
         // De-indented source: hash is stable regardless of the engine's indentation.
         let expected = format!("{:x}", Sha256::digest("fn target_fn() {\n    body();\n}".as_bytes()));
         assert_eq!(h1, expected);
+    }
+
+    #[test]
+    fn a_reply_larger_than_the_pipe_buffer_is_still_read() {
+        let dir = std::env::temp_dir().join(format!("am-cbm-big-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join(BIN_NAME);
+        // 200 KB reply: more than a pipe holds, so the engine blocks until we read.
+        let script = "#!/bin/sh\nhead -c 200000 /dev/zero | tr '\\0' 'x' | sed 's/^/{\"structuredContent\":{\"groups\":[{\"qn_prefix\":\"p\",\"rows\":[[\"target_fn\"]]}],\"pad\":\"/; s/$/\"}}/'\n";
+        std::fs::write(&bin, script).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let db = Database::open_in_memory().unwrap();
+        let intel = CbmCodeIntel { fallback: GraphCodeIntel::new(&db), bin, project: "p".into() };
+        let start = std::time::Instant::now();
+        assert!(intel.symbol_exists(None, "target_fn"));
+        assert!(start.elapsed() < Duration::from_secs(3), "must not wait for the timeout");
     }
 
     #[test]

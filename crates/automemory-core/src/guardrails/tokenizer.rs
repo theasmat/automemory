@@ -361,33 +361,65 @@ impl ShellCommandTree {
 }
 
 /// Splits a compound command string into individual pipelines / statements.
-/// Drops here-document bodies (`<<EOF ... EOF`): they are data fed to a command,
-/// not commands, so a script or note written through `cat <<EOF` is not executed text.
+/// Drops here-document bodies (`<<EOF ... EOF`): they are data fed to a command, not
+/// commands. A body is dropped only when the `<<` is outside quotes, is followed by a
+/// delimiter word, and a line holding exactly that delimiter really follows; otherwise
+/// the lines stay visible, so a stray `<<` can never hide a later command.
 fn strip_heredoc_bodies(raw: &str) -> String {
     if !raw.contains("<<") {
         return raw.to_string();
     }
+    let lines: Vec<&str> = raw.lines().collect();
     let mut out = Vec::new();
-    let mut lines = raw.lines();
-    while let Some(line) = lines.next() {
-        out.push(line);
-        let Some(pos) = line.find("<<") else { continue };
-        let rest = line[pos + 2..].trim_start_matches('-').trim_start();
-        let delim: String = rest
-            .trim_start_matches(['\'', '"'])
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if delim.is_empty() || rest.starts_with('<') {
-            continue; // here-string `<<<` or no delimiter
-        }
-        for body in lines.by_ref() {
-            if body.trim() == delim {
-                break;
+    let mut i = 0;
+    while i < lines.len() {
+        out.push(lines[i]);
+        if let Some(delim) = heredoc_delimiter(lines[i]) {
+            if let Some(end) = lines[i + 1..].iter().position(|l| l.trim() == delim) {
+                i += end + 1; // skip the body and the closing line
             }
         }
+        i += 1;
     }
     out.join("\n")
+}
+
+/// The delimiter word of a here-document opened on `line`, if any.
+fn heredoc_delimiter(line: &str) -> Option<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let (mut in_single, mut in_double) = (false, false);
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '<' if !in_single && !in_double && chars.get(i + 1) == Some(&'<') => {
+                let mut j = i + 2;
+                if chars.get(j) == Some(&'<') {
+                    return None; // here-string `<<<`
+                }
+                if chars.get(j) == Some(&'-') {
+                    j += 1;
+                }
+                while chars.get(j).is_some_and(|c| c.is_whitespace()) {
+                    j += 1;
+                }
+                if matches!(chars.get(j), Some('\'' | '"')) {
+                    j += 1;
+                }
+                let word: String = chars[j..]
+                    .iter()
+                    .take_while(|c| c.is_alphanumeric() || **c == '_')
+                    .collect();
+                // A word starting with a digit is a shift (`1 << 3`), not a delimiter.
+                return (!word.is_empty() && !word.starts_with(|c: char| c.is_ascii_digit()))
+                    .then_some(word);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Commands whose arguments are text to print or search, never code to run.
@@ -804,5 +836,20 @@ mod tests {
     fn a_newline_separates_commands() {
         let danger = ["r", "m -", "rf /"].concat();
         assert!(ShellCommandTree::parse(&format!("ls\n{danger}")).is_destructive_rm_root_or_home());
+    }
+
+    #[test]
+    fn a_stray_double_angle_never_hides_later_commands() {
+        let danger = ["r", "m -", "rf /"].concat();
+        for first in ["echo \"x <<EOF\"", "echo $((1 << 3))", "echo 'a <<EOF'", "echo $((1<<n))"] {
+            let script = format!("{first}\n{danger}");
+            assert!(
+                ShellCommandTree::parse(&script).is_destructive_rm_root_or_home(),
+                "{first}"
+            );
+        }
+        // An unterminated heredoc does not swallow the rest either.
+        let open = format!("cat <<EOF\n{danger}");
+        assert!(ShellCommandTree::parse(&open).is_destructive_rm_root_or_home());
     }
 }

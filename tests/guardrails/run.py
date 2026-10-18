@@ -19,7 +19,10 @@ CASES = [
     (BLOCK, "rm -rf /"), (BLOCK, "rm -rf ~"), (BLOCK, "rm -rf $HOME"), (BLOCK, "rm -r -f /"),
     (BLOCK, "rm --recursive --force /"), (BLOCK, "rm -rf /*"), (BLOCK, "sudo rm -rf /"),
     (BLOCK, "sh -c 'rm -rf /'"), (BLOCK, 'eval "rm -rf /"'), (BLOCK, 'echo "$(rm -rf /)"'),
-    (BLOCK, "cd / && rm -rf ."), (BLOCK, "ls\nrm -rf /"), (BLOCK, "find / -delete"),
+    (BLOCK, "cd / && rm -rf ."), (BLOCK, "ls\nrm -rf /"),
+    (BLOCK, 'echo "x <<EOF"\nrm -rf /'), (BLOCK, "echo $((1 << 3))\nrm -rf /"),
+    (BLOCK, "cat <<EOF\nrm -rf /"),  # an unterminated heredoc hides nothing
+    (BLOCK, "find / -delete"),
     (BLOCK, "find ~ -exec rm {} +"), (BLOCK, "chmod -R 777 /"),
     (BLOCK, "git push -f origin main"), (BLOCK, "git push origin +main"),
     (BLOCK, "git push origin HEAD:refs/heads/main --force"),

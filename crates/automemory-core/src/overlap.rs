@@ -24,7 +24,7 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
 /// Files `branch` changed since it diverged from `base` (three-dot diff).
 pub fn changed_files(repo: &Path, base: &str, branch: &str) -> Result<BTreeSet<String>> {
     let range = format!("{base}...{branch}");
-    Ok(git(repo, &["diff", "--name-only", &range])?
+    Ok(git(repo, &["diff", "--name-only", &range, "--"])?
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())

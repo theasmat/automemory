@@ -24,6 +24,10 @@ def main():
             tool(sb, "edit-session", "Edit", file_path=f"src/mod{i}.rs")
         tool(sb, "edit-session", "Bash", command="cargo test")
         sb.hook("claude", "stop", {"session_id": "edit-session", "stop_hook_active": False})
+        # Stop fires after every agent turn: more edits, another Stop.
+        for i in range(3, 6):
+            tool(sb, "edit-session", "Edit", file_path=f"src/mod{i}.rs")
+        sb.hook("claude", "stop", {"session_id": "edit-session", "stop_hook_active": False})
 
         tool(sb, "read-session", "Read", file_path="README.md")
         sb.hook("claude", "stop", {"session_id": "read-session", "stop_hook_active": False})
@@ -31,9 +35,10 @@ def main():
         found = sb.mcp("memory.search", query="Session checkpoint")
         text = str(found)
         rep.check("Session checkpoint" in text, "editing session leaves a checkpoint memory", text[:200])
-        rep.check("3 edits" in text or "edits across" in text, "checkpoint states what was edited", text[:200])
-        count = text.count("Session checkpoint: 0 edits")
-        rep.check(count == 0, "read-only session leaves no checkpoint", text[:200])
+        rep.check("edits across" in text or "edits" in text, "checkpoint states what was edited", text[:200])
+        rep.check(text.count("Session checkpoint edit-ses") == 1,
+                  "two Stops of one session leave exactly one checkpoint", text[:300])
+        rep.check("Session checkpoint read-ses" not in text, "read-only session leaves no checkpoint", text[:200])
     finally:
         sb.cleanup()
     return rep.finish()
