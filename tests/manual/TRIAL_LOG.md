@@ -24,7 +24,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
 | T7 | Instruction files: `export-rules` block read by another agent | PASS | 2026-10-19 |
 | T8 | Dashboard: pages show real data, tour and Settings work | PASS | 2026-10-19 |
-| T9 | Human password gate | PENDING | |
+| T9 | Human password gate | PARTIAL (agent pass; dashboard pending) | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 
 ## Test cases
@@ -343,4 +343,21 @@ Not fixed / observations
 - Decision cards repeat the same text three times ("Decision (storage): ...", "Architectural Decision: storage", "Decision: ...").
 - Home says "1 working now" for an agent whose last event was within 10 minutes, even when its session has ended.
 - Existing decisions keep no project; the rules view lists project-less decisions, so they still reach the instruction files.
+
+### 2026-10-19 T9 Human password gate: PARTIAL (agent side pass; dashboard side not reported)
+
+Run: `automemory rule passwd` set; an agent was asked to run `automemory mode set vibe`.
+
+Agent side: PASS
+- The agent's command stopped at the prompt `AutoMemory human password:` and the agent asked the human which password to type (it did not
+  have it and could not continue). `automemory mode get` afterwards: **STRICT**, unchanged.
+- Design note: the prompt appears because the agent's shell has a terminal; the gate holds because only the human knows the password.
+  If the human tells the agent the password, that is consent. No code change.
+- Pending: the agent's waiting command should be cancelled.
+
+Audit evidence from the same output (confirms T6b for both agents): `hook.deny` rows for **agy** and **claude** with
+`CRITICAL STOP: trial-block: Trial rule`, plus agy's force-push and download-pipe denials, each with the session id.
+
+Not reported yet: dashboard part (masked prompt on changing the mode, wrong password rejected with a clear message, right one accepted,
+asked only once per tab) and the clarity of the error text.
 
