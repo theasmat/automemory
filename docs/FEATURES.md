@@ -65,7 +65,8 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Coordination
 | Feature | Status | Notes |
 |---|---|---|
-| File/glob leases, TTL, heartbeat, override | ✅ | Advisory |
+| File/glob leases, TTL, heartbeat, override | ✅ | Advisory in Vibe, hard in Strict |
+| Automatic locking (hook leases, shell prediction, `git status` reconciliation, prompt visibility, idle-holder watcher, coverage report) | ✅ | Agents never call `lock.acquire`; see ARCHITECTURE §7. Hook-less agents get alerts only |
 | Worktree-shared memory/decisions/leases | 🔧 | Uncommitted work in `sync/` |
 | Baton handoff | ✅ | |
 | Task queue + cross-review (tests as judge) | ✅ | |
@@ -98,7 +99,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 168 Rust tests + 9 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 177 Rust tests + 9 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

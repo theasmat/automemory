@@ -305,14 +305,14 @@ impl Database {
             Some(s) => conn.execute(
                 "UPDATE leases
                  SET heartbeat_at = ?1,
-                     expires_at = datetime('now', printf('+%d seconds', ttl_seconds))
+                     expires_at = strftime('%Y-%m-%dT%H:%M:%f000+00:00', 'now', printf('+%d seconds', ttl_seconds))
                  WHERE session_id = ?2 AND scope = ?3",
                 params![now_str, session_id, s],
             )?,
             None => conn.execute(
                 "UPDATE leases
                  SET heartbeat_at = ?1,
-                     expires_at = datetime('now', printf('+%d seconds', ttl_seconds))
+                     expires_at = strftime('%Y-%m-%dT%H:%M:%f000+00:00', 'now', printf('+%d seconds', ttl_seconds))
                  WHERE session_id = ?2",
                 params![now_str, session_id],
             )?,
@@ -371,6 +371,11 @@ impl Database {
 }
 
 /// Determines whether a lease scope matches a given target path or symbol.
+/// Whether a held lease on `scope` covers the file `path`.
+pub fn scope_covers(scope: &str, scope_type: &LeaseScopeType, path: &str) -> bool {
+    scope_matches(scope, scope_type, path)
+}
+
 fn scope_matches(scope: &str, scope_type: &LeaseScopeType, target: &str) -> bool {
     let clean_target = target.trim_start_matches("./");
     let clean_scope = scope.trim_start_matches("./");
@@ -427,6 +432,23 @@ fn scopes_conflict(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn heartbeat_keeps_a_lease_alive_past_the_purge() {
+        let db = Database::open_in_memory().unwrap();
+        let args = |session| LeaseAcquireArgs {
+            project_id: Some("p"), agent: "a", session_id: session, scope: "src/h.rs",
+            scope_type: LeaseScopeType::File, goal: "g", ttl_seconds: 600,
+        };
+        db.acquire_lease(args("s1")).unwrap();
+        assert_eq!(db.heartbeat_lease("s1", None).unwrap(), 1);
+        // list_active_leases purges `expires_at < now` as text; a heartbeat must not write an
+        // expiry in a format that sorts before every same-day timestamp.
+        let leases = db.list_active_leases(Some("p")).unwrap();
+        assert_eq!(leases.len(), 1);
+        assert!(leases[0].remaining_seconds(chrono::Utc::now()) > 500);
+        assert!(matches!(db.acquire_lease(args("s2")).unwrap(), LeaseAcquireResult::Conflict { .. }));
+    }
 
     /// Separate connections stand in for separate hook processes.
     #[test]

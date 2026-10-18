@@ -132,3 +132,38 @@ pub fn overlap(base: &str, branch: Option<&str>) -> Result<()> {
     println!("Merge one first and rebase the other, or coordinate with the agent on that branch.");
     std::process::exit(1);
 }
+
+/// `automemory locks --coverage`: how many file changes a lease covered, and when.
+pub fn coverage(days: i64) -> Result<()> {
+    let config = Config::default_config();
+    let db = Database::open(&config.db_path)?;
+    let rows = db.coverage_since(days)?;
+    let (before, after, unknown) = automemory_core::locking::coverage_summary(&rows);
+    let total = before + after + unknown;
+    println!("Lock coverage, last {days} days: {total} file changes");
+    if total == 0 {
+        println!("  nothing recorded yet (agents need the AutoMemory hooks installed)");
+        return Ok(());
+    }
+    let pct = |n: i64| 100.0 * n as f64 / total as f64;
+    println!("  leased before the write (edit tools, predicted shell writes): {before} ({:.0}%)", pct(before));
+    println!("  found after the command and reported/leased:                  {after} ({:.0}%)", pct(after));
+    println!("  could not be attributed (another command ran at the same time): {unknown} ({:.0}%)", pct(unknown));
+    println!("  covered or reported: {:.0}%", pct(before + after));
+    Ok(())
+}
+
+/// One line for `doctor`.
+pub fn coverage_line(db: &Database, days: i64) -> String {
+    let rows = db.coverage_since(days).unwrap_or_default();
+    let (b, a, u) = automemory_core::locking::coverage_summary(&rows);
+    let total = b + a + u;
+    if total == 0 {
+        return "no file changes recorded yet".to_string();
+    }
+    format!(
+        "{:.0}% of {total} file changes in {days}d covered or reported ({:.0}% leased before the write)",
+        100.0 * (b + a) as f64 / total as f64,
+        100.0 * b as f64 / total as f64
+    )
+}

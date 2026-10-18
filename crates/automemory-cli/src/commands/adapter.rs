@@ -51,6 +51,7 @@ const CLAUDE_EVENTS: &[CanonicalEvent] = &[
     CanonicalEvent::PreToolUse,
     CanonicalEvent::PostToolUse,
     CanonicalEvent::Stop,
+    CanonicalEvent::SessionEnd,
 ];
 const MCP_ONLY: &[CanonicalEvent] = &[];
 

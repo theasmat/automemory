@@ -16,7 +16,67 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub security: SecurityConfig,
     #[serde(default)]
+    pub locks: LockSettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
+}
+
+/// Automatic file locking (`[locks]` in config.toml).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockSettings {
+    /// Paths that never take or conflict on a lease (build output, dependencies, lockfiles).
+    /// Patterns: `dir/**` for a folder, `*.ext` for a suffix, otherwise an exact path or segment.
+    #[serde(default = "default_lock_ignore")]
+    pub ignore: Vec<String>,
+    /// A lease expires this many seconds after its holder's last tool event.
+    #[serde(default = "default_lock_idle_ttl")]
+    pub idle_ttl_seconds: i64,
+    /// After each shell command, compare `git status` before and after to find files it
+    /// changed that no lease covered.
+    #[serde(default = "default_true")]
+    pub reconcile: bool,
+}
+
+fn default_lock_ignore() -> Vec<String> {
+    [
+        "target/**", "node_modules/**", "dist/**", "build/**", ".next/**", ".nuxt/**", ".git/**",
+        "__pycache__/**", "*.lock", "*.pyc", "*.log", ".DS_Store",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn default_lock_idle_ttl() -> i64 {
+    600
+}
+
+impl Default for LockSettings {
+    fn default() -> Self {
+        Self {
+            ignore: default_lock_ignore(),
+            idle_ttl_seconds: default_lock_idle_ttl(),
+            reconcile: true,
+        }
+    }
+}
+
+impl LockSettings {
+    /// True when `path` (relative or absolute) is covered by an ignore pattern.
+    pub fn is_ignored(&self, path: &str) -> bool {
+        let p = path.trim_start_matches("./");
+        self.ignore.iter().any(|pat| {
+            if let Some(dir) = pat.strip_suffix("/**") {
+                p == dir
+                    || p.starts_with(&format!("{dir}/"))
+                    || p.contains(&format!("/{dir}/"))
+            } else if let Some(ext) = pat.strip_prefix('*') {
+                p.ends_with(ext)
+            } else {
+                p == pat || p.ends_with(&format!("/{pat}"))
+            }
+        })
+    }
 }
 
 fn default_version() -> u32 {
@@ -51,6 +111,7 @@ impl Default for GlobalConfig {
             vault: VaultConfig::default(),
             defaults: DefaultSettings::default(),
             security: SecurityConfig::default(),
+            locks: LockSettings::default(),
             projects: Vec::new(),
         }
     }

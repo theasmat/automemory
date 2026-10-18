@@ -267,6 +267,7 @@ pub(crate) const CLAUDE_HOOKS: &[HookSpec] = &[
     ("PostToolUse", Some("*"), "post-tool"),
     ("PostToolUseFailure", Some("*"), "post-tool-fail"),
     ("Stop", None, "stop"),
+    ("SessionEnd", None, "session-end"),
 ];
 
 pub(crate) const CODEX_HOOKS: &[HookSpec] = &[
@@ -275,6 +276,7 @@ pub(crate) const CODEX_HOOKS: &[HookSpec] = &[
     ("PreToolUse", Some("*"), "pre-tool"),
     ("PostToolUse", Some("*"), "post-tool"),
     ("Stop", None, "stop"),
+    ("SessionEnd", None, "session-end"),
 ];
 
 fn is_automemory_group(group: &serde_json::Value) -> bool {

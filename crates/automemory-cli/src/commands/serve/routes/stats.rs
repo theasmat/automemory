@@ -156,5 +156,11 @@ pub async fn api_coordination(
             ),
         )
     };
-    Json(json!({ "leases": leases, "rooms": rooms, "batons": batons }))
+    let alerts: Vec<_> = state
+        .db
+        .recent_alerts(10)
+        .into_iter()
+        .map(|(ts, path, message)| json!({ "ts": ts, "path": path, "message": message }))
+        .collect();
+    Json(json!({ "leases": leases, "rooms": rooms, "batons": batons, "alerts": alerts }))
 }

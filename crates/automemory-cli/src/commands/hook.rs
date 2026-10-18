@@ -70,6 +70,29 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     // Gated off by default: PRD pull-principle (§5) reserves context for
     // explicit queries; enable with [defaults] boot_injection = true.
     let canonical = CanonicalEvent::from_cli(event);
+    let lock_cfg = GlobalConfig::load().map(|g| g.locks).unwrap_or_default();
+    let known_session = session_id != "unknown-session";
+    let command_text: Option<String> = tool_info
+        .as_ref()
+        .filter(|t| t.category == "command")
+        .and_then(|t| t.input.as_ref())
+        .and_then(|i| i.get("command").or_else(|| i.get("CommandLine")))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    // Any activity keeps the session's leases alive; they lapse when it goes quiet.
+    if known_session
+        && matches!(
+            canonical,
+            Some(
+                CanonicalEvent::PreToolUse
+                    | CanonicalEvent::PostToolUse
+                    | CanonicalEvent::UserPromptSubmit
+                    | CanonicalEvent::SubagentStart
+            )
+        )
+    {
+        let _ = db.heartbeat_lease(&session_id, None);
+    }
     if canonical == Some(CanonicalEvent::SessionStart) {
         let boot_on = GlobalConfig::load()
             .map(|g| g.defaults.boot_injection)
@@ -103,14 +126,19 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
 
     // ── Pending-work nudge: only speaks when something is assigned ─────────
     if canonical == Some(CanonicalEvent::UserPromptSubmit) {
-        if let Some(nudge) = pending_work_nudge(&db, effective_project_id, &session_id) {
-            if native_hook_style(agent) {
-                println!("{}", native_context("UserPromptSubmit", &nudge));
-            } else {
-                println!("{}", json!({ "nudge": nudge }));
-            }
-        } else {
+        let parts: Vec<String> = [
+            pending_work_nudge(&db, effective_project_id, &session_id),
+            others_leases_note(&db, effective_project_id, &session_id),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if parts.is_empty() {
             println!("{{}}");
+        } else if native_hook_style(agent) {
+            println!("{}", native_context("UserPromptSubmit", &parts.join(" ")));
+        } else {
+            println!("{}", json!({ "nudge": parts.join(" ") }));
         }
         return Ok(());
     }
@@ -133,6 +161,16 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             .and_then(|t| t.input.as_ref())
             .unwrap_or(&raw_payload);
         let (mut paths, symbols) = extract_target_paths_and_symbols(tool_name, tool_args);
+        // A shell command is leased on the files it will write, before it runs.
+        let shell_targets = command_text
+            .as_deref()
+            .map(automemory_core::locking::shell_write_targets)
+            .unwrap_or_default();
+        for t in &shell_targets {
+            if !paths.contains(t) {
+                paths.push(t.clone());
+            }
+        }
         if gate_event == CanonicalEvent::PreCommit {
             for f in staged_files(&project_ref.root_path) {
                 if !paths.contains(&f) {
@@ -148,7 +186,9 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             args: tool_args,
             paths: &paths,
             symbols: &symbols,
-            is_mutation: gate_event == CanonicalEvent::PreCommit || is_mutation_tool(tool_name),
+            is_mutation: gate_event == CanonicalEvent::PreCommit
+                || is_mutation_tool(tool_name)
+                || !shell_targets.is_empty(),
         };
         let hooks_cfg = HooksConfig::load(
             &config.home_dir.join("hooks.toml"),
@@ -184,6 +224,23 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
 
     // ── Record Event ──────────────────────────────────────────────────────────
     let project_root = project_ref.root_path.clone();
+    let root_dir = || {
+        if project_root.is_empty() {
+            std::env::current_dir().unwrap_or_default()
+        } else {
+            PathBuf::from(&project_root)
+        }
+    };
+    // Before a shell command: remember what git sees, to find what the command changes.
+    if canonical == Some(CanonicalEvent::PreToolUse)
+        && command_text.is_some()
+        && known_session
+        && lock_cfg.reconcile
+    {
+        if let Some(snap) = automemory_core::locking::snapshot(&root_dir()) {
+            let _ = db.begin_snapshot(&session_id, effective_project_id, &snap);
+        }
+    }
     let normalized_event = build_normalized_event(
         agent,
         event,
@@ -194,6 +251,39 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         &raw_payload,
     );
     let _ = db.append_event(&normalized_event);
+
+    // After a shell command: lease the files it changed that nothing covered, and tell the
+    // agent when one of them is held by someone else.
+    let mut post_note: Option<String> = None;
+    if canonical == Some(CanonicalEvent::PostToolUse)
+        && command_text.is_some()
+        && known_session
+        && lock_cfg.reconcile
+    {
+        if let (Ok(Some(before)), Some(after)) = (
+            db.finish_snapshot(&session_id),
+            automemory_core::locking::snapshot(&root_dir()),
+        ) {
+            let r = automemory_core::locking::reconcile(
+                &db,
+                &lock_cfg,
+                effective_project_id,
+                &session_id,
+                agent,
+                &before,
+                &after,
+            );
+            post_note = lock_conflict_note(&r.conflicts);
+        }
+    }
+
+    // The session is over: its files are free for other agents at once.
+    if canonical == Some(CanonicalEvent::SessionEnd) {
+        let _ = db.release_leases(&session_id, None);
+        db.drop_snapshot(&session_id);
+        println!("{{}}");
+        return Ok(());
+    }
 
     // ── Session Completion & Major Milestone Distillation ────────────────────
     // Intermediate tool calls (view, grep, edit, read) only append to raw telemetry.
@@ -231,8 +321,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         &raw_payload,
     );
 
-    // Release all active leases held by this session upon stop — unless work
-    // is owed, in which case the stop is blocked (PRD §7.2) and the human is
+    // Stop is blocked when work is owed, in which case the stop is blocked (PRD §7.2) and the human is
     // told why through the Notifier port.
     if canonical == Some(CanonicalEvent::Stop) {
         if let Some(owed) = pending_work_nudge(&db, effective_project_id, &session_id) {
@@ -240,7 +329,9 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             println!("{}", json!({"decision": "block", "reason": owed}));
             return Ok(());
         }
-        let _ = db.release_leases(&session_id, None);
+        // Stop fires after every agent turn, so leases stay (renewed by activity, expiring
+        // when idle); SessionEnd releases them. Only the in-flight marker is cleared.
+        let _ = db.finish_snapshot(&session_id);
     }
 
     // PostCommit staleness: committed files flip linked memories to `changed`.
@@ -260,9 +351,53 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         canonical,
         Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
     ) {
-        println!("{{}}");
+        match post_note {
+            Some(n) if native_hook_style(agent) => println!("{}", native_context("PostToolUse", &n)),
+            Some(n) => println!("{}", json!({ "note": n })),
+            None => println!("{{}}"),
+        }
     }
     Ok(())
+}
+
+/// What the agent is told when a command changed files that another session holds.
+fn lock_conflict_note(conflicts: &[automemory_core::models::LeaseConflict]) -> Option<String> {
+    if conflicts.is_empty() {
+        return None;
+    }
+    let items: Vec<String> = conflicts
+        .iter()
+        .take(5)
+        .map(|c| {
+            format!(
+                "'{}' is leased by agent '{}' (goal: '{}', {}s left)",
+                c.scope, c.holder_agent, c.goal, c.remaining_seconds
+            )
+        })
+        .collect();
+    Some(format!(
+        "Lock warning: that command changed files another agent holds: {}. Coordinate before changing them again.",
+        items.join("; ")
+    ))
+}
+
+/// Files other sessions hold right now, so the agent can avoid them before it starts.
+fn others_leases_note(db: &Database, project_id: Option<&str>, session_id: &str) -> Option<String> {
+    let leases = db.list_active_leases(project_id).ok()?;
+    let others: Vec<String> = leases
+        .iter()
+        .filter(|l| l.session_id != session_id)
+        .take(8)
+        .map(|l| format!("{} ({}: {})", l.scope, l.agent, l.goal))
+        .collect();
+    if others.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "Files other agents are editing right now: {}. Avoid them or coordinate first.",
+            others.join("; ")
+        ))
+    }
 }
 
 /// Claude Code and Codex share one hook wire format (`hookSpecificOutput`);

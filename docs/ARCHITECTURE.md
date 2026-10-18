@@ -74,7 +74,8 @@ Agents emit native events → adapter normalizes → pipeline runs ordered handl
 | `boot` | SessionStart | Silent by default; with `boot_injection` prints token-capped constitution + recent decisions |
 | `pre-tool` | PreToolUse | Gate: lease check → guardrail → custom exec |
 | `post-tool`, `post-tool-fail` | PostToolUse | Append outcome (exit code, stderr) to ledger; failures feed the failure catalog |
-| `task-done` / `stop` | Stop | Release leases, distill, and save a `Session checkpoint` memory if the session edited files; `stop` blocks if a review is owed |
+| `task-done` / `stop` | Stop | Distill and save a `Session checkpoint` memory if the session edited files (leases stay); `stop` blocks if a review is owed |
+| `session-end` | SessionEnd | Release the session's leases and drop its snapshot |
 | `pre-commit` | PreCommit | Gate over staged files; lease collision denies in Strict |
 | `post-commit` | PostCommit | Flip linked memories to `changed`; distill |
 | `user-prompt-submit` | UserPromptSubmit | One-line nudge only if work is assigned |
@@ -114,7 +115,7 @@ Context assembly order: locked preferences → project identity → high-confide
 
 ## 7. Locks, handoff, orchestration
 
-- **Leases:** taken automatically by the pre-edit hook (`[defaults] auto_lease`, on by default; 5-minute TTL renewed by each edit; released on Stop), or explicitly with `lock.acquire`. File/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Leases stay file/glob; no symbol-level leases.
+- **Leases (automatic locking):** an agent never has to call `lock.acquire`. The pre-tool hook takes a file lease (`[defaults] auto_lease`, on by default) for edit-tool targets and for the files a shell command is predicted to write (`locking::shell_write_targets`: redirects, `tee`, `sed -i`, `mv`/`cp`/`rm`/`touch`, `git checkout|restore -- f`). Every tool event, prompt and subagent start renews all of a session's leases (`[locks] idle_ttl_seconds`, default 600), so they lapse only when the agent goes quiet; `SessionEnd` releases them, `Stop` (end of a turn) does not. Paths matching `[locks] ignore` (build output, dependencies, lockfiles) never lock. Around each shell command the hook snapshots `git status` and compares afterwards (`locking::reconcile`): files it changed that no lease covered are leased and counted as `reconciled`; if another session holds one, the agent gets a PostToolUse warning; if another session's command ran at the same time the change is only counted as `unattributed`. The prompt hook lists files other agents hold. `automemory locks --coverage` and `doctor` report the share of file changes covered or reported. `serve` also watches registered project folders and raises an alert (dashboard Agents & Locks) when a file changes under a lease whose holder has been idle for 20 s: an agent without hooks, or a person. Explicit `lock.acquire` still works. File/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Leases stay file/glob; no symbol-level leases.
 - **Baton:** < 400-token handoff built from the ledger (`baton.pass` / `baton.pickup`).
 - **Tasks/review:** `task.create|next|submit`, cross-review with tests as judge (`review.next|post|submit`).
 - **Planning Room** (v1 scope): turn-gated state machine (propose → critique → revise, human tiebreak). A room advances only when the turn holder posts; the daemon rejects posts whose evidence IDs do not resolve. Every tool reply ends with a daemon-written `next_action`; posts from other agents are returned as quoted data with author and trust tier. Stored rationale is 3–5 lines, never raw reasoning.

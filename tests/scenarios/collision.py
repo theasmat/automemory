@@ -66,9 +66,13 @@ def main():
                   "auto-lease: B (another agent) is told who holds the file", f"{raw!r}")
         sb.hook("claude", "stop", {"session_id": "autoA", "stop_hook_active": False})
         parsed, raw, err = edit(sb, "codex", "autoB", "src/auto.rs")
-        rep.check(not reported(parsed, raw, err), "auto-lease: Stop releases it, B's edit is clean",
+        rep.check(reported(parsed, raw, err), "auto-lease: a turn ending (Stop) keeps the lease",
                   f"{raw!r}")
-        sb.hook("codex", "stop", {"session_id": "autoB", "stop_hook_active": False})
+        sb.hook("claude", "session-end", {"session_id": "autoA"})
+        parsed, raw, err = edit(sb, "codex", "autoB", "src/auto.rs")
+        rep.check(not reported(parsed, raw, err), "auto-lease: SessionEnd releases it, B's edit is clean",
+                  f"{raw!r}")
+        sb.hook("codex", "session-end", {"session_id": "autoB"})
 
         # Strict mode turns the warning into a block.
         sb.run("mode", "set", "strict")

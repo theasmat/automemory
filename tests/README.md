@@ -20,7 +20,8 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Rust unit + integration | `cargo test --workspace` | Domain logic: guardrails, leases (incl. a multi-connection race), migrations, retrieval, sync deltas, overlap check, CodeIntel with a fake engine, dashboard origin guard, hook output formats |
 | Agent hook contract | `python3 tests/contract/run.py [agent]` | Recorded Claude Code, Codex and Antigravity payloads produce the right hook output (deny / warn / silent) |
 | Guardrail table | `python3 tests/guardrails/run.py` | What is blocked, what only warns, what must pass (false positives and bypasses live here) |
-| Two-agent collision | `python3 tests/scenarios/collision.py` | A second agent editing a leased file is told; unrelated files stay silent; parallel lease requests |
+| Two-agent collision | `python3 tests/scenarios/collision.py` | A second agent editing a leased file is told (Vibe) or denied (Strict) with no `lock.acquire`; unrelated files stay silent; parallel lease requests |
+| Automatic locking v2 | `python3 tests/scenarios/locking_v2.py` | Leases survive Stop and end at SessionEnd; shell writes are leased before they run; unpredictable script writes are caught afterwards and collisions reported; prompt lists others' files; ignored paths; coverage report |
 | Session lifecycle | `python3 tests/scenarios/session_lifecycle.py` | Stop leaves a checkpoint memory for sessions that edited files |
 | Human password gate | `python3 tests/scenarios/human_gate.py` | With a password set, agents cannot decide proposals or change rules (MCP and CLI) |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |

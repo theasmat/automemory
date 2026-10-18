@@ -37,14 +37,19 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Automatic locking v2 (design in PLAN §6)
 
-- [ ] Step 1: session-bound leases (renew on any tool event, release on SessionEnd or idle timeout, not on Stop); optional wait-for-lock; per-path hard/soft/ignored policy
-- [ ] Step 2: predict write targets of shell commands; PostToolUse `git status` reconciliation with retroactive leases
-- [ ] Step 3: watcher alerts for agents without hooks
-- [ ] Step 4: `automemory run <agent>` launcher with a worktree per session (decide: v1 or Phase 7)
+- [x] Session-bound leases (heartbeat on any activity, SessionEnd releases, idle TTL 600 s); per-path ignore policy (`[locks] ignore`)
+- [x] Shell write prediction; `git status` reconciliation with retroactive leases and PostToolUse warnings
+- [x] Prompt hook lists files other agents hold; `locks --coverage` and `doctor` coverage line
+- [x] Watcher alerts for changes under an idle holder's lease (dashboard)
+- [ ] Re-run `automemory connect claude -g` (and codex) so the new SessionEnd hook is installed; leases still expire after 10 idle minutes without it
+- [ ] After a week of real use: read `automemory locks --coverage`; if below 80%, look at which `reconciled`/`unattributed` writes dominate
+- [ ] Optional wait-for-lock mode (hook waits a few seconds for a held file); hard/soft per-path policy beyond `ignore`
+- [ ] Watcher only sees registered projects; register the project (`automemory init`/`link`) for hook-less agent alerts
+- [ ] Decide: in Strict mode, should reconciliation deny the offending session's next call (today it warns)
 
 ## Docs hygiene
 
-- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 168 Rust tests at last check)
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 177 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

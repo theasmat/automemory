@@ -38,7 +38,9 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 1. Terminal 1: Claude Code. Terminal 2: Codex. Same repo.
 2. Tell Claude Code to make a long series of edits to `src/x` (a long task). Do not mention locks: the first edit takes the lease by itself.
 3. Tell Codex to edit `src/x`. Expected: Codex's edit is reported (lease held by claude, with its goal).
-4. Let Claude Code finish (Stop releases leases). Codex's next edit is clean.
+4. Let Claude Code finish and exit the session (SessionEnd releases the leases; if it is just left open they expire after 10 idle minutes). Codex's next edit is clean.
+5. Ask Claude Code to run a shell command that changes the same file (`sed -i`, or a small script). Expected: the other agent is told afterwards.
+6. `automemory locks --coverage` shows the week's share of file changes covered or reported.
 
 ## E. Dashboard in a browser
 

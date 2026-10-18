@@ -68,6 +68,28 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         }
     }
 
+    // 3b. Watch project folders for changes under an idle holder's lease (agents without hooks)
+    {
+        let mut roots = Vec::new();
+        for p in db.list_projects().unwrap_or_default() {
+            for pp in db.get_project_paths(&p.id).unwrap_or_default() {
+                let dir = PathBuf::from(&pp.local_path);
+                if dir.is_dir() {
+                    roots.push((Some(p.id.clone()), dir));
+                }
+            }
+        }
+        if !roots.is_empty() {
+            let tx = broadcast_tx.clone();
+            let settings = automemory_core::config::GlobalConfig::load()
+                .map(|g| g.locks)
+                .unwrap_or_default();
+            let _ = automemory_core::lockwatch::start(db.clone(), settings, roots, move |msg| {
+                let _ = tx.send(json!({ "type": "lock_alert", "message": msg, "timestamp": Utc::now().to_rfc3339() }).to_string());
+            });
+        }
+    }
+
     // 4. Start periodic consolidation worker (every 60 minutes)
     let consolidator = Arc::new(ConsolidationWorker::new(db.clone()));
     tokio::spawn(async move {

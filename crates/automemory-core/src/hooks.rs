@@ -19,6 +19,7 @@ pub enum CanonicalEvent {
     PreCommit,
     PostCommit,
     Stop,
+    SessionEnd,
     SubagentStart,
     SubagentStop,
     PreCompact,
@@ -40,6 +41,7 @@ impl CanonicalEvent {
             "pre_commit" | "precommit" => Some(Self::PreCommit),
             "post_commit" | "postcommit" => Some(Self::PostCommit),
             "stop" | "task_done" | "session_stop" => Some(Self::Stop),
+            "session_end" | "sessionend" => Some(Self::SessionEnd),
             "subagent_start" | "subagentstart" => Some(Self::SubagentStart),
             "subagent_stop" | "subagentstop" => Some(Self::SubagentStop),
             "pre_compact" | "precompact" => Some(Self::PreCompact),
@@ -58,6 +60,7 @@ impl CanonicalEvent {
             Self::PreCommit => "PreCommit",
             Self::PostCommit => "PostCommit",
             Self::Stop => "Stop",
+            Self::SessionEnd => "SessionEnd",
             Self::SubagentStart => "SubagentStart",
             Self::SubagentStop => "SubagentStop",
             Self::PreCompact => "PreCompact",
@@ -396,7 +399,18 @@ impl HookHandler for LockCheckHandler {
         if (ctx.paths.is_empty() && ctx.symbols.is_empty()) || !ctx.is_mutation {
             return HandlerOutput::allow();
         }
-        let (paths, symbols) = expand_scope_via_graph(db, project_id, ctx.paths, ctx.symbols);
+        let cfg = crate::config::GlobalConfig::load().unwrap_or_default();
+        // Build output, dependencies and lockfiles never lock or conflict.
+        let live: Vec<String> = ctx
+            .paths
+            .iter()
+            .filter(|p| !cfg.locks.is_ignored(p))
+            .cloned()
+            .collect();
+        if live.is_empty() && ctx.symbols.is_empty() {
+            return HandlerOutput::allow();
+        }
+        let (paths, symbols) = expand_scope_via_graph(db, project_id, &live, ctx.symbols);
         let mut conflict = db
             .check_collision(project_id, ctx.session_id, &paths, &symbols)
             .ok()
@@ -404,8 +418,8 @@ impl HookHandler for LockCheckHandler {
         // No one else holds these files: take (or renew) a lease for this session, so agents
         // never have to call lock.acquire. The acquire is atomic, so a race with another
         // process still ends in a conflict for exactly one of them.
-        if conflict.is_none() && auto_lease_applies(ctx) {
-            for scope in lease_scopes(ctx.paths) {
+        if conflict.is_none() && auto_lease_applies(ctx, &cfg) {
+            for scope in lease_scopes(&live) {
                 let args = LeaseAcquireArgs {
                     project_id,
                     agent: ctx.agent,
@@ -413,8 +427,12 @@ impl HookHandler for LockCheckHandler {
                     scope,
                     scope_type: LeaseScopeType::File,
                     goal: &format!("editing {scope}"),
-                    ttl_seconds: AUTO_LEASE_TTL_SECONDS,
+                    ttl_seconds: cfg.locks.idle_ttl_seconds,
                 };
+                // Commands are counted when they finish (see locking::reconcile).
+                if ctx.tool != "command" {
+                    db.record_write(project_id, ctx.session_id, scope, "edit");
+                }
                 if let Ok(LeaseAcquireResult::Conflict { conflict: c }) = db.acquire_lease(args) {
                     conflict = Some(c);
                     break;
@@ -465,17 +483,12 @@ impl HookHandler for LockCheckHandler {
     }
 }
 
-/// An auto-lease is renewed by every edit, so an agent that goes quiet loses it in 5 minutes.
-const AUTO_LEASE_TTL_SECONDS: i64 = 300;
-
 /// Edits only (not commits), by an identifiable session, unless switched off in config.
-fn auto_lease_applies(ctx: &PipelineCtx<'_>) -> bool {
+fn auto_lease_applies(ctx: &PipelineCtx<'_>, cfg: &crate::config::GlobalConfig) -> bool {
     ctx.event == CanonicalEvent::PreToolUse
         && !ctx.session_id.is_empty()
         && ctx.session_id != "unknown-session"
-        && crate::config::GlobalConfig::load()
-            .map(|g| g.defaults.auto_lease)
-            .unwrap_or(true)
+        && cfg.defaults.auto_lease
 }
 
 /// The hook lists a file as both `/abs/src/a.rs` and `src/a.rs`; lease only the shorter form

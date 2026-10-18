@@ -30,6 +30,13 @@
       </table>
     </section>
 
+    <section v-if="data.alerts.length" class="space-y-3">
+      <h2 class="text-sm font-mono font-bold text-amber-400">Changes under an idle lease ({{ data.alerts.length }})</h2>
+      <div v-for="a in data.alerts" :key="a.ts + a.path" class="border border-amber-800 bg-dark-950 p-3 text-xs font-mono text-gray-300">
+        <span class="text-gray-500">{{ a.ts }}</span> {{ a.message }}
+      </div>
+    </section>
+
     <section class="space-y-3">
       <h2 class="text-sm font-mono font-bold text-gray-300">Planning rooms ({{ data.rooms.length }})</h2>
       <div v-if="!data.rooms.length" class="text-xs font-mono text-gray-600 border border-dark-800 bg-dark-950 p-6">
@@ -59,7 +66,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { Users } from 'lucide-vue-next';
 
-const data = ref<{ leases: any[]; rooms: any[]; batons: any[] }>({ leases: [], rooms: [], batons: [] });
+const data = ref<{ leases: any[]; rooms: any[]; batons: any[]; alerts: any[] }>({ leases: [], rooms: [], batons: [], alerts: [] });
 let timer: ReturnType<typeof setInterval> | undefined;
 
 async function load() {

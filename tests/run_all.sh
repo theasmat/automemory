@@ -23,6 +23,7 @@ run "rust unit + integration tests"   cargo test --workspace
 run "agent hook contract"             python3 tests/contract/run.py
 run "guardrail table"                 python3 tests/guardrails/run.py
 run "two-agent collision"             python3 tests/scenarios/collision.py
+run "automatic locking v2"          python3 tests/scenarios/locking_v2.py
 run "session lifecycle"               python3 tests/scenarios/session_lifecycle.py
 run "human password gate"             python3 tests/scenarios/human_gate.py
 run "dashboard API"                   python3 tests/scenarios/dashboard.py

@@ -150,6 +150,16 @@ pub fn execute() -> Result<()> {
         None => println!("⚠ not installed; symbol checks fall back to file hashes"),
     }
 
+    // Lock coverage
+    {
+        print!("Checking lock coverage... ");
+        if let Ok(db) = Database::open(&config.db_path) {
+            println!("✓ {}", super::lock::coverage_line(&db, 7));
+        } else {
+            println!("– database unavailable");
+        }
+    }
+
     // 7. Native agent hooks (Claude Code, Codex)
     if let Some(home) = dirs::home_dir() {
         for (name, path, hint) in [

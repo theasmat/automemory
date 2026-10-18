@@ -83,6 +83,8 @@ Today (done): the pre-edit hook takes a file lease on the first edit, renews it 
 5. **Hard isolation (large).** `automemory run <agent>` creates a git worktree per session and starts the agent inside it (hooks cannot change an agent's working directory, so a launcher is required). Same-file collisions become impossible; `automemory overlap` and the PreCommit check handle merge time. This is the Runner port from the PRD.
 6. **Policy (small).** Per-path rules in config: `hard` paths always deny, `soft` paths warn, `ignored` paths (build output, lockfiles) never lease.
 
+**Status (Oct 2026):** layers 1, 2, 3, 4 and 6 and the coverage metric are built (`tests/scenarios/locking_v2.py`); layer 5 (worktree launcher) is deliberately not planned. Measure the result with `automemory locks --coverage` after a week of real use; the target is ≥ 80% covered or reported.
+
 **Order and gates**
 
 | Step | Delivers | Verified by |

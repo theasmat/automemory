@@ -77,6 +77,16 @@ impl ShellCommandTree {
         }
     }
 
+    /// Word tokens of each command in a pipeline or chain (quotes resolved, here-document
+    /// bodies dropped). Redirect operators stay as tokens, which the parsed commands drop.
+    pub fn segment_tokens(raw: &str) -> Vec<Vec<String>> {
+        split_command_chain(&strip_heredoc_bodies(raw))
+            .into_iter()
+            .map(|(seg, _)| tokenize_shell_words(&seg))
+            .filter(|t| !t.is_empty())
+            .collect()
+    }
+
     /// Text for regex rules: the command with the printed or searched text of
     /// `echo`, `grep`, `git commit -m` and friends blanked out, so a command that
     /// merely mentions a dangerous string is not mistaken for running it. Shell

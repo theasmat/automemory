@@ -423,6 +423,35 @@ CREATE TABLE IF NOT EXISTS room_posts (
 CREATE INDEX IF NOT EXISTS idx_rooms_turn ON rooms(project_id, state, turn_holder);
 CREATE INDEX IF NOT EXISTS idx_room_posts_room ON room_posts(room_id, created_at);
 
+-- Automatic locking: pre-command workspace snapshots, per-write coverage, watcher alerts
+CREATE TABLE IF NOT EXISTS workspace_snapshots (
+    session_id TEXT PRIMARY KEY,
+    project_id TEXT,
+    taken_at TEXT NOT NULL,
+    in_flight INTEGER NOT NULL DEFAULT 1,
+    data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lock_coverage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    project_id TEXT,
+    session_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lock_coverage_ts ON lock_coverage(ts);
+
+CREATE TABLE IF NOT EXISTS lock_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    project_id TEXT,
+    path TEXT NOT NULL,
+    holder_agent TEXT NOT NULL,
+    holder_session TEXT NOT NULL,
+    message TEXT NOT NULL
+);
+
 -- Sync watermarks + applied delta files (incremental op-log sync)
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,

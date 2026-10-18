@@ -158,6 +158,14 @@ enum Commands {
         /// Optional project slug or ID filter
         #[arg(short, long)]
         project: Option<String>,
+
+        /// Instead of listing leases, report how many file changes a lease covered
+        #[arg(long)]
+        coverage: bool,
+
+        /// Window for --coverage, in days
+        #[arg(long, default_value_t = 7)]
+        days: i64,
     },
 
     /// Warn about other branches that change the same files as this one (run before merging)
@@ -1174,7 +1182,11 @@ async fn main() -> Result<()> {
                 commands::proposal::reject_all(proposal_type, project)?;
             }
         },
-        Commands::Locks { project } => commands::lock::list_locks(project.as_deref())?,
+        Commands::Locks { project, coverage: true, days } => {
+            let _ = project;
+            commands::lock::coverage(days)?
+        }
+        Commands::Locks { project, .. } => commands::lock::list_locks(project.as_deref())?,
         Commands::Overlap { base, branch } => commands::lock::overlap(&base, branch.as_deref())?,
         Commands::Unlock {
             scope,
