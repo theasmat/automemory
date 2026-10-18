@@ -18,7 +18,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T0 | Baseline: clean machine, local-only registration | PASS | 2026-10-19 |
 | T1 | Claude Code: hooks fire and events are recorded | PASS | 2026-10-19 |
 | T2 | Antigravity: hooks fire, no hook errors | PASS (data) | 2026-10-19 |
-| T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PENDING | |
+| T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PASS | 2026-10-19 |
 | T4 | Two agents, one file: automatic lock and collision message | PENDING | |
 | T5 | Hand-off: a new session continues where the last one stopped | PENDING | |
 | T6 | Safety: a destructive command is denied | PENDING | |
@@ -177,4 +177,21 @@ Evidence
 Found and fixed
 - The Antigravity "Session checkpoint" was typed **decision** (a clean session had no failures, and the fallback type was Decision),
   so it would be counted under Decisions. Clean session summaries are now typed **observation**. Installed.
+
+### 2026-10-19 T3 Shared knowledge: PASS
+
+Run: human note "Prices are stored as integer cents, never floats"; Claude recorded decision payments = "Use Stripe webhooks, not polling";
+new Antigravity session asked, without files or shell, what it knows.
+
+Result
+- `decision get payments` returns the decision (rationale "polling missed events during outages").
+- Antigravity answered both facts correctly and named its sources: three AutoMemory MCP calls (`memory.context`, `memory.search` for
+  payments and for price). Event counts show no new `read` or `command` rows for agy, only `call_mcp_tool` (6 rows) and 2 bare events.
+- So knowledge travelled by pull (the agent asked the memory over MCP), not by text injected into its first prompt. It said it also
+  saw the preference "in the session guidelines"; unverified.
+
+Notes / open
+- Claude called `decision_record` twice (after loading the tool through ToolSearch). Check `automemory decision list` for a duplicate or superseded entry.
+- The decision's agent is stored as "agent": the MCP call did not say who made it, so the dashboard cannot show "Claude Code".
+  (Idea: fill the agent from the hook session when the MCP client does not.)
 
