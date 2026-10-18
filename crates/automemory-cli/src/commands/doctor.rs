@@ -12,7 +12,9 @@ pub fn execute() -> Result<()> {
 
     let config = Config::default_config();
 
-    // 1. Check directories
+    // 1. Check directories. A fresh install has none yet (they are created on first use), which is
+    // not a fault: create them here so the check reports real problems only.
+    let _ = config.ensure_dirs();
     print!("Checking directories (~/.automemory)... ");
     if config.home_dir.exists() && config.hooks_dir.exists() {
         println!("✓ OK ({:?})", config.home_dir);
