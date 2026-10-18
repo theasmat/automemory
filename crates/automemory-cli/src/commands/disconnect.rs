@@ -743,4 +743,18 @@ mod tests {
         fs::write(&path, "  \n").unwrap();
         assert_eq!(read_json_or_empty(&path).unwrap(), serde_json::json!({}));
     }
+
+    #[test]
+    fn connect_agy_registers_hooks_once() {
+        use super::super::connect::connect_agy;
+        let dir = sandbox("agy-once");
+        let (home, ws) = (dir.join("home"), dir.join("ws"));
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(ws.join(".agents/plugins/automemory")).unwrap();
+        // An older install left a second copy that Antigravity would also run.
+        fs::write(ws.join(".agents/plugins/automemory/hooks.json"), "{}").unwrap();
+        connect_agy(&home, &ws, "/bin/automemory", false).unwrap();
+        assert!(ws.join(".agents/hooks.json").exists());
+        assert!(!ws.join(".agents/plugins/automemory/hooks.json").exists());
+    }
 }

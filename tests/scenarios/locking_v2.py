@@ -99,6 +99,18 @@ def main():
         p, raw, _ = agy("stop", executionNum=1, terminationReason="model_stop", fullyIdle=True)
         rep.check(p == {"decision": "allow"}, "agy Stop answers with a decision", raw[:200])
 
+        # 4c. Strict mode denies a shell write to a file another agent holds (the project the
+        # hooks run under must be the one `mode set` changed).
+        sb.run("mode", "set", "strict")
+        pre(sb, "claude", "S1", "Edit", file_path="src/strict_shell.rs")
+        p, raw, _ = pre(sb, "codex", "S2", "Bash", command="echo x >> src/strict_shell.rs")
+        rep.check('"deny"' in raw and "strict_shell.rs" in raw,
+                  "Strict: a shell write to another agent's file is denied", raw[:240])
+        p, raw, _ = agy("pre-tool", toolCall={"name": "run_command", "args": {"CommandLine": "echo x >> src/strict_shell.rs"}})
+        rep.check((p or {}).get("decision") == "deny" and "strict_shell.rs" in (p or {}).get("reason", ""),
+                  "Strict: agy gets decision=deny with a reason", raw[:240])
+        sb.run("mode", "set", "vibe")
+
         # 5. Ignore policy: build output and lockfiles never lock.
         for path in ("target/debug/out.o", "node_modules/x/index.js", "Cargo.lock"):
             pre(sb, "claude", "H", "Write", file_path=path)

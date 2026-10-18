@@ -9,7 +9,7 @@ pub fn list(project_slug: Option<String>) -> Result<()> {
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
 
-    let slug = project_slug.unwrap_or_else(detect_current_project_slug);
+    let slug = project_slug.unwrap_or_else(|| detect_current_project_slug(&db));
     let project = db.get_project_by_slug(&slug)?;
     let project_id = project.as_ref().map(|p| p.id.as_str());
 
@@ -63,7 +63,7 @@ pub fn export(
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
 
-    let slug = project_slug.unwrap_or_else(detect_current_project_slug);
+    let slug = project_slug.unwrap_or_else(|| detect_current_project_slug(&db));
     let project = db.get_project_by_slug(&slug)?;
     let project_id = project.as_ref().map(|p| p.id.as_str());
 
@@ -108,11 +108,6 @@ pub fn export(
     Ok(())
 }
 
-fn detect_current_project_slug() -> String {
-    std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "default".to_string())
-        .to_lowercase()
-        .replace(' ', "-")
+fn detect_current_project_slug(db: &Database) -> String {
+    db.project_slug_for_dir(&std::env::current_dir().unwrap_or_default())
 }

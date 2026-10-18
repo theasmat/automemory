@@ -204,10 +204,9 @@ pub(crate) fn connect_agy(
             serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?,
         )?;
         merge_mcp_config(&plugin_dir.join("mcp_config.json"), exe_path)?;
-        fs::write(
-            plugin_dir.join("hooks.json"),
-            serde_json::to_string_pretty(&hooks_val)?,
-        )?;
+        // Antigravity loads hooks from .agents/hooks.json AND from plugin folders; registering
+        // both ran every hook twice. Keep the workspace file only (and drop an older copy).
+        let _ = fs::remove_file(plugin_dir.join("hooks.json"));
 
         // 5. Skills (Workspace & Plugin)
         let ws_skill_dir = agents_dir.join("skills").join("automemory");

@@ -51,6 +51,12 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 3. `automemory rule passwd`, then approve a proposal in the UI: a password prompt appears once, a wrong password is rejected, the right one works.
 4. In a normal browser tab on any other site, run `fetch('http://127.0.0.1:4545/api/proposals/decide_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"approved":true}'})` in the console. Expected: blocked (403 / CORS error).
 
+## Before a live run
+
+* Use the installed binary, not a shell alias to `target/debug` (`which -a automemory`); hooks always run `~/.cargo/bin/automemory`.
+* Set the mode from inside the test folder, then confirm it with `automemory mode get`; it must report the same project the hooks use (`automemory project list`).
+* Give the long-running prompt to one agent and the interfering prompt to the other; swapping them tests nothing.
+
 ## Results log
 
 | Date | Agent + version | Sections run | Result | Notes |

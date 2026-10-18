@@ -191,6 +191,18 @@ impl Database {
         Ok(paths)
     }
 
+    /// The project slug for a working directory: the registered project whose path contains it
+    /// (what the hooks use), else the folder name. CLI commands must agree with the hooks, or a
+    /// mode set from one folder lands on a different project than the agents run under.
+    pub fn project_slug_for_dir(&self, dir: &std::path::Path) -> String {
+        if let Ok(Some(p)) = self.find_project_by_path(&dir.to_string_lossy()) {
+            return p.slug;
+        }
+        dir.file_name()
+            .map(|n| n.to_string_lossy().to_lowercase().replace(' ', "-"))
+            .unwrap_or_else(|| "default".to_string())
+    }
+
     pub fn find_project_by_path(&self, path: &str) -> Result<Option<Project>> {
         let found = {
             let conn = self.conn();
@@ -244,5 +256,36 @@ impl Database {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CapturePolicy, Project};
+
+    #[test]
+    fn slug_for_dir_follows_the_registered_project_not_the_folder_name() {
+        let db = Database::open_in_memory().unwrap();
+        let now = chrono::Utc::now();
+        let project = Project {
+            id: "p-1".into(),
+            slug: "auto".into(),
+            display_name: "auto".into(),
+            created_at: now,
+            updated_at: now,
+            capture_policy: CapturePolicy::default(),
+            context_budget: Default::default(),
+            document_config: Default::default(),
+            sync_config: Default::default(),
+        };
+        db.save_project(&project).unwrap();
+        db.add_project_path("p-1", "/work/automemory", true).unwrap();
+
+        // Registered folder: the hooks' project, whatever the folder is called.
+        assert_eq!(db.project_slug_for_dir(std::path::Path::new("/work/automemory")), "auto");
+        assert_eq!(db.project_slug_for_dir(std::path::Path::new("/work/automemory/src")), "auto");
+        // Unregistered folder: its name.
+        assert_eq!(db.project_slug_for_dir(std::path::Path::new("/elsewhere/My App")), "my-app");
     }
 }
