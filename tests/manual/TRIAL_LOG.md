@@ -22,7 +22,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T4 | Two agents, one file: automatic lock and collision message | PASS | 2026-10-19 |
 | T5 | Hand-off: a new session continues where the last one stopped | PASS | 2026-10-19 |
 | T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
-| T7 | Instruction files: `export-rules` block read by another agent | FAIL (fixed, rerun) | 2026-10-19 |
+| T7 | Instruction files: `export-rules` block read by another agent | PASS | 2026-10-19 |
 | T8 | Dashboard: pages show real data, tour and Settings work | PENDING | |
 | T9 | Human password gate | PENDING | |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
@@ -305,4 +305,17 @@ Fixed (installed)
 - Verified in a scratch repo: both a CLI and an MCP decision appear after `export-rules`; `--check` reports a stale file after the MCP one.
 
 Open: Claude called `decision_record` twice in T3; `decision list` not yet pasted. Decisions still show agent "agent".
+
+### 2026-10-19 T7 Instruction files: PASS (rerun after fix)
+
+Run: `export-rules`; Antigravity told to read AGENTS.md without AutoMemory tools; a new Claude session recorded decision
+`storage` = "Orders are kept in SQLite" over MCP; a further Claude session start; `export-rules --check`; grep in the three files.
+
+Result
+- The block now lists the decisions in force (auth: JWT in an httpOnly cookie, payments: Use Stripe webhooks, not polling) and the cents note.
+- Antigravity read AGENTS.md (one "Viewed AGENTS.md" step, no MCP call) and listed the decisions with their rationales correctly. (It
+  put the cents preference under its own "decisions" heading; a reading choice, not a file error.)
+- After the next Claude session start: `--check` = "Instruction files are current" and "Orders are kept in SQLite" appears once in each of
+  AGENTS.md, CLAUDE.md and GEMINI.md: a decision recorded over MCP reached all three files through the session-start refresh.
+- Not reported: the intermediate `--check` ("out of date" expected after the MCP decision), `decision list` (duplicates?).
 
