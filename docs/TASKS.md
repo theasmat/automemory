@@ -52,6 +52,16 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] Watcher only sees registered projects; register the project (`automemory init`/`link`) for hook-less agent alerts
 - [ ] Decide: in Strict mode, should reconciliation deny the offending session's next call (today it warns)
 
+## Better memory (plan in docs/research/memory_improvement.md)
+
+- [ ] Idempotent distillation + quality gate (76% of active memories are `Execution outcome for:` boilerplate; 4,790 traces have 37 distinct titles; 7,283 skills have 11 names)
+- [ ] `automemory memory prune`: merge duplicate traces/skills, archive boilerplate (reversible)
+- [ ] Capture user corrections, failure signatures (error line + fix), commit messages as decision candidates
+- [ ] Recall telemetry (0 of 77 memories ever recalled): count hits, then decay/reinforce
+- [ ] Agent-in-the-loop distillation at PreCompact/Stop via `memory.propose` with evidence
+- [ ] `valid_from` / `invalid_at` on memories; deterministic offline consolidation in `serve`
+- [ ] Forgetting cases in `tests/eval`; fix "N edits across 0 files" in the session digest
+
 ## Docs hygiene
 
 - [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 187 Rust tests at last check)
