@@ -82,6 +82,10 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] Dashboard "Project brain" page (plain-language Decisions / Conventions / In flight; which agent saw what)
 - [ ] Skills install for agents with a skills folder; refresh from MCP `decision.record` (today: next session start or `export-rules`)
 
+## Dashboard UI/UX redesign (spec: [plan/ui-ux.md](../plan/ui-ux.md))
+
+- [ ] P1 foundation + Home, P2 Project brain, P3 Agents & locks + Inbox, P4 Sync wizard + Safety, P5 polish
+
 ## Docs hygiene
 
 - [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 207 Rust tests at last check)
