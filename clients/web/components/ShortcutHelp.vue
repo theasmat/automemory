@@ -74,23 +74,15 @@ function close() {
   isOpen.value = false;
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  const target = e.target as HTMLElement;
-  if (['input', 'textarea', 'select'].includes(target.tagName.toLowerCase())) return;
-
-  if (e.key === '?') {
-    e.preventDefault();
-    if (isOpen.value) close();
-    else open();
-  }
+function handleKeydown(_e: KeyboardEvent) {
+  // Handled by HelpDrawer (? opens HelpDrawer with shortcuts)
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
+  // ShortcutHelp can still be opened via open() programmatically
 });
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
 });
 
 defineExpose({ open, close });

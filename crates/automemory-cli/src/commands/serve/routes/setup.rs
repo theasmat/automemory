@@ -90,5 +90,64 @@ pub async fn api_post_onboarding(
     }
 
     let updated = onboarding::load(&state.db);
+    let _ = state.broadcast_tx.send(
+        json!({
+            "type": "setup_changed",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })
+        .to_string(),
+    );
     Ok(Json(updated))
 }
+
+/// GET /api/learn: Returns guided learning topics.
+pub async fn api_learn() -> impl IntoResponse {
+    Json(setup::LEARN_TOPICS)
+}
+
+/// POST /api/demo: Seeds a sample project (human-gated).
+pub async fn api_post_demo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    require_human_header(&headers, "seed sample demo project")?;
+    onboarding::seed_demo(&state.db)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let _ = state.broadcast_tx.send(
+        json!({
+            "type": "setup_changed",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })
+        .to_string(),
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "message": "Demo project seeded with sample decisions, notes, and suggestions"
+    })))
+}
+
+/// DELETE /api/demo: Removes the sample project (human-gated).
+pub async fn api_delete_demo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    require_human_header(&headers, "remove sample demo project")?;
+    onboarding::remove_demo(&state.db)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))?;
+
+    let _ = state.broadcast_tx.send(
+        json!({
+            "type": "setup_changed",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        })
+        .to_string(),
+    );
+
+    Ok(Json(json!({
+        "ok": true,
+        "message": "Demo project and all sample data removed"
+    })))
+}
+

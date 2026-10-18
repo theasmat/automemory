@@ -19,7 +19,12 @@
       </div>
 
       <!-- Mode indicator pill -->
-      <NuxtLink to="/safety" class="hidden sm:inline-flex" title="Click to change safety mode">
+      <NuxtLink
+        to="/safety"
+        data-tour="safety-mode"
+        class="hidden sm:inline-flex"
+        title="Click to change safety mode"
+      >
         <Badge :variant="store.currentMode === 'strict' ? 'bad' : store.currentMode === 'review' ? 'accent' : 'ok'">
           {{ store.currentMode === 'strict' ? 'Strict' : store.currentMode === 'review' ? 'Balanced' : 'Relaxed' }}
         </Badge>
@@ -74,11 +79,12 @@
         <span class="font-medium text-xs">{{ themeLabel }}</span>
       </button>
 
-      <!-- Keyboard shortcuts help -->
+      <!-- Help & guided learning drawer -->
       <IconButton
-        aria-label="Keyboard shortcuts"
+        aria-label="Help & Guided Learning"
+        title="Help & Guided Learning (?)"
         size="sm"
-        @click="$emit('open-shortcuts')"
+        @click="store.openHelpDrawer()"
       >
         <span class="font-mono text-xs font-semibold">?</span>
       </IconButton>

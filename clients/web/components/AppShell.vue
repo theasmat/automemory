@@ -19,6 +19,9 @@
         @open-shortcuts="openShortcuts"
       />
 
+      <!-- Demo Banner for sample mode -->
+      <DemoBanner />
+
       <!-- Main Content Region -->
       <main
         id="main-content"
@@ -36,6 +39,8 @@
     <PasswordModal />
     <CommandPalette ref="paletteRef" />
     <ShortcutHelp ref="shortcutsRef" />
+    <HelpDrawer />
+    <CoachTour />
   </div>
 </template>
 

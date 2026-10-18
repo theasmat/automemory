@@ -18,6 +18,11 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/onboarding",
             get(setup::api_get_onboarding).post(setup::api_post_onboarding),
         )
+        .route("/api/learn", get(setup::api_learn))
+        .route(
+            "/api/demo",
+            post(setup::api_post_demo).delete(setup::api_delete_demo),
+        )
         .route("/api/stats", get(stats::api_stats))
         .route("/api/coordination", get(stats::api_coordination))
         .route(

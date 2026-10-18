@@ -1,6 +1,7 @@
 <template>
   <!-- Desktop & Tablet Left Rail (>= 768px) -->
   <aside
+    data-tour="nav-rail"
     class="hidden md:flex flex-col bg-bg border-r border-border transition-all duration-200 z-30 flex-shrink-0"
     :class="isExpanded ? 'w-60' : 'w-16'"
   >

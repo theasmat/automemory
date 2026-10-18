@@ -142,3 +142,28 @@ export interface SystemStats {
   total_projects: number;
   total_sessions: number;
 }
+
+export interface Step {
+  id: string;
+  title: string;
+  done: boolean;
+  why: string;
+  command: string;
+  link: string;
+}
+
+export interface OnboardingState {
+  completed_steps: string[];
+  dismissed: boolean;
+  dismissed_flags: Record<string, boolean>;
+  demo_loaded: boolean;
+  tour_step: number;
+}
+
+export interface LearnTopic {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+}
+

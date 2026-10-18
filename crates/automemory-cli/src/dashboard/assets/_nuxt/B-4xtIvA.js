@@ -1,0 +1,1 @@
+import{g as e,R as t,c as o,o as a}from"./BbokMF4z.js";const c={class:"p-8 text-center text-text-muted text-sm"},i=e({__name:"overview",setup(n){return t("/",{replace:!0}),(r,s)=>(a(),o("div",c,"Redirecting to Home..."))}});export{i as default};

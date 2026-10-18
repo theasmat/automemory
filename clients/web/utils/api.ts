@@ -8,6 +8,9 @@ import type {
   Proposal,
   Project,
   SystemStats,
+  Step,
+  OnboardingState,
+  LearnTopic,
 } from '~/types';
 import { usePasswordModal } from '~/composables/usePasswordModal';
 
@@ -411,5 +414,55 @@ export const api = {
       ? `/api/graph?project_id=${encodeURIComponent(projectId)}`
       : '/api/graph';
     return request<any>(url);
+  },
+
+  async getSetup(): Promise<ApiResponse<Step[]>> {
+    return request<Step[]>('/api/setup');
+  },
+
+  async getOnboarding(): Promise<ApiResponse<OnboardingState>> {
+    return request<OnboardingState>('/api/onboarding');
+  },
+
+  async updateOnboarding(payload: Record<string, any>): Promise<ApiResponse<OnboardingState>> {
+    try {
+      const res = await humanFetch('/api/onboarding', 'update onboarding progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
+    } catch (err: any) {
+      return { ok: false, data: null, error: err.message };
+    }
+  },
+
+  async seedDemo(): Promise<ApiResponse<any>> {
+    try {
+      const res = await humanFetch('/api/demo', 'seed sample demo project', {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
+    } catch (err: any) {
+      return { ok: false, data: null, error: err.message };
+    }
+  },
+
+  async removeDemo(): Promise<ApiResponse<any>> {
+    try {
+      const res = await humanFetch('/api/demo', 'remove sample demo project', {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
+    } catch (err: any) {
+      return { ok: false, data: null, error: err.message };
+    }
+  },
+
+  async getLearnTopics(): Promise<ApiResponse<LearnTopic[]>> {
+    return request<LearnTopic[]>('/api/learn');
   },
 };

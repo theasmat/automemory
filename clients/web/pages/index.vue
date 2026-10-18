@@ -32,17 +32,21 @@
       @retry="store.fetchAll()"
     />
 
+    <!-- First-run Onboarding Welcome Card -->
+    <WelcomeCard />
+
     <!-- 2-Column Responsive Dashboard Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Left Column: Needs you + Setup checklist -->
       <div class="space-y-6">
         <!-- Needs You Card (Attention state) -->
-        <Card
-          v-if="hasNeedsYou"
-          title="Needs you"
-          accent-border
-          custom-class="border-warn/40 bg-warn/5"
-        >
+        <div data-tour="needs-you">
+          <Card
+            v-if="hasNeedsYou"
+            title="Needs you"
+            accent-border
+            custom-class="border-warn/40 bg-warn/5"
+          >
           <template #icon>
             <span class="w-2 h-2 rounded-full bg-warn" />
           </template>
@@ -95,98 +99,105 @@
             <span>All clear. No pending suggestions or blocked locks.</span>
           </div>
         </Card>
+        </div>
 
         <!-- Setup Checklist -->
-        <Checklist
-          title="Setup checklist"
-          :items="store.setupChecklist"
-        />
+        <div data-tour="setup-card">
+          <Checklist
+            title="Setup checklist"
+            :items="store.setupChecklist"
+          />
+        </div>
       </div>
 
       <!-- Right Column: Agents + What agents know + Activity stream -->
       <div class="space-y-6">
         <!-- Agents Card -->
-        <Card title="Connected agents">
-          <template #actions>
-            <NuxtLink to="/agents" class="text-xs text-accent hover:underline">
-              Manage locks &rarr;
-            </NuxtLink>
-          </template>
+        <div data-tour="agents-card">
+          <Card title="Connected agents">
+            <template #actions>
+              <NuxtLink to="/agents" class="text-xs text-accent hover:underline">
+                Manage locks &rarr;
+              </NuxtLink>
+            </template>
 
-          <div class="space-y-2 mt-2">
-            <div
-              v-for="agent in store.connectedAgents"
-              :key="agent.id"
-              class="flex items-center justify-between p-2.5 rounded-card bg-surface-2/40 border border-border"
-            >
-              <div class="flex items-center gap-2.5">
-                <span
-                  class="w-2 h-2 rounded-full"
-                  :class="[
-                    agent.status === 'editing' ? 'bg-warn animate-pulse' :
-                    agent.status === 'active' ? 'bg-ok' :
-                    agent.status === 'idle' ? 'bg-accent' :
-                    'bg-text-muted/30'
-                  ]"
-                />
-                <div>
-                  <div class="text-xs sm:text-sm font-semibold text-text flex items-center gap-2">
-                    <span>{{ agent.name }}</span>
-                    <Badge v-if="agent.status === 'editing'" variant="warn">
-                      Editing
-                    </Badge>
-                  </div>
-                  <div v-if="agent.locks?.length" class="text-[11px] font-mono text-text-muted truncate max-w-xs">
-                    {{ agent.locks.join(', ') }}
+            <div class="space-y-2 mt-2">
+              <div
+                v-for="agent in store.connectedAgents"
+                :key="agent.id"
+                class="flex items-center justify-between p-2.5 rounded-card bg-surface-2/40 border border-border"
+              >
+                <div class="flex items-center gap-2.5">
+                  <span
+                    class="w-2 h-2 rounded-full"
+                    :class="[
+                      agent.status === 'editing' ? 'bg-warn animate-pulse' :
+                      agent.status === 'active' ? 'bg-ok' :
+                      agent.status === 'idle' ? 'bg-accent' :
+                      'bg-text-muted/30'
+                    ]"
+                  />
+                  <div>
+                    <div class="text-xs sm:text-sm font-semibold text-text flex items-center gap-2">
+                      <span>{{ agent.name }}</span>
+                      <Badge v-if="agent.status === 'editing'" variant="warn">
+                        Editing
+                      </Badge>
+                    </div>
+                    <div v-if="agent.locks?.length" class="text-[11px] font-mono text-text-muted truncate max-w-xs">
+                      {{ agent.locks.join(', ') }}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <span class="text-xs text-text-muted capitalize">
-                {{ agent.status }}
-              </span>
+                <span class="text-xs text-text-muted capitalize">
+                  {{ agent.status }}
+                </span>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
 
         <!-- What Agents Know -->
-        <Card title="What agents know">
-          <template #actions>
-            <NuxtLink to="/brain">
-              <Button size="sm" variant="secondary">
-                Open Project brain &rarr;
-              </Button>
-            </NuxtLink>
-          </template>
+        <div data-tour="brain-card">
+          <Card title="What agents know">
+            <template #actions>
+              <NuxtLink to="/brain">
+                <Button size="sm" variant="secondary">
+                  Open Project brain &rarr;
+                </Button>
+              </NuxtLink>
+            </template>
 
-          <div class="space-y-3 mt-1">
-            <div class="flex items-center gap-4 text-xs sm:text-sm text-text">
-              <span class="font-semibold">{{ decisionCount }} decisions</span>
-              <span class="text-text-muted">&bull;</span>
-              <span class="font-semibold">{{ noteCount }} notes</span>
-              <span class="text-text-muted">&bull;</span>
-              <span class="text-text-muted">{{ store.stats.active_traces }} verified traces</span>
+            <div class="space-y-3 mt-1">
+              <div class="flex items-center gap-4 text-xs sm:text-sm text-text">
+                <span class="font-semibold">{{ decisionCount }} decisions</span>
+                <span class="text-text-muted">&bull;</span>
+                <span class="font-semibold">{{ noteCount }} notes</span>
+                <span class="text-text-muted">&bull;</span>
+                <span class="text-text-muted">{{ store.stats.active_traces }} verified traces</span>
+              </div>
+
+              <div v-if="latestDecision" class="p-3 rounded-card bg-surface-2 border border-border">
+                <span class="text-[11px] font-semibold text-accent uppercase tracking-wider block mb-1">
+                  Latest Decision
+                </span>
+                <p class="text-xs sm:text-sm font-medium text-text">
+                  &ldquo;{{ latestDecision.summary || latestDecision.content }}&rdquo;
+                </p>
+              </div>
+
+              <button
+                type="button"
+                class="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
+                @click="previewDrawerOpen = true"
+              >
+                <span>Preview what the next agent is told</span>
+                <span>&rarr;</span>
+              </button>
             </div>
-
-            <div v-if="latestDecision" class="p-3 rounded-card bg-surface-2 border border-border">
-              <span class="text-[11px] font-semibold text-accent uppercase tracking-wider block mb-1">
-                Latest Decision
-              </span>
-              <p class="text-xs sm:text-sm font-medium text-text">
-                &ldquo;{{ latestDecision.summary || latestDecision.content }}&rdquo;
-              </p>
-            </div>
-
-            <button
-              type="button"
-              class="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
-              @click="previewDrawerOpen = true"
-            >
-              <span>Preview what the next agent is told</span>
-              <span>&rarr;</span>
-            </button>
-          </div>
-        </Card>
+          </Card>
+        </div>
 
         <!-- Recent Activity Feed -->
         <Card title="Recent activity">

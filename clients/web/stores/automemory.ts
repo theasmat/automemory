@@ -9,6 +9,9 @@ import type {
   Proposal,
   Project,
   SystemStats,
+  Step,
+  OnboardingState,
+  LearnTopic,
 } from '~/types';
 import { api } from '~/utils/api';
 import { useWsPulse } from '~/composables/useWsPulse';
@@ -60,6 +63,19 @@ export const useAutoMemoryStore = defineStore('automemory', {
     isLoading: false,
     daemonError: null as string | null,
     memorySearch: '',
+
+    // Onboarding & Guided Tour State
+    setupSteps: [] as Step[],
+    onboardingState: {
+      completed_steps: [],
+      dismissed: false,
+      dismissed_flags: {},
+      demo_loaded: false,
+      tour_step: 0,
+    } as OnboardingState,
+    learnTopics: [] as LearnTopic[],
+    isTourActive: false,
+    isHelpDrawerOpen: false,
   }),
 
   getters: {
@@ -124,42 +140,53 @@ export const useAutoMemoryStore = defineStore('automemory', {
       });
     },
 
-    setupChecklist(state): any[] {
-      const hasAgent = state.stats.active_memories > 0 || state.recentEvents.length > 0;
-      const hasDocs = state.docs.length > 0;
-      const hasSync = !!state.syncStatus;
-      const isReviewMode = state.currentMode !== 'vibe';
-
+    setupChecklist(state): Step[] {
+      if (state.setupSteps && state.setupSteps.length > 0) {
+        return state.setupSteps;
+      }
       return [
         {
           id: 'agent',
           title: 'Agent connected',
-          done: hasAgent,
+          done: false,
+          why: 'Connect an agent like Claude Code, Cursor or Antigravity to share memory.',
           command: 'automemory connect agy',
           link: '/agents',
         },
         {
           id: 'instruction_files',
           title: 'Instruction files',
-          done: hasAgent,
+          done: false,
+          why: 'Generate instruction blocks (AGENTS.md) so agents read shared rules.',
           command: 'automemory export-rules',
           link: '/brain',
         },
         {
           id: 'password',
           title: 'Password set',
-          done: isReviewMode,
+          done: false,
+          why: 'Set a human password to protect approvals, rules, and modes.',
           command: 'automemory rule passwd',
           link: '/safety',
         },
         {
           id: 'sync',
           title: 'Sync to another machine',
-          done: hasSync,
+          done: false,
+          why: 'Set up an encrypted git remote vault to sync memories across devices.',
           command: 'automemory sync remote <url>',
           link: '/sync',
         },
       ];
+    },
+
+    isDemoMode(state): boolean {
+      return state.onboardingState.demo_loaded || state.activeProject === 'demo';
+    },
+
+    nextSetupStep(state): Step | undefined {
+      const list = state.setupSteps.length > 0 ? state.setupSteps : [];
+      return list.find((s) => !s.done);
     },
   },
 
@@ -184,10 +211,86 @@ export const useAutoMemoryStore = defineStore('automemory', {
           this.fetchProjects(),
           this.fetchDocs(),
           this.fetchSyncStatus(),
+          this.fetchSetup(),
+          this.fetchOnboarding(),
+          this.fetchLearnTopics(),
         ]);
       } finally {
         this.isLoading = false;
       }
+    },
+
+    async fetchSetup() {
+      const res = await api.getSetup();
+      if (res.ok && res.data) {
+        this.setupSteps = res.data;
+      }
+    },
+
+    async fetchOnboarding() {
+      const res = await api.getOnboarding();
+      if (res.ok && res.data) {
+        this.onboardingState = res.data;
+      }
+    },
+
+    async fetchLearnTopics() {
+      const res = await api.getLearnTopics();
+      if (res.ok && res.data) {
+        this.learnTopics = res.data;
+      }
+    },
+
+    async updateOnboardingProgress(payload: Record<string, any>) {
+      const res = await api.updateOnboarding(payload);
+      if (res.ok && res.data) {
+        this.onboardingState = res.data;
+      }
+      return res.ok;
+    },
+
+    async seedDemoProject() {
+      const { success, error } = useToast();
+      const res = await api.seedDemo();
+      if (res.ok) {
+        success('Sample demo project loaded! Exploring with sample data.');
+        this.activeProject = 'demo';
+        await this.fetchAll();
+      } else {
+        error(res.error || 'Failed to seed sample project');
+      }
+      return res.ok;
+    },
+
+    async removeDemoProject() {
+      const { success, error } = useToast();
+      const res = await api.removeDemo();
+      if (res.ok) {
+        success('Sample demo project removed.');
+        if (this.activeProject === 'demo') {
+          this.activeProject = null;
+        }
+        await this.fetchAll();
+      } else {
+        error(res.error || 'Failed to remove sample project');
+      }
+      return res.ok;
+    },
+
+    startTour() {
+      this.isTourActive = true;
+    },
+
+    stopTour() {
+      this.isTourActive = false;
+    },
+
+    openHelpDrawer() {
+      this.isHelpDrawerOpen = true;
+    },
+
+    closeHelpDrawer() {
+      this.isHelpDrawerOpen = false;
     },
 
     async fetchStats() {
@@ -573,6 +676,12 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     handleIncomingWsMessage(msg: any) {
+      if (msg.type === 'setup_changed' || msg.type === 'memory_added' || msg.type === 'lock_alert') {
+        this.fetchSetup();
+        this.fetchOnboarding();
+        this.fetchStats();
+      }
+
       if (msg.result) {
         if (msg.result.active_memories !== undefined) {
           this.stats = { ...this.stats, ...msg.result };
@@ -588,14 +697,21 @@ export const useAutoMemoryStore = defineStore('automemory', {
 
       if (msg.event_type) {
         const evType = msg.event_type as string;
-        if (evType.includes('memory') || evType.includes('save')) {
+        if (evType.includes('setup') || evType.includes('onboarding')) {
+          this.fetchSetup();
+          this.fetchOnboarding();
+          this.fetchStats();
+        } else if (evType.includes('memory') || evType.includes('save')) {
           this.fetchMemories();
           this.fetchStats();
+          this.fetchSetup();
         } else if (evType.includes('lease') || evType.includes('lock')) {
           this.fetchCoordination();
+          this.fetchSetup();
         } else if (evType.includes('proposal')) {
           this.fetchProposals();
           this.fetchStats();
+          this.fetchSetup();
         } else {
           this.fetchCoordination();
           this.fetchEvents();

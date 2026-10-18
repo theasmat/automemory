@@ -11,6 +11,9 @@
           <Badge :variant="typeVariant">
             {{ formatType(memory.type) }}
           </Badge>
+          <Badge v-if="memory.metadata?.demo" variant="accent">
+            Sample
+          </Badge>
           <SourceBadge :source="memory.source_kind" :agent="memory.metadata?.agent" />
           <span v-if="memory.status === 'pinned'" class="text-[11px] font-semibold text-accent flex items-center gap-1">
             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
