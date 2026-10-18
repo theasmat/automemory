@@ -217,6 +217,9 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         || is_major_cmd
     {
         run_post_tool_distillation(&db, &session_id);
+        if canonical == Some(CanonicalEvent::Stop) {
+            save_session_checkpoint(&db, &session_id);
+        }
     }
 
     // Auto-rescan and update document intelligence if any plan/spec/doc was touched
@@ -428,6 +431,22 @@ fn run_post_tool_distillation(db: &Database, session_id: &str) {
     let segmenter = automemory_core::extraction::ImplicitTaskSegmenter::new(db);
     let distiller = TrajectoryDistiller::new(db);
     let _ = segmenter.process_and_distill_session_with(&distiller, session_id);
+}
+
+/// Leaves a progress memory when a session that edited files stops, so the next
+/// agent finds what happened without anyone calling `memory.digest` first. Facts come
+/// from the ledger; read-only sessions leave nothing.
+fn save_session_checkpoint(db: &Database, session_id: &str) {
+    let engine = automemory_core::extraction::TimeSpanDigestEngine::new(db);
+    let Ok(digest) = engine.generate_session_digest(session_id) else {
+        return;
+    };
+    if digest.metrics.edits_count == 0 {
+        return;
+    }
+    if let Ok(mem) = engine.synthesize_milestone_memory(&digest, Some("Session checkpoint")) {
+        let _ = db.save_memory(&mem);
+    }
 }
 
 /// Automatically rescans and recompiles document intelligence if any tracked document was touched.

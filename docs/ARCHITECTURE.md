@@ -48,7 +48,7 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 |---|---|---|
 | AgentAdapter | Install hooks/MCP config; map native → canonical events | Claude Code, Codex, Antigravity (v1); 17 more connectors exist, unsupported until promoted |
 | HookHandler | One pipeline stage: allow / warn / block / annotate | Lease check, guardrail, nudge, ledger logger |
-| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** (external; AutoMemory builds no AST graph). File-hash fallback when absent |
+| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `GraphCodeIntel` file-hash fallback when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
 | MemoryStore | Persist memories, decisions, ledger | SQLite WAL |
 | Retriever | Rank candidates | FTS5 BM25 × decay × confidence; local n-gram vector projection |
 | EmbeddingProvider | Text → vectors | Local n-gram projection (not neural) |
@@ -74,7 +74,7 @@ Agents emit native events → adapter normalizes → pipeline runs ordered handl
 | `boot` | SessionStart | Silent by default; with `boot_injection` prints token-capped constitution + recent decisions |
 | `pre-tool` | PreToolUse | Gate: lease check → guardrail → custom exec |
 | `post-tool`, `post-tool-fail` | PostToolUse | Append outcome (exit code, stderr) to ledger; failures feed the failure catalog |
-| `task-done` / `stop` | Stop | Release leases, distill; `stop` blocks if a review is owed |
+| `task-done` / `stop` | Stop | Release leases, distill, and save a `Session checkpoint` memory if the session edited files; `stop` blocks if a review is owed |
 | `pre-commit` | PreCommit | Gate over staged files; lease collision denies in Strict |
 | `post-commit` | PostCommit | Flip linked memories to `changed`; distill |
 | `user-prompt-submit` | UserPromptSubmit | One-line nudge only if work is assigned |
@@ -119,6 +119,7 @@ Context assembly order: locked preferences → project identity → high-confide
 - **Tasks/review:** `task.create|next|submit`, cross-review with tests as judge (`review.next|post|submit`).
 - **Planning Room** (v1 scope): turn-gated state machine (propose → critique → revise, human tiebreak). A room advances only when the turn holder posts; the daemon rejects posts whose evidence IDs do not resolve. Every tool reply ends with a daemon-written `next_action`; posts from other agents are returned as quoted data with author and trust tier. Stored rationale is 3–5 lines, never raw reasoning.
 - **Autonomy profiles:** Observe (record/warn), Assist (default; human approves each stage), Autopilot (opt-in per repo). Always stops for: schema/migration, auth/secrets, deletion, edits outside agreed files, same test failing 3×, budget exceeded, unresolved disagreement after round cap. Kill switch: `automemory stop`.
+- **Overlap check:** `automemory overlap [--base main]` lists other local branches that change the same files as this one (git three-dot diff), for use before merging.
 - **Worktree sync:** memory, decisions and advisory leases are shared across git worktrees via canonical git-root resolution (in progress, see TASKS).
 
 ## 8. Guardrails
@@ -146,13 +147,14 @@ Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace
 
 **CLI.** `init`, `doctor`, `connect <agent|all> [-g]`, `disconnect`, `serve --port`, `mcp`, `memory list|search|save|get|archive|digest`, `proposal summary|list|decide|approve-all|reject-all`, `mode get|set`, `rule …`, `sync pair|push|pull|watch|status`, `adapter`, `hooks`, `plugin`, `eval`, `stop`, `locks`/`unlock`, `decision`, `pin|veto|revoke`, `baton`. Run `automemory <cmd> --help` for flags; that is the reference.
 
-**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, graph, skills, failures. Every request must carry a loopback `Host` and, if it has an `Origin`, the dashboard's own origin (blocks CSRF and DNS rebinding; no CORS). Proposal decisions and guardrail/mode writes also need the human password header when one is set; the UI prompts once per tab.
+**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/coordination` (leases, rooms, batons; the Agents & Locks page), `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, graph, skills, failures. Every request must carry a loopback `Host` and, if it has an `Origin`, the dashboard's own origin (blocks CSRF and DNS rebinding; no CORS). Proposal decisions and guardrail/mode writes also need the human password header when one is set; the UI prompts once per tab. Once a password is set, the MCP tools `memory.proposals.decide` and `decide_all` refuse agents, and the CLI `proposal decide|approve-all|reject-all` need the password too.
 
 ## 10. Sync and security
 
+- **Conflict-safe op-log:** each daemon sync pass (`sync::deltas::sync_cycle`) applies other devices' content-addressed delta files, then writes this device's changes. Convergence is by fingerprint, not clock; a record edited on two devices is kept locally and filed as a `sync_conflict` review proposal; versions already seen are ignored, so old delta files cannot look like new edits. The readable snapshot export still runs after it.
 - **v1:** git-ignored plan vault. Tracked patterns (`plans/**`, `docs/specs/**`) are pushed to a private git remote (`sync push|pull|watch`). Vault layout: `global/`, `projects/<id>/{project.json,docs,memories/*.jsonl,traces}`, `sync-log.jsonl`.
 - **Encryption:** client-side AES-256-GCM, key via PBKDF2 (600k) from a BIP-39 mnemonic (`sync pair`, `--join`); key in OS keychain. IDs are blind HMACs.
-- **Later:** Cloudflare managed mode (worker, D1/R2, Vectorize). Sync scope stays memories + decisions only.
+- **Later:** Cloudflare managed mode (worker, D1/R2, Vectorize). Sync scope stays memories + decisions only. The worker verifies Stripe/LemonSqueezy webhook signatures, accepts the unsigned test payload only when `ENABLE_DEV_AUTH_BYPASS=true`, and compares the admin secret in constant time; set `STRIPE_WEBHOOK_SECRET` / `LEMONSQUEEZY_WEBHOOK_SECRET` before deploying.
 
 | Threat | Defense |
 |---|---|

@@ -13,6 +13,7 @@ use axum::{
 pub fn build_api_router() -> Router<AppState> {
     Router::new()
         .route("/api/stats", get(stats::api_stats))
+        .route("/api/coordination", get(stats::api_coordination))
         .route(
             "/api/mode",
             get(guardrails::api_get_mode).post(guardrails::api_set_mode),

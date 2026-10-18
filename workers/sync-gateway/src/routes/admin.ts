@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import type { Env, PricingPlan, UserEntitlement } from '../types';
+import { safeEqual } from '../auth/webhook';
 
 export const adminRouter = new Hono<{ Bindings: Env }>();
 
 // Admin Auth Middleware: verifies X-Admin-Secret header
 adminRouter.use('/admin/*', async (c, next) => {
   const secret = c.req.header('X-Admin-Secret');
-  if (!secret || secret !== c.env.ADMIN_SECRET) {
+  if (!secret || !c.env.ADMIN_SECRET || !safeEqual(secret, c.env.ADMIN_SECRET)) {
     return c.json({ error: 'FORBIDDEN', message: 'Invalid or missing X-Admin-Secret header' }, 403);
   }
   await next();

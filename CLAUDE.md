@@ -10,10 +10,12 @@ Local-first Rust daemon (SQLite WAL, MCP server, CLI, Nuxt dashboard) giving cod
 - [docs/TASKS.md](docs/TASKS.md) — open work checklist
 - [docs/research/](docs/research/) — gap analysis (what multi-agent workflows still lack)
 
+Tests and how to run them: [tests/README.md](tests/README.md) (`tests/run_all.sh`); live-agent checks in `tests/manual/`, eval harness in `tests/eval/`.
+
 Only these four docs plus `docs/research/` exist. Update them in place; do not add new top-level doc files. Keep counts (tools, tests) in sync with code.
 
 ## Rules
 
 - v1 scope: Claude Code, Codex, Antigravity adapters; Planning Room; Nuxt dashboard. Cloudflare SaaS and more agents come later.
 - The daemon makes no LLM calls. Agents never touch the DB with raw SQL (Zero-SQL rule).
-- Build/test: `cargo test --workspace`; bench: `cargo bench -p automemory-core --bench perf`.
+- Build/test: `tests/run_all.sh` (or `cargo test --workspace`); bench: `cargo bench -p automemory-core --bench perf`.

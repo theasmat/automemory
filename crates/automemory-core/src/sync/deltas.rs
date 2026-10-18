@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -52,6 +52,7 @@ pub struct ApplyReport {
 }
 
 const APPLIED_KEY: &str = "applied_fingerprints";
+const SEEN_KEY: &str = "seen_fingerprints";
 
 /// Sync must never drop records, so listings are not capped and errors propagate.
 const ALL_ROWS: usize = i64::MAX as usize;
@@ -93,6 +94,46 @@ pub fn merge_applied(db: &Database, entries: &HashMap<String, String>) -> Result
     }
     set_kv(db, APPLIED_KEY, &serde_json::to_string(&map)?)?;
     Ok(())
+}
+
+/// This database's stable sync identity, created on first use. Delta files are named
+/// after it so concurrent devices never write the same path.
+pub fn device_id(db: &Database) -> Result<String> {
+    if let Some(id) = get_kv(db, "device_id")? {
+        return Ok(id);
+    }
+    let id = format!("dev-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+    set_kv(db, "device_id", &id)?;
+    Ok(id)
+}
+
+/// One sync pass over a vault directory: apply what other devices wrote, then write
+/// what changed here. Safe to repeat; a second pass with no new edits writes nothing.
+pub fn sync_cycle(db: &Database, vault_root: &Path) -> Result<ApplyReport> {
+    let device = device_id(db)?;
+    let report = apply_all_deltas(db, vault_root, &device)?;
+    let ops = collect_deltas(db, &device)?;
+    if write_delta_file(vault_root, &device, &ops)?.is_some() {
+        let sent: HashMap<String, String> =
+            ops.iter().map(|o| (o.id.clone(), o.fingerprint.clone())).collect();
+        merge_applied(db, &sent)?;
+        add_seen(db, ops.iter().map(|o| o.fingerprint.clone()))?;
+    }
+    Ok(report)
+}
+
+/// Every record version this device has pushed or applied. Delta files from other devices
+/// are not time-ordered, so this is how an old file is told apart from a new edit.
+fn get_seen(db: &Database) -> Result<HashSet<String>> {
+    Ok(get_kv(db, SEEN_KEY)?
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default())
+}
+
+fn add_seen(db: &Database, fingerprints: impl IntoIterator<Item = String>) -> Result<()> {
+    let mut seen = get_seen(db)?;
+    seen.extend(fingerprints);
+    set_kv(db, SEEN_KEY, &serde_json::to_string(&seen)?)
 }
 
 fn fingerprint(payload: &serde_json::Value) -> String {
@@ -286,6 +327,7 @@ fn already_proposed(db: &Database, target_id: &str) -> bool {
 fn merge_one(
     db: &Database,
     applied: &HashMap<String, String>,
+    seen: &HashSet<String>,
     op: &DeltaOp,
     local_fp: Option<String>,
     local_updated: Option<DateTime<Utc>>,
@@ -304,6 +346,11 @@ fn merge_one(
         (Some(local), _) if local == op.fingerprint => {
             report.converged += 1;
             Ok(Some((op.id.clone(), op.fingerprint.clone())))
+        }
+        // An older version of this record that this device already saw: not a new edit.
+        (Some(_), _) if seen.contains(&op.fingerprint) => {
+            report.stale += 1;
+            Ok(None)
         }
         (_, None) => {
             write()?;
@@ -335,6 +382,7 @@ fn merge_one(
 fn apply_op(
     db: &Database,
     applied: &HashMap<String, String>,
+    seen: &HashSet<String>,
     op: &DeltaOp,
     report: &mut ApplyReport,
 ) -> Result<Option<(String, String)>> {
@@ -356,6 +404,7 @@ fn apply_op(
                 None => merge_one(
                     db,
                     applied,
+                    seen,
                     op,
                     None,
                     None,
@@ -365,6 +414,7 @@ fn apply_op(
                 Some((fp, updated)) => merge_one(
                     db,
                     applied,
+                    seen,
                     op,
                     Some(fp),
                     Some(updated),
@@ -376,13 +426,14 @@ fn apply_op(
         "trace" => {
             let t: SuccessTrace = serde_json::from_value(op.payload.clone())?;
             match db.get_trace_by_id(&op.id)? {
-                None => merge_one(db, applied, op, None, None, || db.save_trace(&t), report),
+                None => merge_one(db, applied, seen, op, None, None, || db.save_trace(&t), report),
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
                     merge_one(
                         db,
                         applied,
+                        seen,
                         op,
                         Some(fp),
                         Some(updated),
@@ -395,13 +446,14 @@ fn apply_op(
         "failure" => {
             let f: FailureRecord = serde_json::from_value(op.payload.clone())?;
             match db.get_failure_by_id(&op.id)? {
-                None => merge_one(db, applied, op, None, None, || db.save_failure(&f), report),
+                None => merge_one(db, applied, seen, op, None, None, || db.save_failure(&f), report),
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
                     merge_one(
                         db,
                         applied,
+                        seen,
                         op,
                         Some(fp),
                         Some(updated),
@@ -414,13 +466,14 @@ fn apply_op(
         "skill" => {
             let s: ProceduralSkill = serde_json::from_value(op.payload.clone())?;
             match db.get_skill_by_id(&op.id)? {
-                None => merge_one(db, applied, op, None, None, || db.save_skill(&s), report),
+                None => merge_one(db, applied, seen, op, None, None, || db.save_skill(&s), report),
                 Some(local) => {
                     let fp = fingerprint_of(&local);
                     let updated = local.updated_at;
                     merge_one(
                         db,
                         applied,
+                        seen,
                         op,
                         Some(fp),
                         Some(updated),
@@ -436,6 +489,7 @@ fn apply_op(
                 None => merge_one(
                     db,
                     applied,
+                    seen,
                     op,
                     None,
                     None,
@@ -448,6 +502,7 @@ fn apply_op(
                     merge_one(
                         db,
                         applied,
+                        seen,
                         op,
                         Some(fp),
                         Some(updated),
@@ -472,38 +527,42 @@ pub fn apply_all_deltas(
     self_device: &str,
 ) -> Result<ApplyReport> {
     let applied = get_applied(db)?;
+    let seen = get_seen(db)?;
     let mut report = ApplyReport::default();
+    // Only records that now match the remote (applied or already converged) may be
+    // marked as synced. A record that diverged (conflict) or was skipped as stale must
+    // stay "changed locally", or the next collect would never push our edit.
+    let mut settled: Vec<(String, String)> = Vec::new();
+    let mut newly_seen: Vec<String> = Vec::new();
     for path in list_delta_files(vault_root) {
         for op in read_delta_file(&path) {
             if op.device_id == self_device {
                 report.skipped_own += 1;
                 continue;
             }
-            apply_op(db, &applied, &op, &mut report)?;
+            if apply_op(db, &applied, &seen, &op, &mut report)?.is_some() {
+                settled.push((op.kind.clone(), op.id.clone()));
+                newly_seen.push(op.fingerprint.clone());
+            }
         }
     }
-    // Refresh fingerprints for everything now converged so the next collect
-    // skips them. Records are re-serialized locally, keeping the map exact.
+    // Fingerprints are recomputed from the local row, keeping the map exact.
     let mut fresh = HashMap::new();
-    for path in list_delta_files(vault_root) {
-        for op in read_delta_file(&path) {
-            if op.device_id == self_device {
-                continue;
-            }
-            let current: Option<String> = match op.kind.as_str() {
-                "memory" => db.get_memory_by_id(&op.id)?.map(|m| fingerprint_of(&m)),
-                "trace" => db.get_trace_by_id(&op.id)?.map(|t| fingerprint_of(&t)),
-                "failure" => db.get_failure_by_id(&op.id)?.map(|f| fingerprint_of(&f)),
-                "skill" => db.get_skill_by_id(&op.id)?.map(|s| fingerprint_of(&s)),
-                "decision" => db.get_decision_by_id(&op.id)?.map(|d| fingerprint_of(&d)),
-                _ => None,
-            };
-            if let Some(fp) = current {
-                fresh.insert(op.id.clone(), fp);
-            }
+    for (kind, id) in settled {
+        let current: Option<String> = match kind.as_str() {
+            "memory" => db.get_memory_by_id(&id)?.map(|m| fingerprint_of(&m)),
+            "trace" => db.get_trace_by_id(&id)?.map(|t| fingerprint_of(&t)),
+            "failure" => db.get_failure_by_id(&id)?.map(|f| fingerprint_of(&f)),
+            "skill" => db.get_skill_by_id(&id)?.map(|s| fingerprint_of(&s)),
+            "decision" => db.get_decision_by_id(&id)?.map(|d| fingerprint_of(&d)),
+            _ => None,
+        };
+        if let Some(fp) = current {
+            fresh.insert(id, fp);
         }
     }
     merge_applied(db, &fresh)?;
+    add_seen(db, newly_seen)?;
     Ok(report)
 }
 
@@ -665,6 +724,49 @@ mod tests {
         let report = apply_all_deltas(&db, &dir, "dev-b").unwrap();
         assert_eq!(report.applied, 0);
         assert_eq!(report.conflicts, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_devices_converge_through_sync_cycles_and_route_conflicts() {
+        let dir = test_vault("cycle");
+        let (a, b) = (test_db(), test_db());
+        assert_ne!(device_id(&a).unwrap(), device_id(&b).unwrap());
+        assert_eq!(device_id(&a).unwrap(), device_id(&a).unwrap()); // stable
+
+        seed_memory(&a, "m-1", "from a");
+        sync_cycle(&a, &dir).unwrap();
+        let r = sync_cycle(&b, &dir).unwrap();
+        assert_eq!(r.applied, 1);
+        assert_eq!(b.get_memory_by_id("m-1").unwrap().unwrap().summary, "from a");
+
+        // Quiet pass: nothing new, no new delta file.
+        let files_before = list_delta_files(&dir).len();
+        sync_cycle(&b, &dir).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        assert_eq!(list_delta_files(&dir).len(), files_before);
+
+        // B edits and A picks it up (fast-forward, no conflict).
+        let mut m = b.get_memory_by_id("m-1").unwrap().unwrap();
+        m.summary = "edited on b".into();
+        m.updated_at = Utc::now();
+        b.save_memory_direct(&m).unwrap();
+        sync_cycle(&b, &dir).unwrap();
+        let r = sync_cycle(&a, &dir).unwrap();
+        assert_eq!((r.applied, r.conflicts), (1, 0));
+        assert_eq!(a.get_memory_by_id("m-1").unwrap().unwrap().summary, "edited on b");
+
+        // Both edit the same record before syncing: nothing is overwritten, a review is filed.
+        for (db, text) in [(&a, "a again"), (&b, "b again")] {
+            let mut m = db.get_memory_by_id("m-1").unwrap().unwrap();
+            m.summary = text.into();
+            m.updated_at = Utc::now();
+            db.save_memory_direct(&m).unwrap();
+        }
+        sync_cycle(&a, &dir).unwrap();
+        let r = sync_cycle(&b, &dir).unwrap();
+        assert_eq!(r.conflicts, 1);
+        assert_eq!(b.get_memory_by_id("m-1").unwrap().unwrap().summary, "b again");
         let _ = fs::remove_dir_all(&dir);
     }
 }

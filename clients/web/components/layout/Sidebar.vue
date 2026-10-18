@@ -76,6 +76,7 @@ import {
   BookOpen,
   FileText,
   Cloud,
+  Users,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -107,6 +108,11 @@ const navItems = computed(() => [
     icon: Cloud,
     badge: store.syncStatus?.pending_deltas > 0 ? store.syncStatus.pending_deltas : undefined,
     badgeClass: 'bg-amber-500/20 text-amber-400 border border-amber-500/50 animate-pulse',
+  },
+  {
+    path: '/coordination',
+    label: 'Agents & Locks',
+    icon: Users,
   },
   {
     path: '/memories',

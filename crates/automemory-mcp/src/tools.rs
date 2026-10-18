@@ -914,7 +914,9 @@ impl ToolRegistry {
                     .chain(by_path)
                     .filter(|e| seen.insert(e.id.clone()))
                     .collect();
-                let intel: &dyn CodeIntel = &automemory_core::ports::GraphCodeIntel::new(&self.db);
+                let root = std::env::current_dir().unwrap_or_default();
+                let intel: Box<dyn CodeIntel + '_> =
+                    automemory_core::codeintel::code_intel_for(&self.db, &root);
                 let callers = intel.callers(project_id, target);
                 let include_untrusted = arguments
                     .get("include_untrusted")
@@ -1702,6 +1704,11 @@ impl ToolRegistry {
             }
 
             "memory.proposals.decide" => {
+                if automemory_core::auth::stored_password_hash().is_some_and(|h| !h.trim().is_empty()) {
+                    return ToolCallResult::error(
+                        "Deciding proposals is a human action once a human password is set: use the dashboard or `automemory proposal decide`.",
+                    );
+                }
                 let id = match arguments.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
                     None => return ToolCallResult::error("Missing parameter: id"),
@@ -1720,6 +1727,11 @@ impl ToolRegistry {
             }
 
             "memory.proposals.decide_all" => {
+                if automemory_core::auth::stored_password_hash().is_some_and(|h| !h.trim().is_empty()) {
+                    return ToolCallResult::error(
+                        "Deciding proposals is a human action once a human password is set: use the dashboard or `automemory proposal decide`.",
+                    );
+                }
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
                 let proposal_type = arguments.get("proposal_type").and_then(|v| v.as_str());
                 let approved = match arguments.get("approved").and_then(|v| v.as_bool()) {

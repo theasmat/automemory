@@ -160,6 +160,17 @@ enum Commands {
         project: Option<String>,
     },
 
+    /// Warn about other branches that change the same files as this one (run before merging)
+    Overlap {
+        /// Branch everything is compared against
+        #[arg(long, default_value = "main")]
+        base: String,
+
+        /// Branch to check (default: the checked-out branch)
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
     /// Release or override an active resource lock
     Unlock {
         /// Resource scope (file path, glob pattern, or symbol)
@@ -1164,6 +1175,7 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Locks { project } => commands::lock::list_locks(project.as_deref())?,
+        Commands::Overlap { base, branch } => commands::lock::overlap(&base, branch.as_deref())?,
         Commands::Unlock {
             scope,
             project,

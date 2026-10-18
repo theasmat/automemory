@@ -106,3 +106,55 @@ pub async fn api_stream(
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
+
+/// Live multi-agent coordination state for the dashboard: held leases, planning
+/// rooms and recent handoff batons. Read-only.
+pub async fn api_coordination(
+    State(state): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
+    let now = Utc::now();
+    let leases: Vec<_> = state
+        .db
+        .list_active_leases(params.project_id.as_deref())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|l| {
+            json!({
+                "agent": l.agent, "session_id": l.session_id, "scope": l.scope,
+                "scope_type": l.scope_type.to_string(), "goal": l.goal,
+                "remaining_seconds": l.remaining_seconds(now),
+            })
+        })
+        .collect();
+
+    let (rooms, batons) = {
+        let conn = state.db.conn();
+        let rows = |sql: &str, cols: &[&str]| -> Vec<serde_json::Value> {
+            let Ok(mut stmt) = conn.prepare(sql) else { return Vec::new() };
+            let Ok(iter) = stmt.query_map([], |r| {
+                let mut o = serde_json::Map::new();
+                for (i, c) in cols.iter().enumerate() {
+                    o.insert((*c).to_string(), json!(r.get::<_, Option<String>>(i)?));
+                }
+                Ok(serde_json::Value::Object(o))
+            }) else {
+                return Vec::new();
+            };
+            iter.flatten().collect()
+        };
+        (
+            rows(
+                "SELECT id, topic, state, turn_holder, CAST(round AS TEXT), updated_at \
+                 FROM rooms ORDER BY updated_at DESC LIMIT 20",
+                &["id", "topic", "state", "turn_holder", "round", "updated_at"],
+            ),
+            rows(
+                "SELECT id, agent, from_session, to_session, packet, created_at \
+                 FROM batons ORDER BY created_at DESC LIMIT 10",
+                &["id", "agent", "from_session", "to_session", "packet", "created_at"],
+            ),
+        )
+    };
+    Json(json!({ "leases": leases, "rooms": rooms, "batons": batons }))
+}

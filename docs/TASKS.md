@@ -1,60 +1,47 @@
 # AutoMemory — Tasks
 
-Open work, derived from [PLAN](PLAN.md) and the current working tree. Update as items land. Tick = done and verified.
+Open work, derived from [PLAN](PLAN.md). Update as items land. Tick = done and verified.
+How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`).
 
-## Now (finish v1 on three agents)
+## Needs a person (cannot be scripted)
 
-- [ ] Review and commit the uncommitted worktree-sync work (`sync/deltas.rs`, `sync/git.rs`, `leases.rs`, `projects.rs`, `decisions.rs`, `schema.sql`, `connect.rs`, `hook.rs`, `config.rs`, `tests/worktree_sync_test.rs`)
-- [ ] Two-agent collision test (Phase 1 gate): zero silent overwrites; record result
-- [x] `connect claude|codex` install native hooks (Claude/Codex hookSpecificOutput format, tool-name + argv + apply_patch normalization), Codex MCP via `config.toml`; `disconnect` reverses; unit + simulated-payload tested
-- [ ] Verify in live Claude Code and Codex sessions (Codex: trust hooks via `/hooks`); add contract tests per agent version
-- [ ] Mark the other 17 connectors as unsupported in `connect`/`doctor` output until promoted
-- [ ] Confirm hook p95 < 5 ms (bench reports mean only)
+- [ ] Live sessions: run `tests/manual/LIVE_CHECKLIST.md` sections A (Claude Code), B (Codex, trust hooks in `/hooks`), C (Antigravity), D (two agents, one repo), E (dashboard in a browser); log results in that file
+- [ ] Phase 2 gate: write ≥ 20 real tasks in `tests/eval/tasks/`, run `off` / `on` / `verify` arms ≥ 3 times each, read `run_eval.py report` (method in `tests/eval/README.md`)
+- [ ] Measure stale-flag precision (target ≥ 90%) and retrieval precision@3 on those tasks; plant stale and poisoned memories and confirm flagging, quarantine and revoke
+- [ ] Planning Room A/B: solo + tests vs Room on a defined task set; drop the Room if it does not win
+- [ ] Decide whether the PRD's "5 ms p95" means the pipeline (met, ≈1.3 ms) or the whole process (≈9 ms p95, ≈5 ms of it binary start-up); if the latter, reduce binary start-up
+- [ ] Before deploying `workers/sync-gateway`: set `STRIPE_WEBHOOK_SECRET` / `LEMONSQUEEZY_WEBHOOK_SECRET`, `ADMIN_SECRET`, leave `ENABLE_DEV_AUTH_BYPASS` unset
 
-## Eval (Phase 2 gate)
+## Code
 
-- [ ] Collect ≥ 20 real tasks across Rust/Swift/Kotlin/TS repos
-- [ ] Run `automemory eval` arms: memory off / on / on+verify, ≥ 3 runs each
-- [ ] Measure stale-flag precision (target ≥ 90%) and retrieval precision@3
-- [ ] Plant stale and poisoned memories; confirm flags and quarantine
+- [ ] Park or delete the 17 unsupported connectors (~700 lines in `connect.rs`); `connect all` already configures only agy, claude, codex and says so
+- [ ] Symbol-level hash for staleness: wire `CodeIntel::symbol_hash` into the verifier's `changed` status (it uses file hashes today)
+- [ ] Contract fixtures per agent *version* once more than one version is in use (`tests/contract/fixtures/<agent>/<version>.json`)
+- [ ] Wire `sync_cycle` into the CLI `sync import/export` paths (today only the daemon pass uses the conflict-safe op-log; the legacy snapshot import is last-writer-wins)
+- [ ] Not yet audited: the crypto/BIP-39 code, and the worker's `dashboard.ts` / `sync.ts` routes
 
-## Planning Room and dashboard (v1)
+## Done (verified by `tests/run_all.sh`)
 
-- [ ] Room A/B: solo + tests vs Room on a defined task set; drop Room if it does not win
-- [ ] Dashboard: confirm all views work against current API; add Room and lease/baton views
-- [ ] Rebuild `clients/web` and refresh embedded assets
-
-## Gaps from research (verify before building)
-
-- [ ] Check whether `lock.status` + `baton` already cover the "blackboard" idea; add `memory.checkpoint` only if not
-- [ ] Auto-checkpoint on `stop` so sessions leave a progress memory
-- [ ] `memory list --group-by category|time|agent` — confirm shipped or add
-- [ ] Commit-bound staleness on revert/rewrite
-- [ ] Cross-memory contradiction detection beyond version mismatch
-- [ ] Pre-merge file-overlap check (git-based; leases stay file/glob)
-- [x] `connect` and project `.mcp.json` now launch the native `codebase-memory-mcp` binary (the `npx @codebase-memory/mcp` package does not exist); repo indexed (4819 nodes)
-- [ ] Make codebase-memory-mcp the CodeIntel provider: pinned version, `doctor` check, wire `symbol_exists`/`symbol_hash`/`callers` to it; keep file-hash fallback only
-
-## Audit follow-ups
-
-- [x] connect/disconnect refuse unparseable JSON and write atomically
-- [x] Dashboard origin/host guard, password on proposal decisions
-- [x] Lease check-then-insert is one immediate transaction (multi-connection race test)
-- [x] Project filters escaped; traces/skills no longer leak project-less rows
-- [x] Guardrail: no false blocks on printed text, here-documents or file content; find/chmod/+refspec/cd-then-delete/newline covered; pipe-to-shell flagged
-- [x] Migrations atomic and no longer swallow errors; poisoned mutex no longer panics; delta sync uncapped
-- [ ] Park or delete the 17 unsupported connectors (`connect all` now configures only agy, claude, codex)
-- [ ] Surface guardrail warnings to the agent (Claude/Codex hook output carries only denies today; warnings go to stderr)
-- [ ] Not audited yet: `workers/sync-gateway` auth, MCP HTTP gateway auth, crypto
+- [x] Worktree-aware project resolution, shared leases; committed
+- [x] `connect`/`disconnect` for Claude Code and Codex (hooks + MCP), Codex via `config.toml`; refuse unparseable configs, atomic writes
+- [x] Dashboard origin/host guard; human password on proposal decisions (dashboard, CLI, and MCP refuses agents); UI prompts once per tab
+- [x] Lease acquisition atomic across processes; migrations atomic and loud; poisoned mutex recovers
+- [x] Guardrail precision (printed text, here-documents and file content are not commands) and bypass coverage; warnings now reach the agent as hook context
+- [x] CodeIntel via codebase-memory-mcp with file-hash fallback; `doctor` checks engine version and installed hooks
+- [x] Automatic `Session checkpoint` memory on Stop; `automemory overlap` for pre-merge file overlap; revert/contradiction staleness covered by PostCommit and the consolidation worker
+- [x] Dashboard Agents & Locks page (`/api/coordination`)
+- [x] Delta sync wired into the daemon pass; fixed two bugs found by wiring it (edits were never pushed after a pull; old delta files looked like conflicts)
+- [x] Hook opens the database without re-running the schema: end-to-end p95 21 ms → 9 ms
+- [x] Sync gateway: webhook signatures verified, unsigned test payload only with the dev flag, constant-time admin secret
+- [x] `tests/` directory: contract, guardrail, collision, lifecycle, password gate, dashboard, CodeIntel, latency, eval harness, live checklist
 
 ## Docs hygiene
 
-- [ ] Keep MCP tool count and test count in ARCHITECTURE/FEATURES in sync with code (59 tools, 157 tests at last check)
-- [ ] Generate CLI/MCP reference from code if a reference doc is wanted again
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 164 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 
-- [ ] Promote additional agents one at a time (Cursor, Cline, …) with contract tests
+- [ ] Promote additional agents one at a time (Cursor, Cline, …) with contract fixtures
 - [ ] Cloudflare managed SaaS (`workers/`), team sharing
 - [ ] Headless Runner (check vendor terms first), Autopilot profile
 - [ ] Neural embeddings, WASM plugins

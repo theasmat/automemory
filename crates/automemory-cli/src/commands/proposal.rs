@@ -80,6 +80,10 @@ pub fn list(
 }
 
 pub fn decide(id: String, approve: bool) -> Result<()> {
+    automemory_core::auth::require_human(
+        automemory_core::auth::stored_password_hash().as_deref(),
+        "decide proposal",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
@@ -96,6 +100,10 @@ pub fn decide(id: String, approve: bool) -> Result<()> {
 }
 
 pub fn approve_all(proposal_type: Option<String>, project: Option<String>) -> Result<()> {
+    automemory_core::auth::require_human(
+        automemory_core::auth::stored_password_hash().as_deref(),
+        "approve all proposals",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;
@@ -116,6 +124,10 @@ pub fn approve_all(proposal_type: Option<String>, project: Option<String>) -> Re
 }
 
 pub fn reject_all(proposal_type: Option<String>, project: Option<String>) -> Result<()> {
+    automemory_core::auth::require_human(
+        automemory_core::auth::stored_password_hash().as_deref(),
+        "reject all proposals",
+    )?;
     let config = Config::default_config();
     let db = Database::open(&config.db_path)
         .with_context(|| format!("Failed to open database at {:?}", config.db_path))?;

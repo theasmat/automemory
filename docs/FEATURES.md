@@ -59,7 +59,8 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Trust tiers 1–5, provenance, revoke | ✅ | Tier 4–5 withheld from default recall |
 | Symbol/file-hash verify on recall | ✅ | File hashes built in; symbols from codebase-memory-mcp |
 | PostCommit flips linked memories to `changed` | ✅ | |
-| Revert/rewrite staleness, contradiction across memories | ⬜ | Phase 4 |
+| Revert/rewrite staleness | ✅ | A revert is a commit: PostCommit flips memories linked to its files to `changed` |
+| Contradiction across memories | ✅ | Consolidation worker: replacement cues, mutually exclusive tool groups, version mismatch |
 
 ### Coordination
 | Feature | Status | Notes |
@@ -69,8 +70,8 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Baton handoff | ✅ | |
 | Task queue + cross-review (tests as judge) | ✅ | |
 | Planning Room state machine + MCP tools | ✅ | Gated by its own A/B eval |
-| Blackboard / checkpoint tools | ⬜ | From research doc; verify vs `lock.status`/`baton` first |
-| Pre-merge file-overlap check (git diff vs other branches) | ⬜ | Phase 4 |
+| Blackboard / checkpoint | ✅ | `lock.status` is the blackboard; `memory.digest auto_save` and the automatic `Session checkpoint` on Stop cover checkpoints |
+| Pre-merge file-overlap check | ✅ | `automemory overlap`; file-level, git only |
 
 ### Safety
 | Feature | Status | Notes |
@@ -84,7 +85,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Feature | Status | Notes |
 |---|---|---|
 | MCP server (59 tools), CLI | ✅ | |
-| Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; polish pending |
+| Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
 | `next_action` on every tool reply | ✅ | |
 
@@ -97,15 +98,15 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 157 tests |
-| Eval harness (`automemory eval`) | 🔧 | Needs ≥20 real tasks baseline (Phase 2 gate) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 164 Rust tests + 9 script suites ([tests/README.md](../tests/README.md)) |
+| Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics
 
 | Metric | Target |
 |---|---|
 | Silent overwrites | 0 |
-| Hook p95 | < 5 ms |
+| Hook p95 | < 5 ms for the pipeline (≈1.3 ms mean). End to end, process start included: ≈9 ms p95, ≈5 ms of it binary start-up (`tests/perf/hook_p95.py`) |
 | Task success, memory on vs off | Not worse overall; better on non-inferable tasks |
 | Stale-flag precision | ≥ 90% |
 | Install → first lock or recall | < 5 min |

@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod codeintel;
 pub mod baton;
 pub mod bip39;
 pub mod config;
@@ -12,6 +13,7 @@ pub mod guardrails;
 pub mod hooks;
 pub mod keychain;
 pub mod models;
+pub mod overlap;
 pub mod ports;
 pub mod redaction;
 pub mod retrieval;

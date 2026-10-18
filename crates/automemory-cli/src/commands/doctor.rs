@@ -138,6 +138,35 @@ pub fn execute() -> Result<()> {
         println!("✓ OK (Workspace mode: hooks configured per-project via 'automemory connect')");
     }
 
+    // 6. CodeIntel engine (symbol questions are delegated to codebase-memory-mcp)
+    print!("Checking CodeIntel engine (codebase-memory-mcp)... ");
+    match automemory_core::codeintel::binary_version() {
+        Some(v) if automemory_core::codeintel::version_supported(&v) => println!("✓ OK ({v})"),
+        Some(v) => println!(
+            "⚠ {v} is older than {}.{}; using the local file-hash fallback where output differs",
+            automemory_core::codeintel::MIN_ENGINE_VERSION.0,
+            automemory_core::codeintel::MIN_ENGINE_VERSION.1
+        ),
+        None => println!("⚠ not installed; symbol checks fall back to file hashes"),
+    }
+
+    // 7. Native agent hooks (Claude Code, Codex)
+    if let Some(home) = dirs::home_dir() {
+        for (name, path, hint) in [
+            ("Claude Code", home.join(".claude/settings.json"), "claude"),
+            ("Codex", home.join(".codex/hooks.json"), "codex"),
+        ] {
+            print!("Checking {name} hooks... ");
+            let installed = std::fs::read_to_string(&path)
+                .is_ok_and(|t| t.contains(super::connect::HOOK_MARKER));
+            if installed {
+                println!("✓ OK ({})", path.display());
+            } else {
+                println!("– not installed (run `automemory connect {hint} -g`)");
+            }
+        }
+    }
+
     println!();
     if all_passed {
         println!("✓ All health checks passed! AutoMemory is fully operational.");

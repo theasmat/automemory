@@ -1,0 +1,9 @@
+# One eval task. Copy to tasks/<id>.toml. Flat key = "value" lines only.
+id = "short-unique-id"
+repo = "~/Developer/some-repo"            # local clone the agent will work in (a worktree is made from it)
+base_commit = "abc1234"                   # the commit before the real fix/feature landed
+kind = "non_inferable"                    # inferable (answer is in the code) | non_inferable (needs a past decision/gotcha)
+prompt = "Describe the task exactly as you would type it to the agent."
+verify = "cargo test -p mycrate fixed_behaviour"   # exit code 0 = success; never the agent's own claim
+seed_memories = ""                        # optional: path to a JSON list of memories to load for arms on/verify
+notes = "Why this task needs (or does not need) memory."

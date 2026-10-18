@@ -1,0 +1,9 @@
+# Runs against this repository itself, so the harness can be tried without any other repo.
+# Not a real eval task (the "bug" is trivial); it only demonstrates prepare / score / report.
+id = "example-selftest"
+repo = "."
+base_commit = "HEAD"
+kind = "inferable"
+prompt = "Create a file named DONE.txt containing the word done."
+verify = "test -f DONE.txt"
+notes = "Demonstration only."

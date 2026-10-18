@@ -600,7 +600,7 @@ pub const PORTS: &[PortInfo] = &[
         id: "CodeIntel",
         api_version: CODE_INTEL_API_VERSION,
         status: PortStatus::Native,
-        default_impl: "GraphCodeIntel",
+        default_impl: "CbmCodeIntel (codebase-memory-mcp), GraphCodeIntel fallback",
     },
     PortInfo {
         id: "MemoryStore",

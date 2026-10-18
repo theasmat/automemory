@@ -1,0 +1,11 @@
+[
+  {"name": "antigravity run_command (CommandLine) safe: flat allow", "event": "pre-tool", "style": "flat",
+   "payload": {"conversationId": "a1", "toolCall": {"name": "run_command", "args": {"CommandLine": "ls -la"}}},
+   "expect": {"kind": "allow"}},
+  {"name": "antigravity run_command recursive delete of root: flat deny", "event": "pre-tool", "style": "flat",
+   "payload": {"conversationId": "a1", "toolCall": {"name": "run_command", "args": {"CommandLine": "rm -rf /"}}},
+   "expect": {"kind": "deny", "contains": "CRITICAL STOP"}},
+  {"name": "antigravity post-tool prints an empty object", "event": "post-tool", "style": "flat",
+   "payload": {"conversationId": "a1", "toolCall": {"name": "view_file", "args": {"AbsolutePath": "/tmp/x"}}},
+   "expect": {"kind": "allow"}}
+]

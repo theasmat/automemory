@@ -32,10 +32,14 @@ impl Database {
         conn.pragma_update(None, "synchronous", "NORMAL")
             .context("Failed to set synchronous mode")?;
 
-        // Initialize schema
-        conn.execute_batch(SCHEMA_SQL)
-            .context("Failed to execute database schema")?;
-        run_migrations(&conn).context("Failed to migrate database schema")?;
+        // Hooks open the database on every tool call, so the ~50 CREATE IF NOT EXISTS
+        // statements only run while the schema is behind (new or upgraded databases).
+        // A schema.sql change therefore must bump LATEST_SCHEMA_VERSION with a migration.
+        if schema_version(&conn) < LATEST_SCHEMA_VERSION {
+            conn.execute_batch(SCHEMA_SQL)
+                .context("Failed to execute database schema")?;
+            run_migrations(&conn).context("Failed to migrate database schema")?;
+        }
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -78,6 +82,10 @@ impl Database {
             .with_context(|| format!("Failed to back up database to {:?}", dest_ref))?;
         Ok(())
     }
+}
+
+fn schema_version(conn: &Connection) -> i32 {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap_or(0)
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
@@ -358,5 +366,13 @@ mod tests {
         step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap();
         step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap(); // already applied
         assert!(step(&conn, "ALTER TABLE missing ADD COLUMN c TEXT", []).is_err());
+    }
+
+    #[test]
+    fn a_fresh_database_reports_the_latest_schema_version() {
+        // If this fails, schema.sql or a migration changed without bumping LATEST_SCHEMA_VERSION:
+        // existing databases would then skip the new schema.
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(schema_version(&db.conn()), LATEST_SCHEMA_VERSION);
     }
 }

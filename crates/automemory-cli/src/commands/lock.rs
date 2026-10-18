@@ -106,3 +106,29 @@ pub fn unlock(scope: &str, project_arg: Option<&str>, _force: bool) -> Result<()
 
     Ok(())
 }
+
+/// `automemory overlap`: exit code 1 when another branch edits the same files.
+pub fn overlap(base: &str, branch: Option<&str>) -> Result<()> {
+    let repo = std::env::current_dir()?;
+    let current = match branch {
+        Some(b) => b.to_string(),
+        None => automemory_core::overlap::current_branch(&repo)?,
+    };
+    let hits = automemory_core::overlap::overlapping_branches(&repo, base, &current)?;
+    if hits.is_empty() {
+        println!("✓ No other branch changes the same files as '{current}' (vs {base}).");
+        return Ok(());
+    }
+    println!("⚠ '{current}' shares changed files with other branches (vs {base}):");
+    for h in &hits {
+        println!("  {}", h.branch);
+        for f in h.files.iter().take(10) {
+            println!("    - {f}");
+        }
+        if h.files.len() > 10 {
+            println!("    ... and {} more", h.files.len() - 10);
+        }
+    }
+    println!("Merge one first and rebase the other, or coordinate with the agent on that branch.");
+    std::process::exit(1);
+}

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
+import { verifyLemonSignature, verifyStripeSignature } from '../auth/webhook';
 
 export const billingRouter = new Hono<{ Bindings: Env }>();
 
@@ -9,7 +10,35 @@ export const billingRouter = new Hono<{ Bindings: Env }>();
  * users across pricing plans (Free -> Plus -> Team -> Enterprise) in Cloudflare D1.
  */
 billingRouter.post('/billing/webhook', async (c) => {
-  const body = await c.req.json<any>();
+  // The raw text is what the provider signed; verify it before trusting any field.
+  const raw = await c.req.text();
+  let body: any;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return c.json({ error: 'BAD_REQUEST', message: 'Body is not valid JSON' }, 400);
+  }
+
+  const isStripe = body?.object === 'event' || (typeof body?.type === 'string' && !body?.meta);
+  const isLemon = !!body?.meta?.event_name;
+  const devSimulation = c.env.ENABLE_DEV_AUTH_BYPASS === 'true' && !isStripe && !isLemon;
+
+  if (isStripe) {
+    const secret = c.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return c.json({ error: 'NOT_CONFIGURED', message: 'Stripe webhook secret is not set' }, 503);
+    if (!(await verifyStripeSignature(raw, c.req.header('Stripe-Signature'), secret))) {
+      return c.json({ error: 'FORBIDDEN', message: 'Invalid Stripe signature' }, 403);
+    }
+  } else if (isLemon) {
+    const secret = c.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    if (!secret) return c.json({ error: 'NOT_CONFIGURED', message: 'LemonSqueezy webhook secret is not set' }, 503);
+    if (!(await verifyLemonSignature(raw, c.req.header('X-Signature'), secret))) {
+      return c.json({ error: 'FORBIDDEN', message: 'Invalid LemonSqueezy signature' }, 403);
+    }
+  } else if (!devSimulation) {
+    // The unsigned "direct simulation" payload is a local-testing aid only.
+    return c.json({ error: 'FORBIDDEN', message: 'Unsigned webhook payloads are not accepted' }, 403);
+  }
 
   let provider = 'unknown';
   let eventType = 'unknown';

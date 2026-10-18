@@ -485,16 +485,21 @@ impl HookHandler for GuardrailHandler {
     }
 }
 
-/// Strictest decision wins; the reason comes from the strictest handler.
+/// Strictest decision wins. The reason joins every handler that reached that
+/// decision, so a warning (an allow with a message) is not lost behind a silent allow.
 pub fn merge_decision(results: &[HandlerResult]) -> HandlerOutput {
-    let mut best = HandlerOutput::allow();
-    for r in results {
-        if r.decision > best.decision {
-            best.decision = r.decision;
-            best.reason = r.reason.clone();
-        }
-    }
-    best
+    let decision = results
+        .iter()
+        .map(|r| r.decision)
+        .max()
+        .unwrap_or(GateDecision::Allow);
+    let reason = results
+        .iter()
+        .filter(|r| r.decision == decision && !r.reason.is_empty())
+        .map(|r| r.reason.as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+    HandlerOutput { decision, reason }
 }
 
 fn run_exec(cmd: &str, ctx: &PipelineCtx<'_>, budget: Duration) -> Result<HandlerOutput, String> {

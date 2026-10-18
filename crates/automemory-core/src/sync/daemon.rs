@@ -37,6 +37,9 @@ impl AutoSyncDaemon {
 
     /// Run immediate sync without debouncing
     pub fn sync_now(&self) -> Result<()> {
+        // Conflict-safe op-log first (applies other devices' edits, writes ours), then the
+        // readable snapshot export.
+        super::deltas::sync_cycle(&self.db, &self.vault_root)?;
         let vault = VaultManager::new(&self.db, &self.vault_root);
         vault.export_to_vault()?;
 

@@ -1,0 +1,20 @@
+[
+  {"name": "argv-array shell command is judged as one string (safe)", "event": "pre-tool",
+   "payload": {"session_id": "x1", "hook_event_name": "PreToolUse", "tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "ls -la"]}},
+   "expect": {"kind": "allow"}},
+  {"name": "argv-array shell command with a forced push to main is denied", "event": "pre-tool",
+   "payload": {"session_id": "x1", "tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "git push --force origin main"]}},
+   "expect": {"kind": "deny", "contains": "Force Push"}},
+  {"name": "exec_command with cmd key: recursive delete of home is denied", "event": "pre-tool",
+   "payload": {"session_id": "x1", "tool_name": "exec_command", "tool_input": {"cmd": "rm -rf ~"}},
+   "expect": {"kind": "deny"}},
+  {"name": "apply_patch is allowed when no lease conflicts", "event": "pre-tool",
+   "payload": {"session_id": "x1", "tool_name": "apply_patch", "tool_input": {"input": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-a\n+b\n*** End Patch"}},
+   "expect": {"kind": "allow"}},
+  {"name": "post-tool prints an empty object", "event": "post-tool",
+   "payload": {"session_id": "x1", "tool_name": "shell", "tool_input": {"command": ["ls"]}, "tool_response": {"output": "ok"}},
+   "expect": {"kind": "allow"}},
+  {"name": "stop does not block with no owed work", "event": "stop",
+   "payload": {"session_id": "x1", "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "done"},
+   "expect": {"kind": "allow"}}
+]
