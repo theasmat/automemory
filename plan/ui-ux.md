@@ -366,3 +366,76 @@ spot check, both themes). A headless screenshot pass with the in-app browser at 
 - **Light theme** doubles visual testing; if cut, keep tokens so it can be added later.
 - Open: brand name for the Project brain area ("Project brain" vs "Knowledge")? Whether Inbox should also surface failed
   syncs and blocked commands (proposed: yes, as read-only items).
+
+## 12. Light theme (plan)
+
+Status: tokens exist (`.light` in `clients/web/assets/css/main.css`) and now load, but the palette was picked without a
+contrast check and the two themes are not designed as a pair. Dark stays as is (it is the signature look); light is
+designed to feel like the same product on paper, not an inverted copy.
+
+### 12.1 Principles
+- **Same structure, same accent hue.** Gold stays the "act on this" colour; in light it is a deep amber so it reads as text.
+- **Warm paper, not stark white.** Page is an off-white; cards are white and lifted by a soft shadow plus a quiet border, so hierarchy comes from elevation instead of black outlines.
+- **Two border strengths.** A soft divider (decorative, 1.3:1) and a strong control border (3:1, required for inputs and buttons).
+- **Status by hue + icon + text**, with darker light-theme hues; never colour alone.
+- **Every pair checked** (table below) and re-checked whenever a token changes (a unit script in `tests/` computes the ratios from `main.css`).
+
+### 12.2 Palette (light) and measured contrast
+
+| Token | Dark (now) | Light (proposed) | Notes |
+|---|---|---|---|
+| `--bg` | #0b0c0e | #f6f5f1 | warm paper |
+| `--surface` | #14161a | #ffffff | cards, popovers |
+| `--surface-2` | #1c1f24 | #efede7 | nested blocks, code chips, hover |
+| `--border` (soft) | #2a2e35 | #dedbd2 | dividers, card edges |
+| `--border-strong` (new) | #4a505a | #8d8a80 | inputs, buttons, focus-adjacent (3.17:1 on bg) |
+| `--text` | #e8e9ec | #1b1c1e | 15.6:1 on bg, 17.1:1 on cards |
+| `--text-muted` | #9aa1ab | #5a5f66 | 6.4:1 on cards, 5.5:1 on surface-2 |
+| `--accent` (text, links, icons) | #ffc000 | #8a5a00 | 5.9:1 on cards, 5.4:1 on bg |
+| `--accent-solid` (new, button fill) | #ffc000 | #f2b100 | with `--accent-fg` #1f1500 = 9.5:1 |
+| `--accent-fg` | #1a1400 | #1f1500 | text on solid accent |
+| `--ok` | #34d399 | #047857 | 5.5:1 |
+| `--warn` | #fbbf24 | #a16207 | 4.9:1 |
+| `--bad` | #f87171 | #b91c1c | 6.5:1 |
+| `--info` | #38bdf8 | #0369a1 | 5.9:1 |
+| status tints (new) `--ok-bg` etc. | rgba(.., .12) | rgba(.., .10) | pill/banner backgrounds |
+| `--shadow-card` (new) | none | 0 1px 2px rgba(20,18,10,.06), 0 4px 12px rgba(20,18,10,.04) | replaces black outlines |
+| `--overlay` (new) | rgba(0,0,0,.6) | rgba(20,18,10,.4) | modal/drawer backdrop |
+
+Changes vs the current `.light`: accent text darkened slightly (#8a6100 -> #8a5a00, same hue family) and a separate
+`--accent-solid` so buttons keep the bright gold; warn/ok/bad/info darkened to clear 4.5:1 on white; added a strong
+border token and a card shadow; page background nudged to #f6f5f1.
+
+### 12.3 Component rules
+- **Card**: `bg-surface`, 1 px `--border`, `--shadow-card`; no hover outline, hover raises to `surface-2` for clickable cards.
+- **Button primary**: `--accent-solid` fill, `--accent-fg` text, no border; secondary: transparent, `--border-strong` border, `--text`; ghost: no border, `--text-muted` -> `--text` on hover; danger: `--bad` text + border (solid fill only in confirm dialogs).
+- **Inputs**: white fill, `--border-strong` border, 2 px `--accent` focus ring with 2 px offset; placeholder uses `--text-muted`.
+- **Badges/pills**: tinted background (`--ok-bg`) + coloured text + icon; neutral badge uses `surface-2`.
+- **Code and commands** (`CopyCommand`, inline code): `surface-2` fill, 1 px soft border, mono 13 px, `--text`.
+- **Sidebar/top bar**: same `bg` as page with a soft divider (not a darker or black bar); active nav item = `surface` pill with `--accent` text and left 2 px accent marker.
+- **Toasts**: `surface` + strong border + shadow; error toast has a `--bad` left bar.
+- **Charts/graph**: categorical colours from a fixed 6-colour set tested on both themes; graph edges `--border-strong`.
+- **Scrollbars**: thumb `--border-strong`, track transparent.
+- **Selection**: `--accent-solid` at 35% with `--text`.
+
+### 12.4 Behaviour
+- **Default**: follow `prefers-color-scheme` on first visit (today it forces dark); the toggle cycles **System / Light / Dark** and the choice is stored in `localStorage` (try/catch) as `am_theme` = `system|light|dark`.
+- **No flash**: the inline head script (already in `nuxt.config.ts`) resolves system/stored value before paint and sets `class="light|dark"` and `color-scheme` on `<html>` so native controls and scrollbars match.
+- **Toggle UI**: one icon button in the top bar with a tooltip and `aria-label` ("Theme: System"); a Theme row in the command palette and in a future Settings page.
+- **Transition**: 150 ms on background/border/colour only, disabled under `prefers-reduced-motion`.
+- **Forced colours**: honour `@media (forced-colors: active)` (system colours, keep 1 px borders).
+- **Print**: always light tokens.
+
+### 12.5 Implementation steps
+1. **Tokens** (`assets/css/main.css`, `tailwind.config.js`): add `--border-strong`, `--accent-solid`, status tint tokens, `--shadow-card`, `--overlay`; map to Tailwind (`border-strong`, `bg-accent-solid`, `bg-ok/10` via tint tokens, `shadow-card`). Keep `cssPath: '~/assets/css/main.css'` in `nuxt.config.ts` (without it none of the tokens load).
+2. **Components** (`components/*.vue`): move every hard-coded colour (`bg-black/60`, `text-white`, `text-gold-*`, `bg-dark-*`) to tokens; Button/Card/Badge/Modal/Drawer/CommandPalette first, then pages. Remove the legacy `dark`/`gold` aliases once `grep` shows no uses.
+3. **Theme composable** (`composables/useTheme.ts`): three-state mode (system/light/dark), listens to `matchMedia` changes while in system mode, sets `color-scheme`.
+4. **Audit script** `tests/ui/contrast.py`: parses both token sets from `main.css`, asserts the pairs above (text >= 4.5, UI >= 3) and fails the suite if a token change breaks one; registered in `tests/run_all.sh`.
+5. **Visual pass** with the in-app browser at 360/768/1280 in both themes on every page (Home, Brain, Agents, Inbox, Sync, Safety, each Advanced page), checking: no pure-black outlines, no invisible text on tinted pills, readable disabled states, modal backdrops, focus rings, scrollbars.
+6. **Manual checklist** `tests/manual/UI_CHECKLIST.md`: add "switch theme with a modal open", "system theme change while the page is open", "reload with each stored value", "forced-colors", "print".
+
+### 12.6 Acceptance
+- Contrast script green; Lighthouse/axe accessibility >= 95 on Home in both themes.
+- No component references a raw colour; `grep -rn "bg-black\|text-white\|bg-dark-\|text-gold-" clients/web` is empty.
+- Toggling themes never shows unstyled flash or a mixed page (old dark classes on a light background).
+- A screenshot of each page in each theme is attached to the phase's PR.
