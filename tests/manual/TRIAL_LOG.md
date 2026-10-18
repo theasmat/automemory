@@ -17,7 +17,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 |---|---|---|---|
 | T0 | Baseline: clean machine, local-only registration | PASS | 2026-10-19 |
 | T1 | Claude Code: hooks fire and events are recorded | PASS | 2026-10-19 |
-| T2 | Antigravity: hooks fire, no hook errors | PENDING | |
+| T2 | Antigravity: hooks fire, no hook errors | PASS (data) | 2026-10-19 |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PENDING | |
 | T4 | Two agents, one file: automatic lock and collision message | PENDING | |
 | T5 | Hand-off: a new session continues where the last one stopped | PENDING | |
@@ -159,4 +159,22 @@ Found and fixed
 - The hand-off said "holding: tests/test_pricing.py, shop/pricing.py" although the session had ended: the hand-off was written
   before the session's leases were released. SessionEnd now releases first. (To confirm live in T2: `automemory locks` is empty after exit.)
 - Open: "Pending event queue: 20 unprocessed events" right after the session (processed later by distillation); watch whether it drains.
+
+### 2026-10-19 T2 Antigravity hooks: PASS (from the data; tester's screen not reported)
+
+Run: Antigravity session in the trial folder; prompt: add `format_price(cents)` to shop/catalog.py + tests/test_catalog.py + run suite.
+Not reported: which surface (CLI/App/IDE), final message, hook messages, MCP list. (An earlier read-only Antigravity session had
+already recorded 8 commands + 14 reads before this run.)
+
+Evidence
+- `shop/catalog.py` modified and `tests/test_catalog.py` created.
+- Events for adapter `agy`: tools `command`, `read`, `edit` (2), `write` (2): hooks fire; no AutoMemory lock tool was called.
+- `automemory locks` is empty after the session (locks released); coverage went from 2 to 6 file changes, all 100% leased before the write.
+- New memories, scope "project": "Execution outcome for: Add format_price function" (pattern), "Execution outcome for: agy session
+  execution trajectory" (pattern), "Session checkpoint 7889ef1e".
+- Not shown: whether Antigravity displayed any hook error; no "unknown field" report was made.
+
+Found and fixed
+- The Antigravity "Session checkpoint" was typed **decision** (a clean session had no failures, and the fallback type was Decision),
+  so it would be counted under Decisions. Clean session summaries are now typed **observation**. Installed.
 

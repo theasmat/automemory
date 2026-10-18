@@ -373,7 +373,8 @@ impl<'a> TimeSpanDigestEngine<'a> {
             } else if resolved_count > 0 {
                 MemoryType::Lesson
             } else {
-                MemoryType::Decision
+                // A clean session summary is an observation; calling it a decision would fill the Decisions list.
+                MemoryType::Observation
             },
             content: digest.executive_summary.clone(),
             summary,
