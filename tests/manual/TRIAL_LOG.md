@@ -15,7 +15,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 
 | # | Test | Status | Date |
 |---|---|---|---|
-| T0 | Baseline: clean machine, local-only registration | PENDING | |
+| T0 | Baseline: clean machine, local-only registration | PASS | 2026-10-19 |
 | T1 | Claude Code: hooks fire and events are recorded | PENDING | |
 | T2 | Antigravity: hooks fire, no hook errors | PENDING | |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PENDING | |
@@ -99,4 +99,18 @@ Findings
    Installed to `~/.cargo/bin/automemory` (Oct 19 01:50); verified: directories check OK.
 
 Follow-up: reset to zero, remove the alias, rerun the T0 checks with the installed binary.
+
+### 2026-10-19 T0 Baseline: PASS (second report, after reset)
+
+Checked: `which -a automemory` shows only `~/.cargo/bin/automemory` (alias gone); version 0.1.0; no AutoMemory entries in
+`~/.claude/settings.json` (count 0) and no `~/.codex/hooks.json`; dry-run lists only entries inside the trial folder plus the two
+known path-substring false positives (`~/.claude.json`, Claude Desktop config); `doctor`: all health checks passed, 0 active
+memories (the 2 "archived" rows are doctor's own benchmark), no file changes recorded; unit tests OK; `mode get` says the project
+is not in the database yet and defaults to VIBE.
+
+Notes
+- "Pending event queue: 1 unprocessed event" right after the reset: probably the benchmark or one hook call; not a failure. Watch if it grows.
+- The project registers itself on the first hook run, so Strict mode can only be set after T1 (`mode set strict` now would have no project to attach to).
+- `connect` writes the AutoMemory block into AGENTS.md / CLAUDE.md / GEMINI.md, so the checklist already shows "Instruction files" done
+  before any decision exists (block says how to use the tools; decisions are added later by `export-rules`).
 
