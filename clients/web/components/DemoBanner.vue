@@ -1,26 +1,22 @@
 <template>
   <div
     v-if="store.isDemoMode"
-    class="bg-accent/10 border-b border-accent/25 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 text-xs sm:text-sm text-text"
+    class="bg-accent/10 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 text-sm text-text"
   >
     <div class="flex items-center gap-2 min-w-0">
-      <span class="px-1.5 py-0.5 rounded-pill text-[10px] font-bold uppercase tracking-wider bg-accent-solid text-accent-fg">
-        Sample Mode
-      </span>
-      <span class="truncate">
-        You are looking at sample demo data. Sample items are excluded from sync and instruction export.
-      </span>
+      <span class="px-2 py-0.5 rounded-pill text-xs font-semibold bg-accent-solid text-accent-fg whitespace-nowrap">Sample</span>
+      <span class="truncate">You are looking at sample data. It is never synced or exported.</span>
     </div>
 
     <div class="flex items-center gap-2 flex-shrink-0">
+      <Button variant="primary" size="sm" @click="store.startTour('showcase')">Walk me through</Button>
       <Button
         variant="secondary"
         size="sm"
-        class="text-xs border-accent/40 hover:bg-accent/15"
         :loading="isRemoving"
         @click="onRemove"
       >
-        Remove sample data
+        Remove
       </Button>
     </div>
   </div>

@@ -27,7 +27,7 @@ const index = ref(0);
 const rect = ref<TargetRect | null>(null);
 
 /** Tour steps, in the order a new user should meet things. Keep copy to one or two short lines. */
-const STEPS: CoachStep[] = [
+const INTRO_STEPS: CoachStep[] = [
   {
     id: 'welcome',
     title: 'Welcome to AutoMemory',
@@ -99,6 +99,133 @@ const STEPS: CoachStep[] = [
   },
 ];
 
+/** Walks every page once, using the sample project so each page has something to look at. */
+const SHOWCASE_STEPS: CoachStep[] = [
+  {
+    id: 's-welcome',
+    title: 'Your sample project is ready',
+    body: 'We added a pretend online shop with notes, decisions, agents and locks. Take a 2-minute walk through every page.',
+    route: '/',
+  },
+  {
+    id: 's-home',
+    target: '[data-tour="agents-card"]',
+    title: 'Home: the big picture',
+    body: 'Agents at work, what they know, and what needs you. Click any tile to open it.',
+    route: '/',
+    placement: 'bottom',
+  },
+  {
+    id: 's-brain',
+    target: 'main h1',
+    title: 'Project brain',
+    body: 'Everything every agent starts from: 3 decisions and 8 notes here. Add your own with “Add note”.',
+    route: '/brain',
+    placement: 'bottom',
+  },
+  {
+    id: 's-agents',
+    target: 'main h1',
+    title: 'Agents & locks',
+    body: 'Claude and Cursor each hold a file right now, so they cannot overwrite each other. A hand-off note is waiting below.',
+    route: '/agents',
+    placement: 'bottom',
+  },
+  {
+    id: 's-inbox',
+    target: 'main h1',
+    title: 'Inbox',
+    body: 'Three suggestions from agents wait for your OK. Nothing becomes shared knowledge until you approve it.',
+    route: '/inbox',
+    placement: 'bottom',
+  },
+  {
+    id: 's-sync',
+    target: 'main h1',
+    title: 'Sync & devices',
+    body: 'Share this memory with your other computer through a private git repository, encrypted end to end.',
+    route: '/sync',
+    placement: 'bottom',
+  },
+  {
+    id: 's-safety',
+    target: '[data-tour="safety-modes"]',
+    title: 'Safety',
+    body: 'Pick how careful agents must be, set a password, and test what would be blocked.',
+    route: '/safety',
+    placement: 'top',
+  },
+  {
+    id: 's-skills',
+    target: 'main h1',
+    title: 'Learned skills',
+    body: 'Reusable how-tos agents picked up, like “Test Stripe webhooks locally”.',
+    route: '/skills',
+    placement: 'bottom',
+  },
+  {
+    id: 's-traces',
+    target: 'main h1',
+    title: 'What worked',
+    body: 'Step-by-step runs that succeeded, so the next agent can repeat them.',
+    route: '/traces',
+    placement: 'bottom',
+  },
+  {
+    id: 's-failures',
+    target: 'main h1',
+    title: 'Problems & fixes',
+    body: 'What went wrong and how it was solved. One problem here is still open.',
+    route: '/failures',
+    placement: 'bottom',
+  },
+  {
+    id: 's-replay',
+    title: 'Session history',
+    body: 'Replay what each agent did, step by step. Open it any time from the sidebar under Advanced.',
+    route: '/replay',
+  },
+  {
+    id: 's-docs',
+    target: 'main h1',
+    title: 'Documents',
+    body: 'Project docs your agents read, kept in sync with the project brain.',
+    route: '/docs',
+    placement: 'bottom',
+  },
+  {
+    id: 's-rules',
+    target: 'main h1',
+    title: 'Rules of the project',
+    body: 'The standing rules every agent must follow in this project.',
+    route: '/constitution',
+    placement: 'bottom',
+  },
+  {
+    id: 's-graph',
+    target: 'main h1',
+    title: 'Knowledge graph',
+    body: 'How files, ideas and decisions connect. It grows as agents work.',
+    route: '/graph',
+    placement: 'bottom',
+  },
+  {
+    id: 's-recall',
+    target: 'main h1',
+    title: 'Recall settings',
+    body: 'Choose how agents search memory: simple keyword search, or smarter hybrid search.',
+    route: '/recall',
+    placement: 'bottom',
+  },
+  {
+    id: 's-done',
+    title: 'That is the whole app',
+    body: 'Explore freely. Remove the sample data any time from the banner at the top, or right here.',
+    route: '/',
+    action: { label: 'Remove sample data', run: () => useAutoMemoryStore().removeDemoProject() },
+  },
+];
+
 /** The first matching element that is actually on screen (desktop and mobile layouts share a selector). */
 function findVisible(selector?: string): HTMLElement | null {
   if (!selector || typeof document === 'undefined') return null;
@@ -115,10 +242,10 @@ export function useCoachTour() {
   const router = useRouter();
   const store = useAutoMemoryStore();
 
-  const steps = STEPS;
-  const current = computed(() => steps[index.value]);
+  const steps = computed(() => (store.tourKind === 'showcase' ? SHOWCASE_STEPS : INTRO_STEPS));
+  const current = computed(() => steps.value[index.value]);
   const isFirst = computed(() => index.value === 0);
-  const isLast = computed(() => index.value === steps.length - 1);
+  const isLast = computed(() => index.value === steps.value.length - 1);
 
   /** Measure the spotlight target; null means "show a centered card". */
   function measure() {
@@ -137,9 +264,9 @@ export function useCoachTour() {
   }
 
   async function show(i: number) {
-    if (i < 0 || i >= steps.length) return;
+    if (i < 0 || i >= steps.value.length) return;
     index.value = i;
-    const step = steps[i];
+    const step = steps.value[i];
     if (step.route && router.currentRoute.value.path !== step.route) {
       await router.push(step.route);
     }

@@ -31,7 +31,8 @@
         <p :id="`tour-body-${current.id}`" class="tour-body">{{ current.body }}</p>
 
         <div class="tour-foot">
-          <div class="tour-dots" role="tablist" aria-label="Tour progress">
+          <span v-if="steps.length > 10" class="tour-count">{{ index + 1 }} / {{ steps.length }}</span>
+          <div v-else class="tour-dots" role="tablist" aria-label="Tour progress">
             <button
               v-for="(s, i) in steps"
               :key="s.id"
@@ -344,6 +345,11 @@ onBeforeUnmount(() => {
   width: 20px;
   background: var(--accent);
   opacity: 1;
+}
+.tour-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .tour-actions {
   display: flex;

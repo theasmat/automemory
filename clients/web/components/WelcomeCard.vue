@@ -53,7 +53,11 @@ function onStartTour() {
 async function onSeedSample() {
   isSeeding.value = true;
   try {
-    await store.seedDemoProject();
+    const ok = await store.seedDemoProject();
+    if (ok) {
+      await store.updateOnboardingProgress({ action: 'dismiss', flag: 'welcome_card' });
+      store.startTour('showcase');
+    }
   } finally {
     isSeeding.value = false;
   }

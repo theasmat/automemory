@@ -59,7 +59,7 @@
         >
           <div class="flex items-center justify-between gap-2 mb-1.5">
             <Badge variant="accent">
-              {{ item.proposal_type }}
+              {{ typeLabel(item.proposal_type) }}
             </Badge>
             <span class="text-[11px] font-mono text-text-muted">
               {{ formatAge(item.created_at) }}
@@ -67,12 +67,9 @@
           </div>
 
           <p class="text-xs sm:text-sm font-semibold text-text line-clamp-2">
-            {{ item.proposed_memory?.summary || item.content_diff || 'New proposal' }}
+            {{ statement(item) }}
           </p>
 
-          <div class="flex items-center gap-2 mt-2 text-[11px] text-text-muted">
-            <span>Confidence: {{ Math.round(item.confidence * 100) }}%</span>
-          </div>
         </div>
       </div>
 
@@ -86,9 +83,10 @@
                 <span class="text-xs text-text-muted">Suggestion from</span>
                 <h3 class="text-base font-bold text-text">Agent Suggestion</h3>
               </div>
-              <Badge variant="accent">
+              <Badge v-if="typeof selectedProposal.confidence === 'number'" variant="accent">
                 Confidence {{ Math.round(selectedProposal.confidence * 100) }}%
               </Badge>
+              <Badge v-else variant="accent">{{ typeLabel(selectedProposal.proposal_type) }}</Badge>
             </div>
 
             <!-- Proposed Content -->
@@ -97,7 +95,7 @@
                 Suggested statement
               </span>
               <p class="text-base font-semibold text-text leading-snug">
-                {{ selectedProposal.proposed_memory?.summary || selectedProposal.target_id }}
+                {{ statement(selectedProposal) }}
               </p>
               <div v-if="selectedProposal.proposed_memory?.content" class="mt-2 p-3 rounded-card bg-surface-2 border border-border text-xs sm:text-sm text-text whitespace-pre-wrap">
                 {{ selectedProposal.proposed_memory.content }}
@@ -110,7 +108,7 @@
                 Why the agent suggested this
               </span>
               <p class="text-xs text-text-muted leading-relaxed">
-                {{ selectedProposal.rationale || 'Synthesized across trajectory events during coding session.' }}
+                {{ selectedProposal.rationale || 'An agent noticed this while working. Approve it to share it with every agent on this project.' }}
               </p>
             </div>
 
@@ -167,6 +165,17 @@
 </template>
 
 <script setup lang="ts">
+/** The sentence to show for a suggestion (the API gives `description`; older shapes carry the memory). */
+function statement(p: any): string {
+  return p?.proposed_memory?.summary || p?.description || p?.content_diff || 'New suggestion';
+}
+
+/** "pattern_promotion" -> "Pattern" */
+function typeLabel(t: string): string {
+  const word = (t || 'suggestion').split('_')[0];
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useAutoMemoryStore } from '~/stores/automemory';
 

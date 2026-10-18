@@ -75,6 +75,7 @@ export const useAutoMemoryStore = defineStore('automemory', {
     } as OnboardingState,
     learnTopics: [] as LearnTopic[],
     isTourActive: false,
+    tourKind: 'intro' as 'intro' | 'showcase',
     isHelpDrawerOpen: false,
   }),
 
@@ -277,7 +278,9 @@ export const useAutoMemoryStore = defineStore('automemory', {
       return res.ok;
     },
 
-    startTour() {
+    /** 'intro' is the short first tour; 'showcase' walks every page using the sample data. */
+    startTour(kind: 'intro' | 'showcase' = 'intro') {
+      this.tourKind = kind;
       this.isTourActive = true;
     },
 
