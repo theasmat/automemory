@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::guardrails::{GuardrailAction, GuardrailEvaluator};
-use crate::models::AutopilotMode;
+use crate::models::{AutopilotMode, LeaseAcquireArgs, LeaseAcquireResult, LeaseScopeType};
 use crate::ports::{HandlerEnv, HookHandler};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -397,8 +397,32 @@ impl HookHandler for LockCheckHandler {
             return HandlerOutput::allow();
         }
         let (paths, symbols) = expand_scope_via_graph(db, project_id, ctx.paths, ctx.symbols);
-        match db.check_collision(project_id, ctx.session_id, &paths, &symbols) {
-            Ok(Some(conflict)) => {
+        let mut conflict = db
+            .check_collision(project_id, ctx.session_id, &paths, &symbols)
+            .ok()
+            .flatten();
+        // No one else holds these files: take (or renew) a lease for this session, so agents
+        // never have to call lock.acquire. The acquire is atomic, so a race with another
+        // process still ends in a conflict for exactly one of them.
+        if conflict.is_none() && auto_lease_applies(ctx) {
+            for scope in lease_scopes(ctx.paths) {
+                let args = LeaseAcquireArgs {
+                    project_id,
+                    agent: ctx.agent,
+                    session_id: ctx.session_id,
+                    scope,
+                    scope_type: LeaseScopeType::File,
+                    goal: &format!("editing {scope}"),
+                    ttl_seconds: AUTO_LEASE_TTL_SECONDS,
+                };
+                if let Ok(LeaseAcquireResult::Conflict { conflict: c }) = db.acquire_lease(args) {
+                    conflict = Some(c);
+                    break;
+                }
+            }
+        }
+        match conflict {
+            Some(conflict) => {
                 eprintln!(
                     "⚠️ [AutoMemory Lock Warning]: Target resource '{}' is actively locked by {} (Session: {}).",
                     conflict.scope, conflict.holder_agent, conflict.holder_session_id
@@ -436,9 +460,32 @@ impl HookHandler for LockCheckHandler {
                     },
                 }
             }
-            _ => HandlerOutput::allow(),
+            None => HandlerOutput::allow(),
         }
     }
+}
+
+/// An auto-lease is renewed by every edit, so an agent that goes quiet loses it in 5 minutes.
+const AUTO_LEASE_TTL_SECONDS: i64 = 300;
+
+/// Edits only (not commits), by an identifiable session, unless switched off in config.
+fn auto_lease_applies(ctx: &PipelineCtx<'_>) -> bool {
+    ctx.event == CanonicalEvent::PreToolUse
+        && !ctx.session_id.is_empty()
+        && ctx.session_id != "unknown-session"
+        && crate::config::GlobalConfig::load()
+            .map(|g| g.defaults.auto_lease)
+            .unwrap_or(true)
+}
+
+/// The hook lists a file as both `/abs/src/a.rs` and `src/a.rs`; lease only the shorter form
+/// (lease matching treats the two as the same file).
+fn lease_scopes(paths: &[String]) -> impl Iterator<Item = &str> {
+    paths.iter().map(String::as_str).filter(move |p| {
+        !paths
+            .iter()
+            .any(|q| q.as_str() != *p && p.ends_with(&format!("/{q}")))
+    })
 }
 
 /// Built-in `guardrail` handler: AST/tokenizer evaluation of the planned tool.
@@ -918,5 +965,64 @@ mod tests {
         assert!(open[0].elapsed_ms < 4000);
         let closed = run_pipeline(&[spec(FailureMode::Closed)], &c, &env, &[]);
         assert_eq!(closed[0].decision, GateDecision::Deny);
+    }
+
+    fn edit_ctx<'a>(session: &'a str, paths: &'a [String], args: &'a serde_json::Value) -> PipelineCtx<'a> {
+        PipelineCtx {
+            event: CanonicalEvent::PreToolUse,
+            agent: "claude",
+            session_id: session,
+            tool: "edit",
+            args,
+            paths,
+            symbols: &[],
+            is_mutation: true,
+        }
+    }
+
+    #[test]
+    fn editing_takes_a_lease_automatically_and_a_second_session_is_told() {
+        let db = Database::open_in_memory().unwrap();
+        let args = serde_json::json!({});
+        // The hook lists the same file as an absolute and a relative path.
+        let paths = vec!["/work/proj/src/a.rs".to_string(), "src/a.rs".to_string()];
+        let vibe = HandlerEnv { db: &db, project_id: Some("p"), mode: AutopilotMode::Vibe };
+
+        let first = LockCheckHandler.handle(&edit_ctx("s1", &paths, &args), &vibe);
+        assert_eq!(first.decision, GateDecision::Allow);
+        assert!(first.reason.is_empty(), "no one else holds it: stay silent");
+        let leases = db.list_active_leases(Some("p")).unwrap();
+        assert_eq!(leases.len(), 1, "one lease for one file, not one per path spelling");
+        assert_eq!((leases[0].session_id.as_str(), leases[0].scope.as_str()), ("s1", "src/a.rs"));
+
+        // Same session again renews; still one lease, still silent.
+        assert!(LockCheckHandler.handle(&edit_ctx("s1", &paths, &args), &vibe).reason.is_empty());
+        assert_eq!(db.list_active_leases(Some("p")).unwrap().len(), 1);
+
+        // Another session: Vibe warns with the holder, Strict denies.
+        let second = LockCheckHandler.handle(&edit_ctx("s2", &paths, &args), &vibe);
+        assert_eq!(second.decision, GateDecision::Allow);
+        assert!(second.reason.contains("leased by agent 'claude'"), "{}", second.reason);
+        let strict = HandlerEnv { db: &db, project_id: Some("p"), mode: AutopilotMode::Strict };
+        assert_eq!(LockCheckHandler.handle(&edit_ctx("s2", &paths, &args), &strict).decision, GateDecision::Deny);
+        assert_eq!(db.list_active_leases(Some("p")).unwrap().len(), 1, "the loser takes no lease");
+
+        // Releasing (what Stop does) frees the file for the other session.
+        db.release_leases("s1", None).unwrap();
+        assert!(LockCheckHandler.handle(&edit_ctx("s2", &paths, &args), &vibe).reason.is_empty());
+        assert_eq!(db.list_active_leases(Some("p")).unwrap()[0].session_id, "s2");
+    }
+
+    #[test]
+    fn commits_and_unidentified_sessions_never_take_leases() {
+        let db = Database::open_in_memory().unwrap();
+        let args = serde_json::json!({});
+        let paths = vec!["src/a.rs".to_string()];
+        let env = HandlerEnv { db: &db, project_id: Some("p"), mode: AutopilotMode::Vibe };
+        let mut commit = edit_ctx("s1", &paths, &args);
+        commit.event = CanonicalEvent::PreCommit;
+        LockCheckHandler.handle(&commit, &env);
+        LockCheckHandler.handle(&edit_ctx("unknown-session", &paths, &args), &env);
+        assert!(db.list_active_leases(Some("p")).unwrap().is_empty());
     }
 }

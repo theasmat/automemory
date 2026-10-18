@@ -54,10 +54,25 @@ def main():
         rep.check(not reported(parsed, raw, err), "after release, B's edit is clean",
                   f"{raw!r} {err!r}")
 
+        # Nobody calls lock.acquire: the first edit takes the lease by itself.
+        parsed, raw, err = edit(sb, "claude", "autoA", "src/auto.rs")
+        rep.check(not reported(parsed, raw, err), "auto-lease: A's first edit is silent",
+                  f"{raw!r} {err!r}")
+        held = sb.mcp("lock.status")
+        rep.check(any(l.get("scope", "").endswith("auto.rs") for l in held.get("active_leases", [])),
+                  "auto-lease: A now holds src/auto.rs without asking", str(held)[:200])
+        parsed, raw, err = edit(sb, "codex", "autoB", "src/auto.rs")
+        rep.check("claude" in raw and "leased" in raw,
+                  "auto-lease: B (another agent) is told who holds the file", f"{raw!r}")
+        sb.hook("claude", "stop", {"session_id": "autoA", "stop_hook_active": False})
+        parsed, raw, err = edit(sb, "codex", "autoB", "src/auto.rs")
+        rep.check(not reported(parsed, raw, err), "auto-lease: Stop releases it, B's edit is clean",
+                  f"{raw!r}")
+        sb.hook("codex", "stop", {"session_id": "autoB", "stop_hook_active": False})
+
         # Strict mode turns the warning into a block.
         sb.run("mode", "set", "strict")
-        sb.mcp("lock.acquire", scope="src/strict.rs", goal="strict test", agent="claude-code",
-               session_id="sA")
+        edit(sb, "claude", "sA", "src/strict.rs")  # A's edit takes the lease
         parsed, raw, err = edit(sb, "claude", "sB", "src/strict.rs")
         rep.check('"deny"' in raw and "locked" in raw, "Strict mode: B's edit is denied", raw[:200])
         sb.run("mode", "set", "vibe")

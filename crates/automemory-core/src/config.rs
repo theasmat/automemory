@@ -118,6 +118,10 @@ pub struct DefaultSettings {
     /// Human-turn ping channel: "stderr" or "silent".
     #[serde(default = "default_notifier")]
     pub notifier: String,
+    /// Take a file lease automatically when an agent is about to edit a file, so
+    /// agents never need to call `lock.acquire`. Released when the session stops.
+    #[serde(default = "default_true")]
+    pub auto_lease: bool,
 }
 
 fn default_mode() -> String {
@@ -145,6 +149,7 @@ impl Default for DefaultSettings {
             boot_injection: false,
             trust_policy: default_trust_policy(),
             notifier: default_notifier(),
+            auto_lease: true,
         }
     }
 }

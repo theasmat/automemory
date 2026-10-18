@@ -114,7 +114,7 @@ Context assembly order: locked preferences → project identity → high-confide
 
 ## 7. Locks, handoff, orchestration
 
-- **Leases:** file/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Leases stay file/glob; no symbol-level leases.
+- **Leases:** taken automatically by the pre-edit hook (`[defaults] auto_lease`, on by default; 5-minute TTL renewed by each edit; released on Stop), or explicitly with `lock.acquire`. File/glob scope with TTL, heartbeat, human override; collision returns holder, goal, age. Stored in the git common dir so worktrees share them. Leases stay file/glob; no symbol-level leases.
 - **Baton:** < 400-token handoff built from the ledger (`baton.pass` / `baton.pickup`).
 - **Tasks/review:** `task.create|next|submit`, cross-review with tests as judge (`review.next|post|submit`).
 - **Planning Room** (v1 scope): turn-gated state machine (propose → critique → revise, human tiebreak). A room advances only when the turn holder posts; the daemon rejects posts whose evidence IDs do not resolve. Every tool reply ends with a daemon-written `next_action`; posts from other agents are returned as quoted data with author and trust tier. Stored rationale is 3–5 lines, never raw reasoning.

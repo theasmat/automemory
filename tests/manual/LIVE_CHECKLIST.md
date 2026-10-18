@@ -36,7 +36,7 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 ## D. Two agents, one repo (human version of `tests/scenarios/collision.py`)
 
 1. Terminal 1: Claude Code. Terminal 2: Codex. Same repo.
-2. Tell Claude Code to call `lock.acquire` on `src/x` and start editing it (long task).
+2. Tell Claude Code to make a long series of edits to `src/x` (a long task). Do not mention locks: the first edit takes the lease by itself.
 3. Tell Codex to edit `src/x`. Expected: Codex's edit is reported (lease held by claude, with its goal).
 4. Let Claude Code finish (Stop releases leases). Codex's next edit is clean.
 
