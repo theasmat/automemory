@@ -96,6 +96,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 |---|---|---|
 | MCP server (60 tools), CLI | ✅ | |
 | Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
+| Guided onboarding (CLI tour + dashboard coachmarks) | ✅ | `automemory tour`, `next`, `learn`, welcome card, 6-stop tour, sample data mode |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
 | `next_action` on every tool reply | ✅ | |
 
@@ -108,7 +109,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 207 Rust tests + 12 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 210 Rust tests + 14 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

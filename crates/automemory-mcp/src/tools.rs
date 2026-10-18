@@ -118,15 +118,14 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "memory.about".to_string(),
-                description: "Everything known about a file or symbol: graph entities, callers, and linked memories".to_string(),
+                description: "How AutoMemory works or everything known about a file or symbol in the Project brain: glossary, graph entities, callers, and linked memories".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "target": { "type": "string", "description": "File path or symbol name" },
+                        "target": { "type": "string", "description": "File path, symbol name, or omit to learn how AutoMemory works" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" },
                         "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
-                    },
-                    "required": ["target"]
+                    }
                 }),
             },
             ToolDefinition {
@@ -919,11 +918,30 @@ impl ToolRegistry {
                 )
             }
             "memory.about" => {
-                let target = match arguments.get("target").and_then(|v| v.as_str()) {
-                    Some(t) => t,
-                    None => return ToolCallResult::error("Missing required parameter: target"),
-                };
+                let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+                if target.is_empty() || target.eq_ignore_ascii_case("automemory") || target.eq_ignore_ascii_case("help") {
+                    return ToolCallResult::json(&json!({
+                        "system": "AutoMemory shares verified facts, architectural decisions, and file locks across your coding agents with zero staleness.",
+                        "glossary": {
+                            "project_brain": "Verified facts, architectural decisions, and lessons shared with every agent session. Decisions outrank notes and are presented first.",
+                            "file_locks": "Automatic leases that prevent concurrent agents from colliding and overwriting the same code.",
+                            "handoff_notes": "A compact context packet (under 400 tokens) passed between sessions to resume immediately where the last session stopped.",
+                            "suggestions_inbox": "Proposals waiting for human review. Approved suggestions become permanent project knowledge.",
+                            "project_rules": "Active project constraints and conventions exported to AGENTS.md, CLAUDE.md, etc.",
+                            "safety_modes": "Relaxed (warnings only), Balanced (blocks risky commands and colliding edits), Strict (requires lock for every edit).",
+                            "sync_vault": "Encrypted git repository synchronizing memory across laptops and desktops."
+                        },
+                        "cli_commands": {
+                            "resume": "automemory resume",
+                            "tour": "automemory tour",
+                            "next": "automemory next",
+                            "learn": "automemory learn <topic>"
+                        },
+                        "next_action": "Call memory.context to inspect the current Project brain, or pass target=\"<path_or_symbol>\" to inspect a specific file or symbol."
+                    }));
+                }
 
                 let by_name = self
                     .db
@@ -965,7 +983,7 @@ impl ToolRegistry {
                     "entities": entities,
                     "callers": callers,
                     "memories": memories,
-                    "next_action": "Use memory.get(id) for full detail on any entry."
+                    "next_action": "Use memory.get(id) for full detail on any Project brain entry."
                 }))
             }
 

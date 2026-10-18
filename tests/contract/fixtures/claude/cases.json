@@ -34,5 +34,15 @@
    "expect": {"kind": "allow"}},
   {"name": "stop with no owed work does not block", "event": "stop",
    "payload": {"session_id": "c1", "hook_event_name": "Stop", "stop_hook_active": false},
-   "expect": {"kind": "allow"}}
+   "expect": {"kind": "allow"}},
+  {"name": "newly connected agent gets onboarding notice on first prompt", "event": "prompt",
+   "setup": ["connect", "claude"],
+   "payload": {"session_id": "c2", "hook_event_name": "UserPromptSubmit", "prompt": "hello"},
+   "expect": {"kind": "context", "contains": "AutoMemory is active"}},
+  {"name": "second prompt from same session does not repeat onboarding notice", "event": "prompt",
+   "payload": {"session_id": "c2", "hook_event_name": "UserPromptSubmit", "prompt": "next question"},
+   "expect": {"kind": "context", "absent": "AutoMemory is active"}},
+  {"name": "new session in same project does not repeat onboarding notice", "event": "prompt",
+   "payload": {"session_id": "c3", "hook_event_name": "UserPromptSubmit", "prompt": "hello from new session"},
+   "expect": {"kind": "context", "absent": "AutoMemory is active"}}
 ]

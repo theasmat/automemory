@@ -555,7 +555,29 @@ fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &
     db.sync_kv_set(&key, "1");
     // Keep instruction files that already carry our block current (never creates new ones).
     super::rules_export::refresh_existing(db, project_id, cwd);
-    automemory_core::resume::build_resume(db, project_id, session_id, cwd)
+
+    // One-time 3-line notice per project for newly connected agents
+    let pid = project_id.unwrap_or("global");
+    let notice_pending_key = format!("agent_connected_notice_pending:{pid}");
+    let global_pending_key = "agent_connected_notice_pending:global";
+    let notice_shown_key = format!("onboarding_notice:{pid}");
+
+    let is_pending = db.sync_kv_get(&notice_pending_key).is_some() || db.sync_kv_get(global_pending_key).is_some();
+    let notice = if is_pending && db.sync_kv_get(&notice_shown_key).is_none() {
+        db.sync_kv_set(&notice_shown_key, "1");
+        Some("AutoMemory is active: decisions, notes and file locks are shared across your agents.\nSee what it knows: `automemory resume`.\nLearn: `automemory tour`.".to_string())
+    } else {
+        None
+    };
+
+    let resume = automemory_core::resume::build_resume(db, project_id, session_id, cwd);
+
+    match (notice, resume) {
+        (Some(n), Some(r)) => Some(format!("{n}\n\n{r}")),
+        (Some(n), None) => Some(n),
+        (None, Some(r)) => Some(r),
+        (None, None) => None,
+    }
 }
 
 /// A session that changed files leaves a hand-off for whoever continues (on any machine).

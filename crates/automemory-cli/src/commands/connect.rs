@@ -16,24 +16,39 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         scope_label, agent
     );
 
-    if agent.eq_ignore_ascii_case("all") {
-        return connect_all(&home, &cwd, &exe_path, global);
-    }
-    match super::adapter::find_adapter(agent) {
-        Some(adapter) => {
-            if !matches!(adapter.id, "agy" | "claude" | "codex") {
-                println!(
-                    "note: '{}' is experimental (MCP config only, untested in v1).\n",
-                    adapter.id
-                );
+    let res = if agent.eq_ignore_ascii_case("all") {
+        connect_all(&home, &cwd, &exe_path, global)
+    } else {
+        match super::adapter::find_adapter(agent) {
+            Some(adapter) => {
+                if !matches!(adapter.id, "agy" | "claude" | "codex") {
+                    println!(
+                        "note: '{}' is experimental (MCP config only, untested in v1).\n",
+                        adapter.id
+                    );
+                }
+                super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global)
             }
-            super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global)
+            None => {
+                println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all\nTry: `automemory connect agy` or `automemory connect all`", agent);
+                return Ok(());
+            }
         }
-        None => {
-            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all\nTry: `automemory connect agy` or `automemory connect all`", agent);
-            Ok(())
+    };
+
+    if res.is_ok() {
+        let config = automemory_core::Config::default_config();
+        if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
+            let pid = super::continuity::project_for(&db, &cwd);
+            let key = format!("agent_connected_notice_pending:{}", pid.as_deref().unwrap_or("global"));
+            db.sync_kv_set(&key, "1");
+            if global {
+                db.sync_kv_set("agent_connected_notice_pending:global", "1");
+            }
         }
     }
+
+    res
 }
 
 /// Reads a JSON config. A missing or blank file is an empty object; a file

@@ -52,10 +52,15 @@ def main(agents):
             for f in sorted((FIXTURES / agent).glob("*.json")):
                 for case in json.loads(f.read_text()):
                     style = case.get("style", "native")
+                    if "setup" in case:
+                        sb.run(*case["setup"])
                     parsed, raw, err = sb.hook(AGENT_ID[agent], case["event"], case["payload"])
                     exp = case["expect"]
                     got = kind_of(parsed, style)
-                    ok = got == exp["kind"] and exp.get("contains", "") in text_of(parsed, style)
+                    text = text_of(parsed, style)
+                    contains_ok = exp.get("contains", "") in text
+                    absent_ok = "absent" not in exp or exp["absent"] not in text
+                    ok = got == exp["kind"] and contains_ok and absent_ok
                     rep.check(ok, f"[{agent}] {case['name']}",
                               f"want {exp}, got kind={got} stdout={raw[:160]!r}")
     finally:

@@ -13,7 +13,7 @@ Rule: every phase ends with a measurement. Later phases start only if the gate p
 | 3 | Memory with trust tiers, `ask/about/propose`, decisions, CodeIntel bridge, verify + stale flags | Memory-on not worse than off; stale-flag precision ≥ 90% | Built; gate unmeasured |
 | 4 | Commit-bound staleness, contradiction detection, guardrail shadow mode, pre-merge file-overlap check | Fewer stale hits and merge conflicts than phase 3 | Partial |
 | 5 | Cross-review with tests as judge, baton, Codex adapter, Antigravity adapter | Success ≥ solo agent; acceptable cost | Built; gate unmeasured |
-| 6 | Planning Room (two agents, one round) for high-stakes design only; Nuxt dashboard polish | Beats solo + tests on a defined task set, else Room dropped | Built; A/B pending |
+| 6 | Planning Room (two agents, one round) for high-stakes design only; Nuxt dashboard redesign; First-run onboarding tour (CLI + Web UI) | Beats solo + tests on a defined task set; Onboarding green in tests | Built; Onboarding complete |
 | 7 | Add agents beyond the first three; Cloudflare SaaS; headless Runner; Autopilot; neural vectors | Each justified by measured need | Not started |
 
 Phases 1–3 are the minimum credible product: coordination you can feel, memory you can trust, proof it helps.
