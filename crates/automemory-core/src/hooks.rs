@@ -426,7 +426,14 @@ impl HookHandler for LockCheckHandler {
                             conflict.scope, conflict.holder_agent, conflict.goal
                         ),
                     },
-                    _ => HandlerOutput::allow(),
+                    // Vibe and the rest: do not stop the edit, but tell the agent (not just stderr).
+                    _ => HandlerOutput {
+                        decision: GateDecision::Allow,
+                        reason: format!(
+                            "Lock warning: '{}' is leased by agent '{}' (goal: '{}', {}s left). Coordinate or pick another file before editing.",
+                            conflict.scope, conflict.holder_agent, conflict.goal, conflict.remaining_seconds
+                        ),
+                    },
                 }
             }
             _ => HandlerOutput::allow(),

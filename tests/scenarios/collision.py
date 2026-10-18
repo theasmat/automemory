@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Phase 1 gate: two or more agents, one repo, zero silent overwrites.
 
-A. Agent A leases a file; agent B's edit of the same file through the real hook must be
-   reported (deny or visible warning), while edits of other files stay silent.
+A. Agent A leases a file; agent B's edit of the same file through the real hook must reach the
+   agent as hook output (a warning in the default Vibe mode, a deny in Strict), while edits of
+   other files stay silent.
 B. Eight processes race for one lease at once: exactly one is granted.
 C. After A releases, B's edit is clean again.
 """
@@ -20,8 +21,9 @@ def edit(sb, agent, session, path):
 
 
 def reported(parsed, raw, stderr):
-    """True when the agent was told something: a deny, or any context/warning."""
-    return bool(parsed and parsed != {}) or "lease" in (raw + stderr).lower()
+    """True when the agent was told something: stdout carries a deny or context.
+    stderr is not shown to the agent, so it does not count."""
+    return bool(parsed and parsed != {})
 
 
 def main():
@@ -51,6 +53,14 @@ def main():
         parsed, raw, err = edit(sb, "claude", "sB", "src/auth.rs")
         rep.check(not reported(parsed, raw, err), "after release, B's edit is clean",
                   f"{raw!r} {err!r}")
+
+        # Strict mode turns the warning into a block.
+        sb.run("mode", "set", "strict")
+        sb.mcp("lock.acquire", scope="src/strict.rs", goal="strict test", agent="claude-code",
+               session_id="sA")
+        parsed, raw, err = edit(sb, "claude", "sB", "src/strict.rs")
+        rep.check('"deny"' in raw and "locked" in raw, "Strict mode: B's edit is denied", raw[:200])
+        sb.run("mode", "set", "vibe")
 
         def grab(i):
             r = sb.mcp("lock.acquire", scope="src/race.rs", goal="race", agent=f"a{i}",
