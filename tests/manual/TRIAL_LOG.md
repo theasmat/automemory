@@ -23,7 +23,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T5 | Hand-off: a new session continues where the last one stopped | PASS | 2026-10-19 |
 | T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
 | T7 | Instruction files: `export-rules` block read by another agent | PASS | 2026-10-19 |
-| T8 | Dashboard: pages show real data, tour and Settings work | PENDING | |
+| T8 | Dashboard: pages show real data, tour and Settings work | PASS | 2026-10-19 |
 | T9 | Human password gate | PENDING | |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 
@@ -318,4 +318,29 @@ Result
 - After the next Claude session start: `--check` = "Instruction files are current" and "Orders are kept in SQLite" appears once in each of
   AGENTS.md, CLAUDE.md and GEMINI.md: a decision recorded over MCP reached all three files through the session-start refresh.
 - Not reported: the intermediate `--check` ("out of date" expected after the MCP decision), `decision list` (duplicates?).
+
+### 2026-10-19 T8 Dashboard: PASS (checked by the maintainer in a browser against the real trial data, with a second daemon on :4546)
+
+Pages opened: Home, Project brain, Agents & locks, Safety, Session history; no console errors.
+- Home: Agents 1, Project brain 11 notes / 4 decisions, Needs you 0; setup shows 4 of 8 done (Connect 2/2, Teach 2/2, Stay in control 0/4).
+- Project brain: tabs Curated 4 / Decisions 4 / Conventions 1 / Gotchas 2 / Auto-captured 7 / All 11; decision cards show the source ("human" for the CLI
+  decision, "agent" for MCP ones).
+- Agents & locks: no active locks (correct after sessions ended), hand-off notes listed. Session history: the Antigravity and Claude sessions with their events.
+- `decision list` / database: 3 decisions (payments, auth, storage), each once: **no duplicate** from Claude's double `decision_record` call.
+
+Found and fixed (installed)
+1. **Safety showed "Relaxed" although the project is Strict**: with "All projects" selected the page asked for a mode with no project.
+   With exactly one real project the dashboard now shows and sets that project's mode (verified: Strict selected).
+2. **Setup checklist judged the daemon's folder, not the project**: "Instruction files" stayed unticked because `serve` was started elsewhere.
+   `/api/setup` now uses the daemon's folder when it is a project, otherwise the newest real project. "Protected by lock" now also ticks
+   from a recorded lock block in the audit log (T4's block predates audit logging, so it stays unticked until the next one).
+3. The first-run welcome card was still shown with an agent connected and activity recorded; it is now hidden once an agent is connected.
+4. All three decisions in the database have **no project** (`project_id` empty), including `storage`, recorded over MCP after the earlier fix.
+   Some clients start the MCP server in "/" instead of the workspace (running `automemory mcp` processes show cwd "/" for several), so the
+   folder lookup missed. Now, with a single real project, a write with no project goes to it (verified from cwd "/").
+
+Not fixed / observations
+- Decision cards repeat the same text three times ("Decision (storage): ...", "Architectural Decision: storage", "Decision: ...").
+- Home says "1 working now" for an agent whose last event was within 10 minutes, even when its session has ended.
+- Existing decisions keep no project; the rules view lists project-less decisions, so they still reach the instruction files.
 

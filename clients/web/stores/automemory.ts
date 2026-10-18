@@ -110,6 +110,12 @@ export const useAutoMemoryStore = defineStore('automemory', {
       return state.coordination.leases || [];
     },
 
+    /** The id of the only real (non-sample) project, or null when there are none or several. */
+    soleProjectId(state): string | null {
+      const real = state.projects.filter((p: any) => p.id !== 'demo');
+      return real.length === 1 ? real[0].id : null;
+    },
+
     connectedAgents(state): any[] {
       const known = [
         { id: 'claude', name: 'Claude Code' },
@@ -445,6 +451,8 @@ export const useAutoMemoryStore = defineStore('automemory', {
       const res = await api.getProjects();
       if (res.ok && res.data) {
         this.projects = Array.isArray(res.data) ? res.data : [];
+        // "All projects" has no mode of its own; with a single real project show that project's mode.
+        if (!this.activeProject && this.soleProjectId) await this.fetchMode();
       }
     },
 
@@ -493,14 +501,14 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     async fetchMode() {
-      const mode = await api.getMode(this.activeProject);
+      const mode = await api.getMode(this.activeProject ?? this.soleProjectId);
       if (mode && (mode === 'vibe' || mode === 'strict' || mode === 'review')) {
         this.currentMode = mode;
       }
     },
 
     async setMode(mode: 'vibe' | 'strict' | 'review', project?: string) {
-      const res = await api.setMode(mode, project || this.activeProject);
+      const res = await api.setMode(mode, project || this.activeProject || this.soleProjectId);
       const { success, error } = useToast();
       if (res.ok) {
         this.currentMode = mode;

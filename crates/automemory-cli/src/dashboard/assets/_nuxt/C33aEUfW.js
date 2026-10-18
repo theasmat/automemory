@@ -1,0 +1,1 @@
+import{j as s,o as a,c as t,q as n}from"./BBKnxxkr.js";const r=s({__name:"Skeleton",props:{height:{},width:{},customClass:{}},setup(e){return(c,l)=>(a(),t("div",{class:n(["bg-surface-2 animate-pulse rounded-card",[e.height||"h-4",e.width||"w-full",e.customClass||""]])},null,2))}});export{r as _};

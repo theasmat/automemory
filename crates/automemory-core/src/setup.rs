@@ -90,7 +90,7 @@ pub fn checklist(db: &Database, home: &Path, cwd: &Path) -> Vec<Step> {
     let moment_connected = ob.is_done("connected") || agent_done;
     let moment_remembered = ob.is_done("remembered") || has_active_memories(db);
     let moment_decided = ob.is_done("decided") || has_active_decisions(db);
-    let moment_locked = ob.is_done("saw_lock_block") || ob.is_done("locked") || ob.is_done("protected");
+    let moment_locked = ob.is_done("saw_lock_block") || ob.is_done("locked") || ob.is_done("protected") || has_lock_block(db);
     let moment_reviewed = ob.is_done("reviewed_suggestion") || ob.is_done("reviewed") || has_reviewed_proposals(db);
 
     vec![
@@ -288,6 +288,18 @@ fn has_active_decisions(db: &Database) -> bool {
         )
         .unwrap_or(0);
     count > 0
+}
+
+/// A tool call was stopped because another agent held the file (recorded in the audit log).
+fn has_lock_block(db: &Database) -> bool {
+    db.conn()
+        .query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'hook.deny' AND details LIKE '%locked by agent%'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0
 }
 
 fn has_reviewed_proposals(db: &Database) -> bool {

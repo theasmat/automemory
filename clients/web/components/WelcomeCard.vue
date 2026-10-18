@@ -43,7 +43,9 @@ const shouldShow = computed(
   () =>
     !store.onboardingState.dismissed &&
     !store.onboardingState.dismissed_flags['welcome_card'] &&
-    !store.onboardingState.completed_steps.includes('tour_completed')
+    !store.onboardingState.completed_steps.includes('tour_completed') &&
+    // The first-run card is for people who have not connected an agent yet.
+    !store.setupChecklist.some((s) => s.id === 'agent' && s.done)
 );
 
 function onStartTour() {

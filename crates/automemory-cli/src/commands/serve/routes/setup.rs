@@ -15,7 +15,23 @@ use std::path::PathBuf;
 /// GET /api/setup: Returns the getting started checklist.
 pub async fn api_setup(State(state): State<AppState>) -> impl IntoResponse {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    // The daemon can be started from any folder. Judge setup by the folder it runs in when that is a
+    // project, otherwise by the newest real project (not the sample one).
+    let daemon_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = if state.db.find_project_by_path(&daemon_dir.to_string_lossy()).ok().flatten().is_some() {
+        daemon_dir
+    } else {
+        state
+            .db
+            .conn()
+            .query_row(
+                "SELECT local_path FROM project_paths WHERE project_id != 'demo' ORDER BY created_at DESC LIMIT 1",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .map(PathBuf::from)
+            .unwrap_or(daemon_dir)
+    };
     let steps = setup::checklist(&state.db, &home, &cwd);
     Json(steps)
 }

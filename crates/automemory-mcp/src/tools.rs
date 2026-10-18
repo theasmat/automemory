@@ -891,10 +891,15 @@ impl ToolRegistry {
         ];
         let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
         if missing && PROJECT_WRITES.contains(&name) {
-            if let Some(p) = std::env::current_dir()
+            // Some clients start the server in "/" rather than the workspace: with exactly one real project, use it.
+            let by_folder = std::env::current_dir()
                 .ok()
-                .and_then(|d| self.db.find_project_by_path(&d.to_string_lossy()).ok().flatten())
-            {
+                .and_then(|d| self.db.find_project_by_path(&d.to_string_lossy()).ok().flatten());
+            let sole = || {
+                let mut real = self.db.list_projects().unwrap_or_default().into_iter().filter(|p| p.id != "demo");
+                real.next().filter(|_| real.next().is_none())
+            };
+            if let Some(p) = by_folder.or_else(sole) {
                 args["project_id"] = Value::String(p.id);
             }
         }
