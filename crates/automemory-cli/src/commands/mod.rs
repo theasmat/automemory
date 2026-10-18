@@ -13,6 +13,7 @@ pub mod guardrail;
 pub mod hook;
 pub mod hooks_admin;
 pub mod init;
+pub mod learn;
 pub mod link;
 pub mod lock;
 pub mod mcp;

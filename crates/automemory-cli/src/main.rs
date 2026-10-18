@@ -83,6 +83,9 @@ enum Commands {
     /// Run system diagnostic health checks
     Doctor,
 
+    /// Print the best next onboarding step and command
+    Next,
+
     /// Start the background daemon and embedded web dashboard
     Serve {
         /// Port for dashboard web UI and HTTP MCP server
@@ -864,7 +867,12 @@ enum SyncCommands {
     /// Set the private git repository that carries your memory between machines
     Remote {
         /// Git URL (any private repository you can push to; a bare repo path also works)
+        #[arg(default_value = "")]
         url: String,
+
+        /// Clear/remove the configured remote URL
+        #[arg(long)]
+        clear: bool,
     },
 
     /// Set up this machine from an existing vault: remote, recovery phrase, first sync, agents
@@ -1054,6 +1062,9 @@ async fn main() -> Result<()> {
         Commands::Doctor => {
             commands::doctor::execute()?;
         }
+        Commands::Next => {
+            commands::learn::next()?;
+        }
         Commands::Serve { port, db } => {
             commands::serve::execute(port, db).await?;
         }
@@ -1130,7 +1141,10 @@ async fn main() -> Result<()> {
         },
         Commands::Sync { command } => match command {
             SyncCommands::Auto { pull, push } => commands::sync::auto(pull, push)?,
-            SyncCommands::Remote { url } => commands::sync::remote(&url)?,
+            SyncCommands::Remote { url, clear } => {
+                let target = if clear { "--clear" } else { &url };
+                commands::sync::remote(target)?;
+            }
             SyncCommands::Bootstrap { remote, phrase, no_connect } => {
                 commands::sync::bootstrap(&remote, phrase, !no_connect)?
             }

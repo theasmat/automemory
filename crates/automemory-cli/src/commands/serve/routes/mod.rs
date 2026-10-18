@@ -1,5 +1,6 @@
 pub mod guardrails;
 pub mod memories;
+pub mod setup;
 pub mod stats;
 pub mod sync;
 pub mod traces;
@@ -12,6 +13,11 @@ use axum::{
 
 pub fn build_api_router() -> Router<AppState> {
     Router::new()
+        .route("/api/setup", get(setup::api_setup))
+        .route(
+            "/api/onboarding",
+            get(setup::api_get_onboarding).post(setup::api_post_onboarding),
+        )
         .route("/api/stats", get(stats::api_stats))
         .route("/api/coordination", get(stats::api_coordination))
         .route(

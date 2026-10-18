@@ -16,11 +16,13 @@ pub mod keychain;
 pub mod lockwatch;
 pub mod locking;
 pub mod models;
+pub mod onboarding;
 pub mod overlap;
 pub mod ports;
 pub mod redaction;
 pub mod resume;
 pub mod retrieval;
+pub mod setup;
 pub mod sync;
 pub mod verify;
 

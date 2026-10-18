@@ -205,6 +205,21 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Getting started checklist
+    println!("\n=== Getting Started Checklist ===");
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    if let Ok(db) = Database::open(&config.db_path) {
+        let steps = automemory_core::setup::checklist(&db, &home, &cwd);
+        for step in &steps {
+            let mark = if step.done { "✓" } else { "○" };
+            println!("  {} {} - {}", mark, step.title, if step.done { "done" } else { &step.command });
+        }
+        if let Some(next) = automemory_core::setup::next_step(&steps) {
+            println!("\nNext step: {}. Try: `{}`", next.why.trim_end_matches('.'), next.command);
+        }
+    }
+
     println!();
     if all_passed {
         println!("✓ All health checks passed! AutoMemory is fully operational.");

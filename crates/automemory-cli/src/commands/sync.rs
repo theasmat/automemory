@@ -1357,16 +1357,32 @@ pub fn auto(pull: bool, push: bool) -> Result<()> {
 
 /// `sync remote <url>`: the private git repository that carries memory between machines.
 pub fn remote(url: &str) -> Result<()> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "--clear" || trimmed == "--remove" || trimmed == "none" {
+        let mut cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+        cfg.vault.remote_url = None;
+        cfg.save()?;
+        let (root, _) = automemory_core::sync::auto::vault_settings();
+        if root.join(".git").exists() {
+            let _ = std::process::Command::new("git")
+                .args(["remote", "remove", "origin"])
+                .current_dir(&root)
+                .output();
+        }
+        println!("✓ Remote sync removed");
+        return Ok(());
+    }
+
     let mut cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
-    cfg.vault.remote_url = Some(url.to_string());
+    cfg.vault.remote_url = Some(trimmed.to_string());
     cfg.save()?;
     let (root, _) = automemory_core::sync::auto::vault_settings();
     std::fs::create_dir_all(&root)?;
     if !root.join(".git").exists() {
         automemory_core::sync::GitSync::init_repo(&root)?;
     }
-    automemory_core::sync::GitSync::set_remote(&root, "origin", url)?;
-    println!("✓ Memory will sync through {url}");
+    automemory_core::sync::GitSync::set_remote(&root, "origin", trimmed)?;
+    println!("✓ Memory will sync through {trimmed}");
     println!("  Vault folder: {}", root.display());
     println!("  Everything is encrypted on this machine before it is pushed.");
     if std::env::var("AUTOMEMORY_KEY").is_err() && automemory_core::keychain::get_master_key().is_none() {
