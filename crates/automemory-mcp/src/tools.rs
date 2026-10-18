@@ -884,6 +884,20 @@ impl ToolRegistry {
                 }
             }
         }
+        // A write with no project goes to the project of the folder this server runs in (agents start it in
+        // the workspace), so decisions and notes are not saved as "global" and show up in that project's views.
+        const PROJECT_WRITES: &[&str] = &[
+            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass",
+        ];
+        let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
+        if missing && PROJECT_WRITES.contains(&name) {
+            if let Some(p) = std::env::current_dir()
+                .ok()
+                .and_then(|d| self.db.find_project_by_path(&d.to_string_lossy()).ok().flatten())
+            {
+                args["project_id"] = Value::String(p.id);
+            }
+        }
         self.call_tool_resolved(name, &args)
     }
 

@@ -30,6 +30,12 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
             .or_else(|| Some(p.to_string()))
     });
 
+    // No --project: use the project of the current folder, so the decision shows up in its views.
+    let project_id = project_id.or_else(|| {
+        let root = super::rules_export::repo_root(&std::env::current_dir().unwrap_or_default());
+        super::continuity::project_for(&db, &root)
+    });
+
     let recorded = db.record_decision(DecisionRecordArgs {
         project_id: project_id.as_deref(),
         topic: args.topic,
@@ -41,6 +47,8 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
         symbols: args.symbols,
         evidence: args.evidence,
     })?;
+
+    super::rules_export::refresh_existing(&db, project_id.as_deref(), &std::env::current_dir().unwrap_or_default());
 
     println!(
         "✓ Recorded architectural decision '{}' for topic '{}'",

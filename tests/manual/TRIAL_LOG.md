@@ -22,7 +22,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T4 | Two agents, one file: automatic lock and collision message | PASS | 2026-10-19 |
 | T5 | Hand-off: a new session continues where the last one stopped | PASS | 2026-10-19 |
 | T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
-| T7 | Instruction files: `export-rules` block read by another agent | PENDING | |
+| T7 | Instruction files: `export-rules` block read by another agent | FAIL (fixed, rerun) | 2026-10-19 |
 | T8 | Dashboard: pages show real data, tour and Settings work | PENDING | |
 | T9 | Human password gate | PENDING | |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
@@ -279,4 +279,30 @@ Notes
 - Claude calls a deny a "hook error"; the mitigation text ("Do not use that word") is not in what Claude shows, only the rule name and reason.
 - Still to confirm by the tester: `hook.deny` row for claude in `audit_log`, Antigravity with the custom rule (optional), and that
   the `trial-block` rule was removed (`automemory rule list`, `automemory rule remove <id>`).
+
+### 2026-10-19 T7 Instruction files: FAIL on decisions (notes worked); fixed, rerun needed
+
+Run: `automemory export-rules`; Antigravity asked to read AGENTS.md (no MCP); new decision `auth` recorded; `--check` before and after.
+
+Result
+- AGENTS.md / CLAUDE.md / GEMINI.md: block present once, original AutoMemory guidance untouched; but the block only had
+  "Project knowledge: [preference] Prices are stored as integer cents, never floats". **No "Decisions in force" section**: neither the
+  Stripe decision (recorded by Claude over MCP) nor the `auth` decision (recorded with the CLI) was in it.
+- Antigravity read AGENTS.md without any MCP call and reported the cents note (mislabelled "decision" because the file had no
+  decision section), plus the guidance rules. So reading the file works; the content was incomplete.
+- `export-rules --check` said "current" after the new `auth` decision, for the same reason (the decision was invisible to the view).
+- The refresh-on-new-session step could not be judged (grep for "httpOnly cookie" = 0 in all three files).
+
+Cause: decisions recorded without a project (MCP `decision.record` with no project_id, CLI `decision record` without `--project`) were saved
+with no project, and the rules view only listed decisions of the current project.
+
+Fixed (installed)
+- MCP: writes with no `project_id` (`decision.record`, `memory.save`, `memory.propose`, `trace.save`, `failure.save`, `task.create`, `baton.pass`) go to the
+  project of the folder the MCP server runs in.
+- CLI `decision record` uses the current folder's project and refreshes the instruction files at once.
+- The rules view also lists project-less decisions (so the two existing ones appear after a re-export).
+- Scenario `rules_export.py` now records a decision over MCP without a project and expects it in AGENTS.md.
+- Verified in a scratch repo: both a CLI and an MCP decision appear after `export-rules`; `--check` reports a stale file after the MCP one.
+
+Open: Claude called `decision_record` twice in T3; `decision list` not yet pasted. Decisions still show agent "agent".
 

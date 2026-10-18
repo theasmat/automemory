@@ -173,11 +173,14 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
 pub fn build_rules_view(db: &Database, project_id: Option<&str>) -> String {
     const MAX: usize = 3000;
     let mut out = String::new();
+    // This project's decisions plus project-less ones (recorded before the folder was a project).
     let decisions: Vec<_> = db
-        .list_decisions(project_id, Some(DecisionStatus::Active), 12)
+        .list_decisions(None, Some(DecisionStatus::Active), 200)
         .unwrap_or_default()
         .into_iter()
+        .filter(|d| d.project_id.is_none() || d.project_id.as_deref() == project_id)
         .filter(|d| d.project_id.as_deref() != Some("demo"))
+        .take(12)
         .collect();
     if !decisions.is_empty() {
         out.push_str("### Decisions in force\n");

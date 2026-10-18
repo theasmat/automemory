@@ -45,7 +45,8 @@ def main():
         rep.check(s.run("export-rules", "--check").returncode == 0, "--check passes when current")
 
         # A new decision makes the files stale; a session start refreshes them (no new files).
-        s.mcp("decision.record", topic="auth", decision="JWT in httpOnly cookie", reason="XSS", project_id="shop", agent="claude")
+        # No project_id: the MCP server runs in the project folder and must attach the decision to it.
+        s.mcp("decision.record", topic="auth", decision="JWT in httpOnly cookie", reason="XSS", agent="claude")
         rep.check(s.run("export-rules", "--check").returncode != 0, "--check fails when out of date")
         s.hook("claude", "prompt", {"session_id": "r1", "prompt": "hello"})
         rep.check("httpOnly cookie" in (p / "AGENTS.md").read_text(), "a session start refreshes the block")
