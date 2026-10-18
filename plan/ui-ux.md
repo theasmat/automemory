@@ -570,3 +570,24 @@ Typed-command steps accept near matches and explain differences (an extra flag i
 - **Annoyance**: nothing auto-opens after the first dismissal; the first-run hint prints once; no telemetry leaves the machine.
 - **Scope**: L1 alone (real checklist + `next`) delivers about half the value; do it before the dashboard tour.
 - **Open**: should `connect` offer to start the tour right after a successful connection (proposed: yes, one line, once)?
+
+## 14. Cleaner, calmer UI pass (audit and plan)
+
+Audit of every page with sample data loaded (Oct 2026). Home, Brain, Settings and the tour already follow the new look; the rest
+still carry the old "console" feel.
+
+| Finding | Where | Fix |
+|---|---|---|
+| Page descriptions never render: 7 pages pass `subtitle`, the header only reads `description`; descriptions that exist are long jargon | What worked, Problems, Documents, Graph, Rules, Recall, Skills | One short plain sentence per page, passed as `description` |
+| Empty states say nothing: pages pass `message`, the component reads `description` | What worked, Documents, Graph, … | Use `description`; add a next step |
+| What worked shows an empty card: it reads `task_intent` / `golden_steps`, the API returns `title` / `steps` | `traces.vue` | Read the real fields; title, category, score, numbered steps, collapsible |
+| Raw markdown in monospace | Rules of the project | Render headings, lists and bold as normal text |
+| Raw dump text | Sync "Laptop resume preview" (`=== AutoMemory Resume Pack ===`), Recall preview with literal `\n` | Show as readable lines and a plain list |
+| Dense, shouty labels: ALL-CAPS micro headings, 10-11 px text, mono for prose | Safety, Agents, Inbox, Graph, Replay, Docs | Sentence-case 12-14 px labels; mono only for code, paths and ids |
+| Heavy selected states and borders | Safety modes, list rows | Soft tint + ring, no thick accent border |
+| Stat tiles of zeros | Graph | One summary line; empty state explains when it fills |
+| Recall settings: three columns, tiny controls | Recall | One column of cards; advanced options collapsed |
+
+Order of work: (1) shared pieces: `PageHeader`, `EmptyState`, global tiny-text and uppercase cleanup; (2) pages: What worked, Rules,
+Graph, Sync, Safety, Recall, Agents, Inbox; (3) check dark and light, 360 px and the contrast script; (4) `tests/ui/contrast.py` and
+the dashboard scenario stay green.

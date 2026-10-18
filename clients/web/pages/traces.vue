@@ -1,88 +1,50 @@
 <template>
   <div class="space-y-6">
-    <PageHeader
-      title="What worked"
-      subtitle="Repeatable execution paths, step-by-step verified procedures, and regression baselines."
-    >
-      <template #badge>
-        <Badge variant="neutral">{{ store.traces.length }} traces</Badge>
-      </template>
+    <PageHeader title="What worked" description="Step-by-step runs that worked, ready to repeat.">
       <template #actions>
-        <Button variant="secondary" size="sm" @click="store.fetchTraces">
-          Refresh
-        </Button>
+        <Button variant="secondary" size="sm" @click="store.fetchTraces">Refresh</Button>
       </template>
     </PageHeader>
 
-    <!-- Empty State -->
-    <div v-if="store.traces.length === 0" class="py-8">
-      <Card>
-        <EmptyState
-          title="No success traces recorded yet"
-          message="When an agent successfully completes a complex task or setup, call trace.save to record the golden path."
-        />
-      </Card>
-    </div>
+    <EmptyState
+      v-if="store.traces.length === 0"
+      title="Nothing recorded yet"
+      description="When an agent finishes a tricky task, the steps that worked are saved here so the next agent can repeat them."
+    />
 
-    <!-- Traces List -->
     <div v-else class="space-y-4">
-      <Card
-        v-for="t in store.traces"
-        :key="t.id"
-      >
+      <Card v-for="t in store.traces" :key="t.id">
         <div class="space-y-4">
-          <div class="flex items-center justify-between flex-wrap gap-2">
-            <div class="flex items-center gap-2">
-              <Badge variant="ok">Verified</Badge>
-              <h3 class="text-sm font-semibold text-text">{{ t.task_intent }}</h3>
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <h3 class="text-[17px] font-semibold text-text">{{ titleOf(t) }}</h3>
+              <p class="text-sm text-text-muted mt-0.5">
+                {{ stepsOf(t).length }} step{{ stepsOf(t).length === 1 ? '' : 's' }}
+                <template v-if="t.category"> · {{ t.category }}</template>
+                · {{ formatTime(t.created_at) }}
+              </p>
             </div>
-            <div class="flex items-center gap-2 text-xs">
-              <Badge variant="neutral">
-                ~{{ estimateTokens(t.task_intent + ' ' + JSON.stringify(t.golden_steps)) }} tokens
-              </Badge>
-              <span class="text-text-muted">{{ formatTime(t.created_at) }}</span>
-            </div>
+            <Badge v-if="typeof t.reproducibility_score === 'number'" variant="ok">
+              {{ Math.round(t.reproducibility_score * 100) }}% repeatable
+            </Badge>
           </div>
 
-          <!-- Golden Steps List -->
-          <div class="space-y-2">
-            <div
-              v-for="(step, idx) in t.golden_steps"
-              :key="idx"
-              class="p-3 bg-surface-2 rounded-card border border-border text-xs space-y-1.5"
-            >
-              <div class="flex items-center justify-between text-text font-medium">
-                <span>Step {{ idx + 1 }}: {{ step.action || 'Action' }}</span>
-                <span class="text-[11px] text-text-muted">
-                  ~{{ estimateTokens(step.action + ' ' + (step.command || '') + ' ' + (step.diff || '')) }} tokens
-                </span>
+          <ol class="space-y-3">
+            <li v-for="(step, idx) in stepsOf(t)" :key="idx" class="flex gap-3">
+              <span class="w-6 h-6 rounded-full bg-surface-2 text-xs font-semibold text-text-muted grid place-items-center flex-shrink-0 mt-0.5">
+                {{ idx + 1 }}
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="text-[15px] text-text">{{ step.action || 'Action' }}</p>
+                <div v-if="step.command" class="mt-1.5"><CopyCommand :command="step.command" /></div>
+                <p v-if="step.verification" class="text-sm text-text-muted mt-1">Check: {{ step.verification }}</p>
               </div>
-              <div v-if="step.command">
-                <CopyCommand :command="step.command" />
-              </div>
-              <div v-if="step.diff" class="bg-surface p-2 rounded border border-border text-text font-mono text-xs whitespace-pre-wrap">
-                {{ step.diff }}
-              </div>
-            </div>
-          </div>
+            </li>
+          </ol>
 
-          <!-- Verification Command & Tags -->
-          <div class="pt-3 border-t border-border flex items-center justify-between flex-wrap gap-2 text-xs">
-            <div v-if="t.verification_command" class="flex items-center gap-2 text-text-muted">
-              <span>Verification:</span>
-              <code class="text-ok bg-surface-2 px-2 py-0.5 rounded border border-border font-mono">{{ t.verification_command }}</code>
-            </div>
-
-            <div v-if="t.tags && t.tags.length > 0" class="flex items-center gap-1.5 flex-wrap">
-              <Badge
-                v-for="tag in t.tags"
-                :key="tag"
-                variant="neutral"
-              >
-                #{{ tag }}
-              </Badge>
-            </div>
-          </div>
+          <p v-if="t.caveats?.length" class="text-sm text-text-muted rounded-xl bg-warn-bg px-4 py-3">
+            Good to know: {{ t.caveats.join(' · ') }}
+          </p>
         </div>
       </Card>
     </div>
@@ -91,14 +53,16 @@
 
 <script setup lang="ts">
 import { useAutoMemoryStore } from '~/stores/automemory';
-import { estimateTokens } from '~/utils/tokens';
 
 const store = useAutoMemoryStore();
 
+/** The API returns `title` and `steps`; older records used `task_intent` and `golden_steps`. */
+const titleOf = (t: any): string => t.title || t.task_intent || 'Untitled run';
+const stepsOf = (t: any): any[] => (Array.isArray(t.steps) ? t.steps : Array.isArray(t.golden_steps) ? t.golden_steps : []);
+
 const formatTime = (iso: string) => {
   try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   } catch {
     return iso;
   }

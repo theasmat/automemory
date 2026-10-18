@@ -35,7 +35,7 @@
         v-for="item in mainNav"
         :key="item.path"
         :to="item.path"
-        class="flex items-center gap-3 px-3 py-2 rounded-card text-xs sm:text-sm font-medium transition-colors relative"
+        class="flex items-center gap-3 px-3 py-2 rounded-card text-sm font-medium transition-colors relative"
         :class="isActive(item.path) ? 'bg-surface text-accent font-semibold shadow-sm border-l-2 border-l-accent' : 'text-text-muted hover:text-text hover:bg-surface-2 border-l-2 border-l-transparent'"
         :title="item.label"
       >
@@ -46,7 +46,7 @@
         <span
           v-if="item.badge && item.badge > 0"
           class="ml-auto text-xs font-mono font-bold px-1.5 py-0.2 rounded-pill bg-accent-solid text-accent-fg"
-          :class="isExpanded ? '' : 'absolute top-1 right-1 text-[10px] px-1 py-0'"
+          :class="isExpanded ? '' : 'absolute top-1 right-1 text-xs px-1 py-0'"
         >
           {{ item.badge > 99 ? '99+' : item.badge }}
         </span>
@@ -55,7 +55,7 @@
       <!-- Advanced / More Section Divider -->
       <div class="pt-3 pb-1">
         <div class="border-t border-border mx-2" />
-        <div v-if="isExpanded" class="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-text-muted">
+        <div v-if="isExpanded" class="px-3 pt-3 pb-1 text-xs font-semibold text-text-muted">
           Advanced
         </div>
       </div>
@@ -97,7 +97,7 @@
       <span>{{ item.shortLabel || item.label }}</span>
       <span
         v-if="item.badge && item.badge > 0"
-        class="absolute top-1 right-3 text-[10px] font-mono font-bold px-1 py-0 rounded-pill bg-accent-solid text-accent-fg"
+        class="absolute top-1 right-3 text-xs font-mono font-bold px-1 py-0 rounded-pill bg-accent-solid text-accent-fg"
       >
         {{ item.badge > 99 ? '99+' : item.badge }}
       </span>
@@ -126,7 +126,7 @@
         v-for="item in advancedNav"
         :key="item.path"
         :to="item.path"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-card text-xs sm:text-sm font-medium transition-colors"
+        class="flex items-center gap-3 px-3 py-2.5 rounded-card text-sm font-medium transition-colors"
         :class="isActive(item.path) ? 'bg-surface text-accent font-semibold shadow-sm border-l-2 border-l-accent' : 'text-text hover:bg-surface-2 border-l-2 border-l-transparent'"
         @click="mobileMoreOpen = false"
       >

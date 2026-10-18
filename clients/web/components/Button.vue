@@ -2,7 +2,7 @@
   <button
     :type="type || 'button'"
     :disabled="disabled || loading"
-    class="inline-flex items-center justify-center gap-2 rounded-pill font-medium transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
+    class="inline-flex items-center justify-center gap-2 rounded-pill font-medium transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed text-sm"
     :class="[
       sizeClasses,
       variantClasses,

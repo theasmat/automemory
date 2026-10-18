@@ -17,7 +17,7 @@
         v-for="toast in toasts"
         :key="toast.id"
         role="status"
-        class="pointer-events-auto p-3.5 rounded-card bg-surface border border-border-strong shadow-xl flex items-center justify-between gap-3 text-xs sm:text-sm font-sans"
+        class="pointer-events-auto p-3.5 rounded-card bg-surface border border-border-strong shadow-xl flex items-center justify-between gap-3 text-sm font-sans"
         :class="[
           toast.type === 'bad' ? 'border-l-4 border-l-bad text-text' :
           toast.type === 'success' ? 'border-l-4 border-l-ok text-text' :

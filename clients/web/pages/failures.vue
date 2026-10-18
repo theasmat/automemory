@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <PageHeader
       title="Problems & fixes"
-      subtitle="Catalog of known runtime gotchas, compiler traps, and verified fixes."
+      description="What went wrong, and how it was fixed."
     >
       <template #badge>
         <Badge :variant="store.stats.unresolved_failures > 0 ? 'bad' : 'neutral'">
@@ -38,7 +38,7 @@
       <Card>
         <EmptyState
           :title="`No ${activeStatus} problems found`"
-          message="When an agent encounters a broken tool or unexpected compilation error, failure.save records it so other agents avoid repeating it."
+          description="When an agent encounters a broken tool or unexpected compilation error, failure.save records it so other agents avoid repeating it."
         />
       </Card>
     </div>

@@ -7,7 +7,7 @@
         <select
           id="project-select"
           v-model="store.activeProject"
-          class="bg-surface-2 border border-transparent text-xs sm:text-sm font-semibold rounded-pill px-3 py-1.5 text-text pr-7 focus:border-accent focus:outline-none appearance-none cursor-pointer"
+          class="bg-surface-2 border border-transparent text-sm font-semibold rounded-pill px-3 py-1.5 text-text pr-7 focus:border-accent focus:outline-none appearance-none cursor-pointer"
           @change="onProjectChange"
         >
           <option :value="null">All Projects</option>

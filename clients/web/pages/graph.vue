@@ -2,11 +2,8 @@
   <div class="space-y-6">
     <PageHeader
       title="Knowledge graph"
-      subtitle="Visual companion map of files, symbols, relations, and impact chains."
+      description="How files, ideas and decisions connect."
     >
-      <template #badge>
-        <Badge variant="neutral">{{ entities.length }} entities · {{ edges.length }} edges</Badge>
-      </template>
       <template #actions>
         <Button variant="secondary" size="sm" :loading="loading" @click="fetchGraph">
           Refresh
@@ -25,7 +22,7 @@
 
     <template v-else>
       <!-- Stats Overview -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div v-if="entities.length > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Total entities" :value="entities.length" />
         <StatCard label="Total edges" :value="edges.length" />
         <StatCard label="Files tracked" :value="fileCount" />
@@ -58,20 +55,15 @@
       </div>
 
       <!-- Empty State -->
-      <div v-if="filteredEntities.length === 0" class="py-8">
-        <Card>
-          <EmptyState
-            title="No graph entities found"
-            message="AutoMemory can construct an AST knowledge graph across your files and symbols."
-          >
-            <template #extra>
-              <div class="mt-4 max-w-md mx-auto text-left">
-                <CopyCommand command="automemory graph index" />
-              </div>
-            </template>
-          </EmptyState>
-        </Card>
-      </div>
+      <EmptyState
+        v-if="filteredEntities.length === 0"
+        title="Nothing mapped yet"
+        description="The graph shows how your files and ideas connect. It fills in once your code has been indexed."
+      >
+        <template #action>
+          <div class="w-80 max-w-full text-left"><CopyCommand command="automemory graph index" /></div>
+        </template>
+      </EmptyState>
 
       <!-- Entity & Relation Explorer -->
       <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -88,12 +80,12 @@
               <Badge :variant="getEntityBadgeVariant(entity.entity_type)">
                 {{ entity.entity_type }}
               </Badge>
-              <span class="text-[11px] text-text-muted font-mono truncate max-w-[120px]">
+              <span class="text-xs text-text-muted font-mono truncate max-w-[120px]">
                 {{ entity.path }}
               </span>
             </div>
             <div class="text-sm font-semibold truncate">{{ entity.name }}</div>
-            <div v-if="entity.line_start" class="text-[11px] text-text-muted font-mono mt-1">
+            <div v-if="entity.line_start" class="text-xs text-text-muted font-mono mt-1">
               Line {{ entity.line_start }}<span v-if="entity.line_end"> - {{ entity.line_end }}</span>
             </div>
           </div>
@@ -127,7 +119,7 @@
 
               <!-- Outgoing Relations (calls, imports, defines) -->
               <div class="space-y-2">
-                <div class="text-xs font-semibold text-text uppercase tracking-wider">
+                <div class="text-xs font-semibold text-text ">
                   Outgoing relations ({{ outgoingEdges.length }})
                 </div>
                 <div v-if="outgoingEdges.length === 0" class="text-xs text-text-muted py-2">
@@ -143,7 +135,7 @@
                       <Badge variant="neutral">{{ edge.relation_type }}</Badge>
                       <span class="font-medium text-text">{{ getEntityName(edge.target_id) }}</span>
                     </div>
-                    <span class="text-[11px] text-text-muted font-mono">
+                    <span class="text-xs text-text-muted font-mono">
                       {{ Math.round((edge.confidence || 1) * 100) }}% confidence
                     </span>
                   </div>
@@ -152,7 +144,7 @@
 
               <!-- Incoming Relations (called by, imported by) -->
               <div class="space-y-2">
-                <div class="text-xs font-semibold text-text uppercase tracking-wider">
+                <div class="text-xs font-semibold text-text ">
                   Referenced by ({{ incomingEdges.length }})
                 </div>
                 <div v-if="incomingEdges.length === 0" class="text-xs text-text-muted py-2">
@@ -168,7 +160,7 @@
                       <Badge variant="info">{{ edge.relation_type }}</Badge>
                       <span class="font-medium text-text">{{ getEntityName(edge.source_id) }}</span>
                     </div>
-                    <span class="text-[11px] text-text-muted font-mono">
+                    <span class="text-xs text-text-muted font-mono">
                       {{ Math.round((edge.confidence || 1) * 100) }}% confidence
                     </span>
                   </div>

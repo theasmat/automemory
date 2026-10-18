@@ -6,7 +6,7 @@
       </svg>
     </div>
     <h3 class="text-sm sm:text-base font-semibold text-text mb-1">{{ title || 'Failed to load' }}</h3>
-    <p class="text-xs sm:text-sm text-text-muted max-w-md mb-4">{{ message }}</p>
+    <p class="text-sm text-text-muted max-w-md mb-4">{{ message }}</p>
     
     <div v-if="isDaemonDown" class="w-full max-w-sm mb-4">
       <CopyCommand command="automemory serve" label="Start the daemon:" />

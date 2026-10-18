@@ -2,11 +2,8 @@
   <div class="space-y-6">
     <PageHeader
       title="Rules of the project"
-      subtitle="Inviolable codebase invariants, safety rules, and top architectural decisions loaded at the start of every session."
+      description="The standing rules every agent follows in this project."
     >
-      <template #badge>
-        <Badge variant="neutral">CONSTITUTION.md</Badge>
-      </template>
       <template #actions>
         <Button variant="secondary" size="sm" @click="store.fetchConstitution">
           Refresh
@@ -14,30 +11,19 @@
       </template>
     </PageHeader>
 
-    <Card>
-      <template #header>
-        <div class="flex items-center justify-between">
-          <span class="text-sm font-semibold text-text">Active rules payload</span>
-          <Badge v-if="store.constitution" variant="neutral">
-            ~{{ estimateTokens(store.constitution) }} / 500 max tokens
-          </Badge>
-        </div>
+    <EmptyState
+      v-if="!store.constitution"
+      title="No project rules yet"
+      description="As you record decisions, AutoMemory turns the lasting ones into rules every agent follows."
+    >
+      <template #action>
+        <NuxtLink to="/brain"><Button variant="primary" size="sm">Open Project brain</Button></NuxtLink>
       </template>
+    </EmptyState>
 
-      <div v-if="!store.constitution" class="py-8">
-        <EmptyState
-          title="No project rules distilled yet"
-          message="As you record decisions and mark invariants, AutoMemory distills them into CONSTITUTION.md."
-          action-label="Open Project brain"
-          action-to="/brain"
-        />
-      </div>
-      <div v-else class="space-y-3">
-        <div class="text-xs text-text-muted">
-          Every agent connected to this project receives these invariants on launch:
-        </div>
-        <pre class="text-xs text-text font-mono whitespace-pre-wrap leading-relaxed bg-surface-2 p-4 rounded-card border border-border overflow-x-auto">{{ store.constitution }}</pre>
-      </div>
+    <Card v-else>
+      <p class="text-sm text-text-muted mb-4">Every agent in this project is shown these rules when it starts.</p>
+      <Prose :text="store.constitution" />
     </Card>
   </div>
 </template>
@@ -45,7 +31,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { useAutoMemoryStore } from '~/stores/automemory';
-import { estimateTokens } from '~/utils/tokens';
 
 const store = useAutoMemoryStore();
 

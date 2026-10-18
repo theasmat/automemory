@@ -11,7 +11,7 @@
       :title="status"
     />
     <span class="font-medium text-text">{{ name }}</span>
-    <span v-if="detail" class="text-text-muted text-[11px]">&bull; {{ detail }}</span>
+    <span v-if="detail" class="text-text-muted text-xs">&bull; {{ detail }}</span>
   </div>
 </template>
 

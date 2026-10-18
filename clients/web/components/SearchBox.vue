@@ -9,7 +9,7 @@
       :value="modelValue"
       type="text"
       :placeholder="placeholder || 'Search...'"
-      class="w-full bg-surface border border-border-strong rounded-card pl-9 pr-8 py-1.5 text-xs sm:text-sm text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-bg transition-colors"
+      class="w-full bg-surface border border-border-strong rounded-card pl-9 pr-8 py-1.5 text-sm text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-bg transition-colors"
       @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     />
     <button

@@ -93,7 +93,7 @@
               @click="newNoteType = t.value"
             >
               <div class="font-medium">{{ t.label }}</div>
-              <div class="text-[10px] text-text-muted mt-0.5">{{ t.description }}</div>
+              <div class="text-xs text-text-muted mt-0.5">{{ t.description }}</div>
             </button>
           </div>
         </div>
@@ -120,7 +120,7 @@
             id="note-content"
             v-model="newNoteContent"
             rows="3"
-            class="w-full bg-surface-2 border border-border rounded-card px-3 py-2 text-xs sm:text-sm text-text focus:border-accent focus:outline-none"
+            class="w-full bg-surface-2 border border-border rounded-card px-3 py-2 text-sm text-text focus:border-accent focus:outline-none"
             placeholder="Why we chose this, what happens if violated, or extra instructions"
           />
         </div>

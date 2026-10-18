@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <PageHeader
       title="Recall settings"
-      subtitle="Configure retrieval mode, embedding model, and context window budgets for coding agents."
+      description="How agents search their memory."
     >
       <template #badge>
         <Badge variant="neutral">{{ currentModeLabel }} mode</Badge>
@@ -14,9 +14,9 @@
       </template>
     </PageHeader>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 gap-6 max-w-3xl">
       <!-- Settings Form -->
-      <div class="lg:col-span-2 space-y-6">
+      <div class=" space-y-6">
         <!-- Retrieval Strategy Card -->
         <Card>
           <template #header>
@@ -43,7 +43,7 @@
                     :class="settings.mode === mode.id ? 'bg-accent' : 'bg-border'"
                   />
                 </div>
-                <p class="text-[11px] text-text-muted leading-tight">{{ mode.description }}</p>
+                <p class="text-xs text-text-muted leading-tight">{{ mode.description }}</p>
               </button>
             </div>
 
@@ -92,7 +92,7 @@
                   step="250"
                   class="w-full bg-surface-2 border border-border rounded-card p-2 text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent"
                 />
-                <span class="text-[11px] text-text-muted">Dynamic recall injection limit per prompt.</span>
+                <span class="text-xs text-text-muted">Dynamic recall injection limit per prompt.</span>
               </div>
 
               <div class="space-y-1">
@@ -104,7 +104,7 @@
                   max="90"
                   class="w-full bg-surface-2 border border-border rounded-card p-2 text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent"
                 />
-                <span class="text-[11px] text-text-muted">Days until memory relevance decays by 50%.</span>
+                <span class="text-xs text-text-muted">Days until memory relevance decays by 50%.</span>
               </div>
             </div>
 
@@ -121,18 +121,18 @@
       </div>
 
       <!-- Live Preview Drawer / Sidebar -->
-      <div class="lg:col-span-1 space-y-4">
+      <div class="space-y-4">
         <Card>
           <template #header>
             <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-text">Live context payload</h3>
+              <h3 class="text-[15px] font-semibold text-text">What agents are sent</h3>
               <Badge variant="neutral">~{{ contextTokens }} tokens</Badge>
             </div>
           </template>
 
           <div class="space-y-3">
             <p class="text-xs text-text-muted leading-relaxed">
-              This preview reflects what is compiled and sent to connected agents via <code class="font-mono text-accent">/api/context</code>.
+              The context a new agent session starts with, as it is built right now.
             </p>
 
             <div v-if="loadingPreview" class="space-y-2 py-4">
@@ -194,7 +194,9 @@ const fetchPreview = async () => {
   const res = await apiGet<{ context?: string; rules?: string }>('/api/context');
   loadingPreview.value = false;
   if (res.ok && res.data) {
-    contextPayload.value = res.data.context || res.data.rules || JSON.stringify(res.data, null, 2);
+    const raw = res.data.context || res.data.rules || JSON.stringify(res.data, null, 2);
+    // Some payloads arrive with literal \n sequences; show real line breaks.
+    contextPayload.value = raw.replace(/\\n/g, '\n');
   }
 };
 

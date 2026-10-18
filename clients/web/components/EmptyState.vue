@@ -4,7 +4,7 @@
       <slot name="icon" />
     </div>
     <h3 class="text-sm sm:text-base font-semibold text-text mb-1">{{ title }}</h3>
-    <p v-if="description" class="text-xs sm:text-sm text-text-muted max-w-md mb-6 leading-relaxed">
+    <p v-if="description" class="text-sm text-text-muted max-w-md mb-6 leading-relaxed">
       {{ description }}
     </p>
     <div v-if="$slots.action" class="flex items-center gap-3">

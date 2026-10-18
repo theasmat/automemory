@@ -1,8 +1,8 @@
 <template>
   <div class="space-y-6">
     <PageHeader
-      title="Safety &amp; guardrails"
-      description="Control agent execution boundaries, command blocking rules, and human password protection."
+      title="Safety"
+      description="Choose how careful agents must be, and what is blocked."
     >
       <template #badge>
         <Badge :variant="store.currentMode === 'strict' ? 'bad' : store.currentMode === 'review' ? 'accent' : 'ok'">
@@ -21,24 +21,22 @@
 
     <!-- Mode Selector Cards -->
     <div class="space-y-3">
-      <h3 class="text-xs sm:text-sm font-semibold text-text uppercase tracking-wider text-text-muted">
-        Autopilot Safety Mode
-      </h3>
+      <h2 class="text-lg font-semibold text-text">How careful should agents be?</h2>
       <div data-tour="safety-modes" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           v-for="m in modes"
           :key="m.id"
           type="button"
-          class="p-4 rounded-card border text-left transition-all"
+          class="p-5 rounded-card text-left transition-all shadow-card"
           :class="[
             store.currentMode === m.id
-              ? 'border-accent bg-accent/10 shadow-sm'
-              : 'border-border bg-surface hover:bg-surface-2'
+              ? 'bg-accent/10 ring-2 ring-accent'
+              : 'bg-surface border border-border/70 hover:bg-surface-2'
           ]"
           @click="store.setMode(m.id)"
         >
           <div class="flex items-center justify-between gap-2 mb-2">
-            <span class="text-sm font-bold text-text">{{ m.title }}</span>
+            <span class="text-[17px] font-semibold text-text">{{ m.title }}</span>
             <span v-if="store.currentMode === m.id" class="w-2 h-2 rounded-full bg-accent" />
           </div>
           <p class="text-xs text-text-muted leading-relaxed">{{ m.description }}</p>
@@ -47,11 +45,10 @@
     </div>
 
     <!-- Password Management Card -->
-    <Card title="Human Protection Password">
+    <Card title="Password">
       <div class="space-y-3 mt-1">
-        <p class="text-xs sm:text-sm text-text-muted leading-relaxed">
-          The human password gates safety writes (approving suggestions, modifying rules, changing modes).
-          AI agents cannot read human memory, ensuring a robust boundary against prompt injection.
+        <p class="text-sm text-text-muted leading-relaxed">
+          A password keeps agents from changing safety settings or approving their own suggestions. Only you can.
         </p>
         <div class="flex items-center gap-3">
           <CopyCommand command="automemory rule passwd" label="To set or change your password via terminal:" />
@@ -60,14 +57,14 @@
     </Card>
 
     <!-- Test a Command Sandbox -->
-    <Card title="Test a command against guardrails">
+    <Card title="Try a command">
       <form class="space-y-3 mt-1" @submit.prevent="testCommand">
         <div class="flex gap-2">
           <input
             v-model="commandToTest"
             type="text"
             required
-            class="flex-1 bg-surface-2 border border-border rounded-card px-3 py-1.5 text-xs sm:text-sm text-text font-mono focus:border-accent focus:outline-none"
+            class="flex-1 bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text font-mono focus:border-accent focus:outline-none"
             placeholder="e.g. git push --force origin main"
           />
           <Button size="sm" variant="secondary" type="submit" :loading="isTesting">
@@ -75,10 +72,10 @@
           </Button>
         </div>
 
-        <div v-if="testResult" class="p-3 rounded-card border text-xs sm:text-sm" :class="testResult.decision === 'deny' ? 'bg-bad/10 border-bad/30 text-bad' : 'bg-ok/10 border-ok/30 text-ok'">
+        <div v-if="testResult" class="p-3 rounded-card border text-sm" :class="testResult.decision === 'deny' ? 'bg-bad/10 border-bad/30 text-bad' : 'bg-ok/10 border-ok/30 text-ok'">
           <div class="font-semibold flex items-center gap-1.5">
             <span>Verdict:</span>
-            <span class="uppercase">{{ testResult.decision }}</span>
+            <span class="">{{ testResult.decision }}</span>
           </div>
           <p v-if="testResult.reason" class="text-xs text-text-muted mt-1">
             {{ testResult.reason }}
@@ -88,7 +85,7 @@
     </Card>
 
     <!-- Guardrail Rules Table -->
-    <Card title="Active guardrail rules">
+    <Card title="Blocking rules">
       <template #actions>
         <Button size="sm" variant="secondary" @click="isAddRuleOpen = true">
           + Add rule
@@ -96,9 +93,9 @@
       </template>
 
       <div class="overflow-x-auto mt-2">
-        <table class="w-full text-left text-xs sm:text-sm">
+        <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b border-border text-text-muted text-[11px] uppercase tracking-wider">
+            <tr class="border-b border-border text-text-muted text-xs ">
               <th class="py-2 px-3">Rule Name</th>
               <th class="py-2 px-3">Pattern</th>
               <th class="py-2 px-3">Severity</th>
@@ -110,7 +107,7 @@
             <tr v-for="rule in store.guardrailRules" :key="rule.id" class="hover:bg-surface-2/40">
               <td class="py-3 px-3 font-semibold text-text">
                 {{ rule.name }}
-                <div v-if="rule.description" class="text-[11px] text-text-muted font-normal mt-0.5">
+                <div v-if="rule.description" class="text-xs text-text-muted font-normal mt-0.5">
                   {{ rule.description }}
                 </div>
               </td>
@@ -156,7 +153,7 @@
             v-model="newRuleName"
             type="text"
             required
-            class="w-full bg-surface-2 border border-border rounded-card px-3 py-1.5 text-sm text-text focus:outline-none"
+            class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text focus:outline-none"
             placeholder="e.g. Block force pushes"
           />
         </div>
@@ -167,7 +164,7 @@
             v-model="newRulePattern"
             type="text"
             required
-            class="w-full bg-surface-2 border border-border rounded-card px-3 py-1.5 text-xs sm:text-sm font-mono text-text focus:outline-none"
+            class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm font-mono text-text focus:outline-none"
             placeholder="e.g. git\s+push.*(--force|-f)"
           />
         </div>
@@ -177,7 +174,7 @@
           <input
             v-model="newRuleDesc"
             type="text"
-            class="w-full bg-surface-2 border border-border rounded-card px-3 py-1.5 text-xs text-text focus:outline-none"
+            class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text focus:outline-none"
             placeholder="Why this is prohibited"
           />
         </div>

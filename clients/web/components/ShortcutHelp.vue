@@ -5,9 +5,9 @@
     max-width-class="max-w-md"
     @close="close"
   >
-    <div class="space-y-4 text-xs sm:text-sm">
+    <div class="space-y-4 text-sm">
       <div class="space-y-2">
-        <h4 class="font-semibold text-text uppercase text-[11px] tracking-wider text-text-muted">Global Navigation</h4>
+        <h4 class="font-semibold text-text text-xs text-text-muted">Global Navigation</h4>
         <div class="grid grid-cols-2 gap-2 text-text">
           <div class="flex items-center justify-between p-2 rounded bg-surface-2">
             <span>Home</span>
@@ -37,7 +37,7 @@
       </div>
 
       <div class="space-y-2">
-        <h4 class="font-semibold text-text uppercase text-[11px] tracking-wider text-text-muted">Actions &amp; Inbox</h4>
+        <h4 class="font-semibold text-text text-xs text-text-muted">Actions &amp; Inbox</h4>
         <div class="space-y-1.5 text-text">
           <div class="flex items-center justify-between p-2 rounded bg-surface-2">
             <span>Add note to Project brain</span>

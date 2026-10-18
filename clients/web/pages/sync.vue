@@ -32,16 +32,16 @@
     <!-- Setup Wizard (shown if no vault remote is set) -->
     <Card v-if="!isConfigured" title="Set up encrypted sync across machines">
       <div class="space-y-6 mt-2">
-        <p class="text-xs sm:text-sm text-text-muted leading-relaxed">
+        <p class="text-sm text-text-muted leading-relaxed">
           AutoMemory uses a private Git repository as an encrypted peer vault. The git host sees only ciphertext.
         </p>
 
         <div class="space-y-4">
           <!-- Step 1 -->
-          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+          <div class="p-4 rounded-xl bg-surface-2/60 space-y-2">
             <div class="flex items-center gap-2">
-              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">1</span>
-              <h4 class="text-xs sm:text-sm font-semibold text-text">Create a private git repository</h4>
+              <span class="w-6 h-6 rounded-full bg-accent-solid text-accent-fg font-semibold text-xs flex items-center justify-center">1</span>
+              <h4 class="text-sm font-semibold text-text">Create a private git repository</h4>
             </div>
             <p class="text-xs text-text-muted">
               Create an empty private repo on GitHub, GitLab, or your own server.
@@ -49,19 +49,19 @@
           </div>
 
           <!-- Step 2 -->
-          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+          <div class="p-4 rounded-xl bg-surface-2/60 space-y-2">
             <div class="flex items-center gap-2">
-              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">2</span>
-              <h4 class="text-xs sm:text-sm font-semibold text-text">Connect this computer</h4>
+              <span class="w-6 h-6 rounded-full bg-accent-solid text-accent-fg font-semibold text-xs flex items-center justify-center">2</span>
+              <h4 class="text-sm font-semibold text-text">Connect this computer</h4>
             </div>
             <CopyCommand command="automemory sync remote git@github.com:you/automemory-vault.git" />
           </div>
 
           <!-- Step 3 -->
-          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+          <div class="p-4 rounded-xl bg-surface-2/60 space-y-2">
             <div class="flex items-center gap-2">
-              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">3</span>
-              <h4 class="text-xs sm:text-sm font-semibold text-text">Bootstrap on your other computer</h4>
+              <span class="w-6 h-6 rounded-full bg-accent-solid text-accent-fg font-semibold text-xs flex items-center justify-center">3</span>
+              <h4 class="text-sm font-semibold text-text">Bootstrap on your other computer</h4>
             </div>
             <CopyCommand command="automemory sync bootstrap git@github.com:you/automemory-vault.git" />
           </div>
@@ -71,53 +71,49 @@
 
     <!-- Active Vault Status Cards -->
     <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <Card title="Encryption Status">
+      <Card title="Encryption">
         <div class="space-y-2 mt-1">
           <Badge variant="ok" dot>
-            End-to-End Encrypted
+            Encrypted end to end
           </Badge>
           <p class="text-xs text-text-muted leading-relaxed">
-            All memories, decisions, and traces are sealed with XChaCha20-Poly1305 before pushing to the vault.
+            All memories, decisions, and traces are encrypted on this machine before they leave it.
           </p>
         </div>
       </Card>
 
-      <Card title="Sync Repository">
+      <Card title="Where it syncs">
         <div class="space-y-2 mt-1">
           <div class="text-xs font-mono text-accent truncate">
             {{ vaultRemote || 'Local vault active' }}
           </div>
           <p class="text-xs text-text-muted">
-            AutoSync daemon runs in background every 30 seconds.
+            Syncs in the background every 30 seconds.
           </p>
         </div>
       </Card>
 
-      <Card title="Registered Projects">
+      <Card title="Projects">
         <div class="space-y-2 mt-1">
           <span class="text-2xl font-bold text-text">{{ store.projects.length || 1 }}</span>
           <p class="text-xs text-text-muted">
-            Synced across active machines
+            Shared across your machines
           </p>
         </div>
       </Card>
     </div>
 
     <!-- Resume Pack Preview -->
-    <Card title="Laptop Resume Preview">
-      <template #actions>
-        <span class="text-xs text-text-muted">What a new session on your other machine is told</span>
-      </template>
-
-      <div class="space-y-3 mt-2">
-        <p class="text-xs text-text-muted">
-          When you open a project on your laptop, AutoMemory pulls the vault and greets the agent with this resume pack:
-        </p>
-
-        <div class="bg-surface-2 border border-border rounded-card p-4 font-mono text-xs text-text whitespace-pre-wrap">
-          {{ resumePackText }}
+    <Card title="What your other computer will see">
+      <p class="text-sm text-text-muted mb-4">
+        When you open this project on another machine, AutoMemory pulls the vault and starts the agent with this summary.
+      </p>
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+        <div v-for="row in resumeRows" :key="row.label" class="flex justify-between gap-4 border-b border-border/60 pb-2">
+          <dt class="text-text-muted">{{ row.label }}</dt>
+          <dd class="text-text text-right">{{ row.value }}</dd>
         </div>
-      </div>
+      </dl>
     </Card>
   </div>
 </template>
@@ -139,14 +135,14 @@ const vaultRemote = computed(() => {
   return store.syncStatus?.remote_url || 'git vault configured';
 });
 
-const resumePackText = computed(() => {
+const resumeRows = computed(() => {
   const latestDec = store.memories.find((m) => m.type?.toLowerCase() === 'decision');
-  const decText = latestDec ? latestDec.summary : 'None yet';
-  return `=== AutoMemory Resume Pack ===
-Active project: ${store.activeProject || 'shop'}
-Decisions in force: ${decText}
-Total verified notes: ${store.memories.length}
-File locks active: ${store.activeLeases.length}`;
+  return [
+    { label: 'Project', value: store.activeProject || 'All projects' },
+    { label: 'Latest decision', value: latestDec ? latestDec.summary : 'None yet' },
+    { label: 'Notes', value: String(store.memories.length) },
+    { label: 'Files locked', value: String(store.activeLeases.length) },
+  ];
 });
 
 async function handleSyncNow() {

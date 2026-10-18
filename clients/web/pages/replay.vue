@@ -6,7 +6,7 @@
         <div class="p-4 border-b border-border flex items-center justify-between">
           <div class="flex items-center gap-2">
             <History class="w-4 h-4 text-accent" />
-            <span class="text-xs font-semibold text-text uppercase tracking-wider">Recorded sessions</span>
+            <span class="text-xs font-semibold text-text ">Recorded sessions</span>
           </div>
           <Badge variant="neutral">{{ store.sessions.length }}</Badge>
         </div>
@@ -35,7 +35,7 @@
               <Badge variant="neutral">{{ s.adapter_id || 'agy' }}</Badge>
             </div>
 
-            <div class="flex items-center justify-between text-[11px] text-text-muted">
+            <div class="flex items-center justify-between text-xs text-text-muted">
               <span class="flex items-center gap-1">
                 <Activity class="w-3 h-3 text-info" /> {{ s.event_count }} events
               </span>
@@ -177,7 +177,7 @@
               <div class="flex items-center justify-between flex-wrap gap-2">
                 <div class="flex items-center gap-2">
                   <Sparkles class="w-4 h-4 text-accent" />
-                  <h3 class="text-xs font-semibold text-text uppercase tracking-wider">
+                  <h3 class="text-xs font-semibold text-text ">
                     Distilled golden path ({{ store.distillationReport.noise_pruned_percentage }}% noise pruned)
                   </h3>
                 </div>
@@ -218,7 +218,7 @@
 
             <!-- Lessons Learned -->
             <div v-if="store.distillationReport.lessons_learned?.length" class="space-y-1.5 pt-3 border-t border-border mt-4">
-              <div class="text-xs text-ok font-semibold uppercase">Extracted durable lessons:</div>
+              <div class="text-xs text-ok font-semibold ">Extracted durable lessons:</div>
               <ul class="list-disc list-inside text-xs text-text-muted space-y-1">
                 <li v-for="(l, i) in store.distillationReport.lessons_learned" :key="i">
                   {{ l }}

@@ -15,13 +15,13 @@
             Sample
           </Badge>
           <SourceBadge :source="memory.source_kind" :agent="memory.metadata?.agent" />
-          <span v-if="memory.status === 'pinned'" class="text-[11px] font-semibold text-accent flex items-center gap-1">
+          <span v-if="memory.status === 'pinned'" class="text-xs font-semibold text-accent flex items-center gap-1">
             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
               <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
             </svg>
             Pinned
           </span>
-          <span v-if="memory.status === 'pending'" class="text-[11px] text-text-muted italic">
+          <span v-if="memory.status === 'pending'" class="text-xs text-text-muted italic">
             Waiting for review
           </span>
         </div>
@@ -113,7 +113,7 @@
         <input
           v-model="editSummary"
           type="text"
-          class="w-full bg-surface-2 border border-border rounded-card px-3 py-1.5 text-sm text-text focus:border-accent focus:outline-none"
+          class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -122,7 +122,7 @@
         <textarea
           v-model="editContent"
           rows="3"
-          class="w-full bg-surface-2 border border-border rounded-card px-3 py-1.5 text-xs sm:text-sm text-text focus:border-accent focus:outline-none"
+          class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text focus:border-accent focus:outline-none"
         />
       </div>
 

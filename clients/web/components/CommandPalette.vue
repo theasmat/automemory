@@ -33,7 +33,7 @@
               @keydown.up.prevent="navigate(-1)"
               @keydown.enter="executeActive"
             />
-            <kbd class="hidden sm:inline-block text-[11px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted">
+            <kbd class="hidden sm:inline-block text-xs font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-text-muted">
               Esc
             </kbd>
           </div>
@@ -47,7 +47,7 @@
               v-for="(cmd, idx) in filteredCommands"
               :key="cmd.id"
               type="button"
-              class="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-card text-xs sm:text-sm text-left transition-colors"
+              class="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-card text-sm text-left transition-colors"
               :class="idx === selectedIndex ? 'bg-accent/15 text-accent font-medium' : 'text-text hover:bg-surface-2'"
               @mouseenter="selectedIndex = idx"
               @click="execute(cmd)"
@@ -56,7 +56,7 @@
                 <span class="text-xs text-text-muted">{{ cmd.category }}</span>
                 <span>{{ cmd.title }}</span>
               </div>
-              <span v-if="cmd.shortcut" class="text-[11px] font-mono text-text-muted">
+              <span v-if="cmd.shortcut" class="text-xs font-mono text-text-muted">
                 {{ cmd.shortcut }}
               </span>
             </button>

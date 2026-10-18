@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <PageHeader
       title="Documents"
-      subtitle="Product requirements, architectural decision records, and business invariants compiled for coding agents."
+      description="Project documents your agents read."
     >
       <template #badge>
         <Badge variant="neutral">{{ filteredDocs.length }} documents</Badge>
@@ -44,7 +44,7 @@
       <Card>
         <EmptyState
           title="No documents tracked yet"
-          message="Track specifications and architectural decision records using the CLI:"
+          description="Track specifications and architectural decision records using the CLI:"
         >
           <template #extra>
             <div class="mt-4 max-w-md mx-auto text-left">
@@ -79,7 +79,7 @@
               <Badge v-else variant="warn">
                 Pending delta
               </Badge>
-              <span class="text-text-muted font-mono text-[11px]">
+              <span class="text-text-muted font-mono text-xs">
                 SHA: {{ doc.content_hash.slice(0, 10) }}
               </span>
             </div>
@@ -96,13 +96,13 @@
 
           <!-- L0 Abstract Box -->
           <div v-if="doc.l0_abstract" class="bg-surface-2 rounded-card border-l-2 border-accent p-3 text-xs space-y-1">
-            <div class="text-[11px] font-semibold text-accent uppercase tracking-wider">Ambient Abstract (~15-20 tokens)</div>
+            <div class="text-xs font-semibold text-accent ">Ambient Abstract (~15-20 tokens)</div>
             <div class="text-text leading-relaxed">{{ doc.l0_abstract }}</div>
           </div>
 
           <!-- L1 Overview Details -->
           <div v-if="doc.l1_overview" class="bg-surface-2 rounded-card border border-border p-3 space-y-1.5">
-            <div class="text-[11px] font-semibold text-text uppercase tracking-wider">Hierarchical Overview (~150 tokens)</div>
+            <div class="text-xs font-semibold text-text ">Hierarchical Overview (~150 tokens)</div>
             <pre class="text-xs font-mono text-text-muted whitespace-pre-wrap leading-relaxed overflow-x-auto">{{ doc.l1_overview }}</pre>
           </div>
         </div>

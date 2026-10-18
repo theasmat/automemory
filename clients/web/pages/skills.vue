@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <PageHeader
       title="Learned skills"
-      subtitle="Auto-distilled procedural playbooks synthesized from verified success traces."
+      description="Reusable how-tos your agents have learned."
     >
       <template #badge>
         <Badge variant="neutral">{{ store.skills.length }} skills</Badge>
@@ -19,7 +19,7 @@
       <Card>
         <EmptyState
           title="No learned skills yet"
-          message="As agents run tasks and record what worked, AutoMemory synthesizes reusable skills."
+          description="As agents run tasks and record what worked, AutoMemory synthesizes reusable skills."
         />
       </Card>
     </div>

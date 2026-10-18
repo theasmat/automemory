@@ -61,12 +61,12 @@
             <Badge variant="accent">
               {{ typeLabel(item.proposal_type) }}
             </Badge>
-            <span class="text-[11px] font-mono text-text-muted">
+            <span class="text-xs font-mono text-text-muted">
               {{ formatAge(item.created_at) }}
             </span>
           </div>
 
-          <p class="text-xs sm:text-sm font-semibold text-text line-clamp-2">
+          <p class="text-sm font-semibold text-text line-clamp-2">
             {{ statement(item) }}
           </p>
 
@@ -91,19 +91,19 @@
 
             <!-- Proposed Content -->
             <div>
-              <span class="text-xs font-semibold text-text uppercase tracking-wider block mb-1">
+              <span class="text-xs font-semibold text-text block mb-1">
                 Suggested statement
               </span>
               <p class="text-base font-semibold text-text leading-snug">
                 {{ statement(selectedProposal) }}
               </p>
-              <div v-if="selectedProposal.proposed_memory?.content" class="mt-2 p-3 rounded-card bg-surface-2 border border-border text-xs sm:text-sm text-text whitespace-pre-wrap">
+              <div v-if="selectedProposal.proposed_memory?.content" class="mt-2 p-3 rounded-xl bg-surface-2 text-sm text-text whitespace-pre-wrap">
                 {{ selectedProposal.proposed_memory.content }}
               </div>
             </div>
 
             <!-- Why Agent Thinks So -->
-            <div class="p-3.5 rounded-card bg-surface-2/60 border border-border space-y-1.5">
+            <div class="p-3.5 rounded-xl bg-surface-2/60 space-y-1.5">
               <span class="text-xs font-semibold text-accent block">
                 Why the agent suggested this
               </span>

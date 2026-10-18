@@ -6,7 +6,7 @@
     @close="cancel"
   >
     <div class="space-y-4">
-      <div class="flex items-start gap-3 p-3 rounded-card bg-accent/10 border border-accent/20 text-xs sm:text-sm text-text">
+      <div class="flex items-start gap-3 p-3 rounded-card bg-accent/10 border border-accent/20 text-sm text-text">
         <svg class="w-5 h-5 text-accent flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>

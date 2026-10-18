@@ -41,14 +41,14 @@
 
       <!-- Section: Plain-English Glossary -->
       <div>
-        <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2.5">
+        <h3 class="text-xs font-bold text-text-muted mb-2.5">
           Plain-English Glossary
         </h3>
         <div class="space-y-2">
           <div
             v-for="item in glossary"
             :key="item.term"
-            class="p-2.5 rounded-card bg-surface-2 border border-border text-xs"
+            class="p-2.5 rounded-xl bg-surface-2 text-xs"
           >
             <div class="font-bold text-text">{{ item.term }}</div>
             <p class="text-text-muted mt-0.5 leading-relaxed">{{ item.def }}</p>
@@ -58,38 +58,38 @@
 
       <!-- Section: Guided Topics (from learn topics) -->
       <div>
-        <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2.5">
+        <h3 class="text-xs font-bold text-text-muted mb-2.5">
           Learn Topics (CLI & Concepts)
         </h3>
         <div class="space-y-2">
           <div
             v-for="topic in store.learnTopics"
             :key="topic.id"
-            class="p-3 rounded-card bg-surface-2 border border-border text-xs"
+            class="p-3 rounded-xl bg-surface-2 text-xs"
           >
             <div class="flex items-center justify-between gap-2 mb-1">
               <span class="font-bold text-text">{{ topic.title }}</span>
-              <code class="text-[10px] text-accent font-mono">automemory learn {{ topic.id }}</code>
+              <code class="text-xs text-accent font-mono">automemory learn {{ topic.id }}</code>
             </div>
             <p class="text-text-muted mb-2 leading-relaxed">{{ topic.summary }}</p>
-            <pre class="bg-surface p-2 rounded text-[11px] font-mono text-text overflow-x-auto whitespace-pre-wrap border border-border/60">{{ topic.content }}</pre>
+            <pre class="bg-surface p-2 rounded text-xs font-mono text-text overflow-x-auto whitespace-pre-wrap border border-border/60">{{ topic.content }}</pre>
           </div>
         </div>
       </div>
 
       <!-- Section: Keyboard Shortcuts -->
       <div>
-        <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2.5">
+        <h3 class="text-xs font-bold text-text-muted mb-2.5">
           Keyboard Shortcuts
         </h3>
         <div class="grid grid-cols-2 gap-2 text-xs">
           <div
             v-for="sc in shortcuts"
             :key="sc.key"
-            class="p-2 rounded-card bg-surface-2 border border-border flex items-center justify-between"
+            class="p-2 rounded-xl bg-surface-2 flex items-center justify-between"
           >
             <span class="text-text-muted">{{ sc.label }}</span>
-            <kbd class="px-1.5 py-0.5 font-mono text-[11px] rounded bg-surface border border-border font-semibold text-text">
+            <kbd class="px-1.5 py-0.5 font-mono text-xs rounded bg-surface border border-border font-semibold text-text">
               {{ sc.key }}
             </kbd>
           </div>
