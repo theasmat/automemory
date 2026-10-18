@@ -84,6 +84,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Dashboard UI/UX redesign (spec: [plan/ui-ux.md](../plan/ui-ux.md))
 
+- [ ] First-run tour (CLI + dashboard): brief for an implementing agent in [plan/onboarding-tour-brief.md](../plan/onboarding-tour-brief.md) (L1 shared core, L2 CLI tour, L3 dashboard, L4 agent notice)
 - [ ] P1 foundation + Home, P2 Project brain, P3 Agents & locks + Inbox, P4 Sync wizard + Safety, P5 polish
 
 ## Docs hygiene
