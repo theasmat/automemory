@@ -1,48 +1,45 @@
 <template>
-  <div class="flex h-full bg-black overflow-hidden select-none">
+  <div class="flex flex-col md:flex-row h-full min-h-[600px] bg-bg rounded-card border border-border overflow-hidden select-none">
     <!-- Left Session Selector Sidebar -->
-    <div class="w-80 border-r border-dark-700 bg-dark-950 flex flex-col justify-between shrink-0 h-full">
+    <div class="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-surface flex flex-col justify-between shrink-0">
       <div>
-        <div class="p-4 border-b border-dark-700 flex items-center justify-between">
+        <div class="p-4 border-b border-border flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <History class="w-4 h-4 text-gold-500" />
-            <span class="text-xs font-mono font-bold text-white uppercase tracking-wider">Recorded Sessions</span>
+            <History class="w-4 h-4 text-accent" />
+            <span class="text-xs font-semibold text-text uppercase tracking-wider">Recorded sessions</span>
           </div>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 bg-dark-850 text-gray-400 border border-dark-700">
-            {{ store.sessions.length }}
-          </span>
+          <Badge variant="neutral">{{ store.sessions.length }}</Badge>
         </div>
 
-        <div class="overflow-y-auto max-h-[calc(100vh-10rem)] p-2 space-y-1">
-          <div v-if="store.sessions.length === 0" class="text-center py-12 text-gray-600 font-mono text-xs">
+        <div class="overflow-y-auto max-h-48 md:max-h-[calc(100vh-14rem)] p-2 space-y-1">
+          <div v-if="store.sessions.length === 0" class="text-center py-8 text-text-muted text-xs">
             No recorded sessions yet. Execute tasks to record event streams!
           </div>
 
           <button
             v-for="s in store.sessions"
             :key="s.session_id"
+            type="button"
             @click="store.selectSession(s.session_id)"
-            class="w-full text-left p-3 border transition-all duration-150 font-mono text-xs space-y-1.5"
+            class="w-full text-left p-3 rounded-card border transition-all duration-150 text-xs space-y-1.5"
             :class="[
               store.activeSessionId === s.session_id
-                ? 'bg-dark-850 border-gold-500/60 text-white ring-1 ring-gold-500/20'
-                : 'bg-dark-900 border-dark-700 text-gray-400 hover:text-white hover:bg-dark-850'
+                ? 'bg-surface-2 border-accent text-text ring-1 ring-accent/30 font-semibold'
+                : 'bg-surface border-border text-text-muted hover:text-text hover:bg-surface-2'
             ]"
           >
             <div class="flex items-center justify-between">
-              <span class="font-bold truncate max-w-[170px]" :class="store.activeSessionId === s.session_id ? 'text-gold-400' : 'text-gray-300'">
+              <span class="truncate max-w-[170px]" :class="store.activeSessionId === s.session_id ? 'text-accent' : 'text-text'">
                 {{ s.session_id }}
               </span>
-              <span class="text-[10px] px-1 bg-dark-950 border border-dark-800 text-gray-500 uppercase">
-                {{ s.adapter_id || 'agy' }}
-              </span>
+              <Badge variant="neutral">{{ s.adapter_id || 'agy' }}</Badge>
             </div>
 
-            <div class="flex items-center justify-between text-[10px] text-gray-500">
+            <div class="flex items-center justify-between text-[11px] text-text-muted">
               <span class="flex items-center gap-1">
-                <Activity class="w-3 h-3 text-cyan-400" /> {{ s.event_count }} events
+                <Activity class="w-3 h-3 text-info" /> {{ s.event_count }} events
               </span>
-              <span v-if="s.error_count > 0" class="text-red-400 font-bold flex items-center gap-0.5">
+              <span v-if="s.error_count > 0" class="text-bad font-semibold flex items-center gap-0.5">
                 <AlertCircle class="w-3 h-3" /> {{ s.error_count }} err
               </span>
             </div>
@@ -52,75 +49,81 @@
     </div>
 
     <!-- Right Replay & Distillation Stage -->
-    <div class="flex-1 flex flex-col h-full overflow-hidden bg-dark-950">
+    <div class="flex-1 flex flex-col min-w-0 bg-surface">
       <!-- Empty State -->
       <div v-if="!store.activeSessionId || store.sessionEvents.length === 0" class="flex-1 flex flex-col items-center justify-center p-8 text-center">
-        <History class="w-12 h-12 text-gray-700 mb-3" />
-        <div class="text-sm font-mono text-gray-400 font-semibold">Select a session from the left to begin replay</div>
-        <p class="text-xs font-mono text-gray-600 mt-1 max-w-sm">
-          Scrub through tool actions, inspect diffs, test variable playback speeds, and generate 100-to-1 trajectory distillation summaries.
+        <History class="w-10 h-10 text-text-muted mb-3 opacity-40" />
+        <div class="text-sm font-semibold text-text">Select a session from the list to begin replay</div>
+        <p class="text-xs text-text-muted mt-1 max-w-sm">
+          Scrub through tool actions, inspect diffs, test variable playback speeds, and inspect session history.
         </p>
       </div>
 
-      <div v-else class="flex-1 flex flex-col h-full overflow-hidden">
+      <div v-else class="flex-1 flex flex-col min-h-0 overflow-hidden">
         <!-- Replay Control Bar & Token Reduction Header -->
-        <div class="p-4 border-b border-dark-700 bg-dark-900 flex flex-col gap-3 shrink-0">
+        <div class="p-4 border-b border-border bg-surface-2 flex flex-col gap-3 shrink-0">
           <!-- Token Reduction Ribbon for Active Session -->
-          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-dark-800 text-[11px] font-mono">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border text-xs">
             <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-gray-400">
-                Raw Session: <strong class="text-gold-400">~{{ formatTokens(totalSessionTokens) }} tokens</strong>
+              <span class="text-text-muted">
+                Raw session: <strong class="text-text">~{{ formatTokens(totalSessionTokens) }} tokens</strong>
               </span>
-              <span class="text-gray-600">•</span>
-              <span class="text-gray-400">
-                Distilled Memory: <strong class="text-cyan-300">~{{ formatTokens(distilledMemoryTokens) }} tokens</strong>
+              <span class="text-border">•</span>
+              <span class="text-text-muted">
+                Distilled memory: <strong class="text-info">~{{ formatTokens(distilledMemoryTokens) }} tokens</strong>
               </span>
-              <span class="text-gray-600">•</span>
-              <span class="px-2 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800/80 font-bold">
-                {{ tokenReductionStats.reductionPercentage }}% Token Reduction (~{{ formatTokens(tokenReductionStats.savedTokens) }} saved)
-              </span>
+              <span class="text-border">•</span>
+              <Badge variant="ok">
+                {{ tokenReductionStats.reductionPercentage }}% reduction (~{{ formatTokens(tokenReductionStats.savedTokens) }} saved)
+              </Badge>
             </div>
 
-            <div class="text-[10px] text-gray-500">
-              Est. Context Cost: <span class="text-gray-300">{{ estimateTokenCost(totalSessionTokens) }}</span>
+            <div class="text-xs text-text-muted">
+              Est. context cost: <span class="text-text">{{ estimateTokenCost(totalSessionTokens) }}</span>
             </div>
           </div>
 
           <div class="flex items-center justify-between gap-4 flex-wrap">
             <!-- Playback Controls -->
             <div class="flex items-center gap-2">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 @click="stepBackward"
-                class="p-1.5 bg-dark-800 hover:bg-dark-700 text-gray-300 border border-dark-700 transition-colors"
                 title="Step backward"
+                aria-label="Step backward"
               >
-                <SkipBack class="w-4 h-4" />
-              </button>
+                <SkipBack class="w-3.5 h-3.5" />
+              </Button>
 
-              <button
+              <Button
+                variant="primary"
+                size="sm"
                 @click="togglePlay"
-                class="px-3 py-1.5 bg-gold-500 hover:bg-gold-400 text-black font-mono font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm shadow-gold-500/20"
               >
-                <component :is="isPlaying ? Pause : Play" class="w-3.5 h-3.5" />
+                <component :is="isPlaying ? Pause : Play" class="w-3.5 h-3.5 mr-1" />
                 <span>{{ isPlaying ? 'Pause' : 'Play' }}</span>
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 @click="stepForward"
-                class="p-1.5 bg-dark-800 hover:bg-dark-700 text-gray-300 border border-dark-700 transition-colors"
                 title="Step forward"
+                aria-label="Step forward"
               >
-                <SkipForward class="w-4 h-4" />
-              </button>
+                <SkipForward class="w-3.5 h-3.5" />
+              </Button>
 
               <!-- Speed Multipliers -->
-              <div class="flex items-center bg-dark-950 border border-dark-700 p-0.5 ml-2">
+              <div class="flex items-center bg-surface border border-border rounded-card p-0.5 ml-2">
                 <button
                   v-for="s in [1, 2, 5, 10]"
                   :key="s"
+                  type="button"
                   @click="playbackSpeed = s"
-                  class="px-2 py-0.5 text-[10px] font-mono transition-colors"
-                  :class="playbackSpeed === s ? 'bg-gold-500 text-black font-bold' : 'text-gray-400 hover:text-white'"
+                  class="px-2 py-0.5 text-xs rounded transition-colors"
+                  :class="playbackSpeed === s ? 'bg-accent text-accent-fg font-bold' : 'text-text-muted hover:text-text'"
                 >
                   {{ s }}x
                 </button>
@@ -129,29 +132,31 @@
               <!-- Jump to Error -->
               <button
                 v-if="hasErrors"
+                type="button"
                 @click="jumpToNextError"
-                class="flex items-center gap-1 px-2.5 py-1 text-[11px] font-mono bg-red-950/40 text-red-400 border border-red-800/60 hover:bg-red-900/40 transition-colors ml-2"
+                class="flex items-center gap-1 px-2.5 py-1 text-xs bg-bad/10 text-bad rounded border border-bad/30 hover:bg-bad/20 transition-colors ml-2"
               >
                 <AlertCircle class="w-3 h-3" />
-                <span>Jump to Error</span>
+                <span>Jump to error</span>
               </button>
             </div>
 
-            <!-- 1-Click Distillation Button -->
-            <button
-              @click="store.distillSession(store.activeSessionId!)"
+            <!-- Distillation Button -->
+            <Button
+              variant="secondary"
+              size="sm"
               :disabled="store.isDistilling"
-              class="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-600 to-gold-600 hover:from-amber-500 hover:to-gold-500 text-black font-mono font-bold text-xs transition-all duration-150 disabled:opacity-50 shadow-md shadow-amber-500/20"
+              @click="store.distillSession(store.activeSessionId!)"
             >
-              <Sparkles class="w-3.5 h-3.5" :class="{ 'animate-spin': store.isDistilling }" />
-              <span>{{ store.isDistilling ? 'Distilling 100-to-1...' : '1-Click Distillation Summary' }}</span>
-            </button>
+              <Sparkles class="w-3.5 h-3.5 mr-1.5" :class="{ 'animate-spin': store.isDistilling }" />
+              <span>{{ store.isDistilling ? 'Distilling...' : 'Distill session' }}</span>
+            </Button>
           </div>
 
           <!-- Scrubber Timeline Slider -->
           <div class="space-y-1">
-            <div class="flex items-center justify-between text-[10px] font-mono text-gray-500">
-              <span>Event Step {{ currentStepIndex + 1 }} of {{ store.sessionEvents.length }}</span>
+            <div class="flex items-center justify-between text-xs text-text-muted font-mono">
+              <span>Step {{ currentStepIndex + 1 }} of {{ store.sessionEvents.length }}</span>
               <span>{{ currentEvent ? formatTime(currentEvent.timestamp) : '' }}</span>
             </div>
             <input
@@ -159,127 +164,118 @@
               type="range"
               min="0"
               :max="Math.max(0, store.sessionEvents.length - 1)"
-              class="w-full accent-gold-500 bg-dark-800 h-1.5 cursor-pointer"
+              class="w-full accent-accent bg-surface h-1.5 rounded cursor-pointer"
             />
           </div>
         </div>
 
         <!-- Event Inspector Body -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-6">
-          <!-- Distillation Golden Report Card (if generated) -->
-          <div
-            v-if="store.distillationReport"
-            class="p-5 bg-gradient-to-r from-dark-900 via-dark-850 to-dark-900 border border-gold-500/40 shadow-xl space-y-4 font-mono"
-          >
-            <div class="flex items-center justify-between pb-3 border-b border-dark-700 flex-wrap gap-2">
-              <div class="flex items-center gap-2">
-                <Sparkles class="w-4 h-4 text-gold-500" />
-                <h3 class="text-xs font-bold text-white uppercase tracking-wider">
-                  Distilled Golden Path ({{ store.distillationReport.noise_pruned_percentage }}% Noise Pruned)
-                </h3>
+        <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <!-- Distillation Report Card (if generated) -->
+          <Card v-if="store.distillationReport">
+            <template #header>
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <Sparkles class="w-4 h-4 text-accent" />
+                  <h3 class="text-xs font-semibold text-text uppercase tracking-wider">
+                    Distilled golden path ({{ store.distillationReport.noise_pruned_percentage }}% noise pruned)
+                  </h3>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Badge variant="neutral">
+                    {{ store.distillationReport.distilled_events }} steps / {{ store.distillationReport.total_events }} raw
+                  </Badge>
+                  <Badge variant="ok">
+                    ~{{ formatTokens(distilledMemoryTokens) }} tokens
+                  </Badge>
+                </div>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] px-2 py-0.5 bg-gold-500/10 text-gold-400 border border-gold-500/30">
-                  {{ store.distillationReport.distilled_events }} Golden Steps / {{ store.distillationReport.total_events }} Raw
-                </span>
-                <span class="text-[10px] px-2 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800">
-                  🪙 ~{{ formatTokens(distilledMemoryTokens) }} tokens
-                </span>
-              </div>
-            </div>
+            </template>
 
             <!-- Golden Steps -->
             <div class="space-y-2">
               <div
                 v-for="step in store.distillationReport.golden_steps"
                 :key="step.step_index"
-                class="p-3 bg-dark-950 border border-dark-800 text-xs space-y-1.5"
+                class="p-3 bg-surface-2 rounded-card border border-border text-xs space-y-1.5"
               >
                 <div class="flex items-center justify-between">
-                  <span class="font-bold text-gold-400">Step {{ step.step_index + 1 }}: {{ step.action_name }}</span>
+                  <span class="font-semibold text-accent">Step {{ step.step_index + 1 }}: {{ step.action_name }}</span>
                   <div class="flex items-center gap-1.5">
-                    <span class="text-[10px] text-gray-500">🪙 ~{{ estimateTokens(step.summary + ' ' + (step.command || '')) }} tokens</span>
-                    <span v-if="step.is_verification" class="text-[10px] px-1.5 py-0.2 bg-emerald-950 text-emerald-400 border border-emerald-800">
-                      VERIFICATION
-                    </span>
+                    <span class="text-xs text-text-muted">~{{ estimateTokens(step.summary + ' ' + (step.command || '')) }} tokens</span>
+                    <Badge v-if="step.is_verification" variant="ok">VERIFICATION</Badge>
                   </div>
                 </div>
-                <p class="text-gray-300 text-[11px]">{{ step.summary }}</p>
-                <div v-if="step.command" class="bg-dark-900 p-2 border border-dark-800 text-[10px] text-cyan-300">
+                <p class="text-text text-xs">{{ step.summary }}</p>
+                <div v-if="step.command" class="bg-surface p-2 rounded border border-border font-mono text-xs text-info">
                   $ {{ step.command }}
                 </div>
-                <div v-if="step.diff_preview" class="bg-dark-900 p-2 border border-dark-800 text-[10px] text-gray-300 whitespace-pre-wrap">
+                <div v-if="step.diff_preview" class="bg-surface p-2 rounded border border-border font-mono text-xs text-text-muted whitespace-pre-wrap">
                   {{ step.diff_preview }}
                 </div>
               </div>
             </div>
 
             <!-- Lessons Learned -->
-            <div v-if="store.distillationReport.lessons_learned?.length" class="space-y-1.5 pt-2 border-t border-dark-800">
-              <div class="text-[10px] text-emerald-400 font-bold uppercase">Extracted Durable Lessons:</div>
-              <ul class="list-disc list-inside text-xs text-gray-300 space-y-1">
+            <div v-if="store.distillationReport.lessons_learned?.length" class="space-y-1.5 pt-3 border-t border-border mt-4">
+              <div class="text-xs text-ok font-semibold uppercase">Extracted durable lessons:</div>
+              <ul class="list-disc list-inside text-xs text-text-muted space-y-1">
                 <li v-for="(l, i) in store.distillationReport.lessons_learned" :key="i">
                   {{ l }}
                 </li>
               </ul>
             </div>
-          </div>
+          </Card>
 
           <!-- Current Step Event Detail Card -->
-          <div v-if="currentEvent" class="bg-dark-900 border border-dark-700 p-5 space-y-4 font-mono">
-            <div class="flex items-center justify-between pb-3 border-b border-dark-700 flex-wrap gap-2">
-              <div class="flex items-center gap-2">
-                <span
-                  class="px-2 py-0.5 text-[10px] uppercase font-bold"
-                  :class="currentEvent.is_error ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-dark-800 text-gold-400 border border-dark-700'"
-                >
-                  {{ currentEvent.event_type }}
-                </span>
-                <span class="text-sm font-bold text-white">{{ currentEvent.tool_name || 'Agent Hook Event' }}</span>
+          <Card v-if="currentEvent">
+            <template #header>
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <Badge :variant="currentEvent.is_error ? 'bad' : 'neutral'">
+                    {{ currentEvent.event_type }}
+                  </Badge>
+                  <span class="text-sm font-semibold text-text">{{ currentEvent.tool_name || 'Agent Hook Event' }}</span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Badge variant="neutral">
+                    {{ formatTokens(currentEventTokens) }} tokens
+                  </Badge>
+                  <span class="text-xs text-text-muted">{{ formatTime(currentEvent.timestamp) }}</span>
+                </div>
+              </div>
+            </template>
+
+            <div class="space-y-4">
+              <!-- Tool Arguments -->
+              <div v-if="currentEvent.tool_args" class="space-y-1">
+                <div class="text-xs text-text-muted font-medium flex items-center justify-between">
+                  <span>Input / parameters</span>
+                  <span>~{{ estimateTokens(currentEvent.tool_args) }} tokens</span>
+                </div>
+                <pre class="p-3 bg-surface-2 rounded-card border border-border text-xs text-text font-mono whitespace-pre-wrap overflow-x-auto max-h-48">{{ formatPayload(currentEvent.tool_args) }}</pre>
               </div>
 
-              <div class="flex items-center gap-2">
-                <!-- Event Token Weight Badge -->
-                <span
-                  class="px-2 py-0.5 text-[10px] font-mono border flex items-center gap-1"
-                  :class="currentEventTokens > 1000 ? 'bg-amber-950/80 text-amber-300 border-amber-800' : 'bg-dark-950 text-gold-400 border-dark-800'"
-                >
-                  <Coins class="w-3 h-3" />
-                  <span>🪙 {{ formatTokens(currentEventTokens) }} tokens</span>
-                  <span v-if="currentEventTokens > 1000" class="text-amber-400 font-bold">(Context Heavy)</span>
-                </span>
+              <!-- Tool Output -->
+              <div v-if="currentEvent.tool_output" class="space-y-1">
+                <div class="text-xs font-medium flex items-center justify-between" :class="currentEvent.is_error ? 'text-bad' : 'text-text-muted'">
+                  <span>Tool output</span>
+                  <span>~{{ estimateTokens(currentEvent.tool_output) }} tokens</span>
+                </div>
+                <pre
+                  class="p-3 bg-surface-2 rounded-card border text-xs whitespace-pre-wrap overflow-x-auto max-h-64 font-mono"
+                  :class="currentEvent.is_error ? 'border-bad/40 text-bad' : 'border-border text-text'"
+                >{{ currentEvent.tool_output }}</pre>
+              </div>
 
-                <span class="text-xs text-gray-500">{{ formatTime(currentEvent.timestamp) }}</span>
+              <!-- Raw Event Payload -->
+              <div v-if="currentEvent.raw_payload" class="space-y-1">
+                <div class="text-xs text-text-muted font-medium">Raw event payload</div>
+                <pre class="p-3 bg-surface-2 rounded-card border border-border text-xs text-text-muted whitespace-pre-wrap overflow-x-auto max-h-40 font-mono">{{ JSON.stringify(currentEvent.raw_payload, null, 2) }}</pre>
               </div>
             </div>
-
-            <!-- Tool Arguments -->
-            <div v-if="currentEvent.tool_args" class="space-y-1">
-              <div class="text-[10px] text-gray-500 uppercase flex items-center justify-between">
-                <span>Input / Parameters</span>
-                <span class="text-gray-600">~{{ estimateTokens(currentEvent.tool_args) }} tokens</span>
-              </div>
-              <pre class="p-3 bg-dark-950 border border-dark-800 text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-48">{{ formatPayload(currentEvent.tool_args) }}</pre>
-            </div>
-
-            <!-- Tool Output -->
-            <div v-if="currentEvent.tool_output" class="space-y-1">
-              <div class="text-[10px] uppercase flex items-center justify-between" :class="currentEvent.is_error ? 'text-red-400' : 'text-gray-500'">
-                <span>Tool Execution Output</span>
-                <span class="text-gray-600">~{{ estimateTokens(currentEvent.tool_output) }} tokens</span>
-              </div>
-              <pre
-                class="p-3 bg-dark-950 border text-xs whitespace-pre-wrap overflow-x-auto max-h-64 font-mono"
-                :class="currentEvent.is_error ? 'border-red-900/60 text-red-300' : 'border-dark-800 text-emerald-300'"
-              >{{ currentEvent.tool_output }}</pre>
-            </div>
-
-            <!-- Raw Event Payload -->
-            <div v-if="currentEvent.raw_payload" class="space-y-1">
-              <div class="text-[10px] text-gray-500 uppercase">Raw Event Payload</div>
-              <pre class="p-3 bg-dark-950 border border-dark-800 text-[10px] text-gray-400 whitespace-pre-wrap overflow-x-auto max-h-40">{{ JSON.stringify(currentEvent.raw_payload, null, 2) }}</pre>
-            </div>
-          </div>
+          </Card>
         </div>
       </div>
     </div>
@@ -299,7 +295,6 @@ import {
   SkipBack,
   SkipForward,
   Sparkles,
-  Coins,
 } from 'lucide-vue-next';
 
 const store = useAutoMemoryStore();

@@ -11,6 +11,8 @@ import type {
   SystemStats,
 } from '~/types';
 import { api } from '~/utils/api';
+import { useWsPulse } from '~/composables/useWsPulse';
+import { useToast } from '~/composables/useToast';
 
 let wsClient: ReturnType<typeof useWsPulse> | null = null;
 
@@ -39,32 +41,30 @@ export const useAutoMemoryStore = defineStore('automemory', {
     proposalsSummary: null as any,
     projects: [] as Project[],
     activeProject: null as string | null,
-    currentMode: 'vibe' as 'vibe' | 'strict' | 'review',
+    currentMode: 'review' as 'vibe' | 'strict' | 'review',
     guardrailRules: [] as any[],
     docs: [] as any[],
     syncStatus: null as any,
+    coordination: {
+      leases: [] as any[],
+      rooms: [] as any[],
+      batons: [] as any[],
+      alerts: [] as any[],
+    },
+    recentEvents: [] as any[],
+    contextPreview: '' as string,
 
     // UI state
     isConnected: false,
     isDistilling: false,
     isLoading: false,
-    scopeFilter: 'all' as 'all' | 'vault' | 'cloud',
+    daemonError: null as string | null,
     memorySearch: '',
-    liveToast: null as { message: string; type: string; timestamp: number } | null,
   }),
 
   getters: {
     filteredMemories(state): Memory[] {
       let list = state.memories;
-
-      // Scope filter
-      if (state.scopeFilter === 'vault') {
-        list = list.filter((m) => m.scope === 'project' || m.source_kind === 'vault');
-      } else if (state.scopeFilter === 'cloud') {
-        list = list.filter((m) => m.scope === 'global' || m.source_kind === 'cloud');
-      }
-
-      // Search query filter
       if (state.memorySearch.trim()) {
         const q = state.memorySearch.toLowerCase();
         list = list.filter(
@@ -72,34 +72,107 @@ export const useAutoMemoryStore = defineStore('automemory', {
             m.content.toLowerCase().includes(q) ||
             m.summary.toLowerCase().includes(q) ||
             m.type.toLowerCase().includes(q) ||
-            m.tags.some((t) => t.toLowerCase().includes(q))
+            m.tags?.some((t) => t.toLowerCase().includes(q))
         );
       }
-
       return list;
     },
 
     activeSession(state): SessionSummary | undefined {
       return state.sessions.find((s) => s.session_id === state.activeSessionId);
     },
+
+    activeLeases(state): any[] {
+      return state.coordination.leases || [];
+    },
+
+    connectedAgents(state): any[] {
+      const known = [
+        { id: 'claude', name: 'Claude Code' },
+        { id: 'cursor', name: 'Cursor' },
+        { id: 'codex', name: 'Codex' },
+        { id: 'agy', name: 'Antigravity' },
+      ];
+
+      const leases = state.coordination.leases || [];
+      const events = state.recentEvents || [];
+      const now = Date.now();
+
+      return known.map((a) => {
+        const heldLeases = leases.filter(
+          (l: any) => l.agent?.toLowerCase().includes(a.id) || l.agent?.toLowerCase().includes(a.name.toLowerCase())
+        );
+        const lastEv = events.find(
+          (e: any) => e.agent?.toLowerCase().includes(a.id) || e.agent?.toLowerCase().includes(a.name.toLowerCase())
+        );
+
+        let status = 'not connected';
+        if (heldLeases.length > 0) {
+          status = 'editing';
+        } else if (lastEv && now - new Date(lastEv.timestamp || lastEv.created_at).getTime() < 10 * 60 * 1000) {
+          status = 'active';
+        } else if (lastEv || state.stats.active_memories > 0) {
+          status = 'idle';
+        }
+
+        return {
+          ...a,
+          status,
+          locks: heldLeases.map((l: any) => l.scope),
+          last_seen: lastEv ? lastEv.timestamp || lastEv.created_at : undefined,
+        };
+      });
+    },
+
+    setupChecklist(state): any[] {
+      const hasAgent = state.stats.active_memories > 0 || state.recentEvents.length > 0;
+      const hasDocs = state.docs.length > 0;
+      const hasSync = !!state.syncStatus;
+      const isReviewMode = state.currentMode !== 'vibe';
+
+      return [
+        {
+          id: 'agent',
+          title: 'Agent connected',
+          done: hasAgent,
+          command: 'automemory connect agy',
+          link: '/agents',
+        },
+        {
+          id: 'instruction_files',
+          title: 'Instruction files',
+          done: hasAgent,
+          command: 'automemory export-rules',
+          link: '/brain',
+        },
+        {
+          id: 'password',
+          title: 'Password set',
+          done: isReviewMode,
+          command: 'automemory rule passwd',
+          link: '/safety',
+        },
+        {
+          id: 'sync',
+          title: 'Sync to another machine',
+          done: hasSync,
+          command: 'automemory sync remote <url>',
+          link: '/sync',
+        },
+      ];
+    },
   },
 
   actions: {
-    showLiveToast(message: string, type: 'info' | 'success' | 'warning' = 'info') {
-      this.liveToast = { message, type, timestamp: Date.now() };
-      setTimeout(() => {
-        if (this.liveToast && Date.now() - this.liveToast.timestamp >= 3800) {
-          this.liveToast = null;
-        }
-      }, 4000);
-    },
-
     async fetchAll() {
       this.isLoading = true;
       try {
+        await this.fetchStats();
         await Promise.allSettled([
-          this.fetchStats(),
           this.fetchMode(),
+          this.fetchCoordination(),
+          this.fetchEvents(),
+          this.fetchContextPreview(),
           this.fetchGuardrailRules(),
           this.fetchMemories(),
           this.fetchSkills(),
@@ -117,35 +190,81 @@ export const useAutoMemoryStore = defineStore('automemory', {
       }
     },
 
+    async fetchStats() {
+      const res = await api.getStats();
+      if (res.ok && res.data) {
+        this.daemonError = null;
+        this.isConnected = true;
+        this.stats = {
+          active_memories: res.data.active_memories ?? 0,
+          archived_memories: res.data.archived_memories ?? 0,
+          active_traces: res.data.active_traces ?? 0,
+          unresolved_failures: res.data.unresolved_failures ?? 0,
+          pending_proposals: res.data.pending_proposals ?? 0,
+          total_projects: res.data.total_projects ?? 0,
+          total_sessions: res.data.total_sessions ?? 0,
+        };
+      } else {
+        this.daemonError = res.error || "AutoMemory daemon is unreachable";
+        this.isConnected = false;
+      }
+    },
+
+    async fetchCoordination() {
+      const res = await api.getCoordination(this.activeProject);
+      if (res.ok && res.data) {
+        this.daemonError = null;
+        this.coordination = {
+          leases: Array.isArray(res.data.leases) ? res.data.leases : [],
+          rooms: Array.isArray(res.data.rooms) ? res.data.rooms : [],
+          batons: Array.isArray(res.data.batons) ? res.data.batons : [],
+          alerts: Array.isArray(res.data.alerts) ? res.data.alerts : [],
+        };
+      } else if (!res.ok && res.error) {
+        this.daemonError = res.error;
+      }
+    },
+
+    async fetchEvents() {
+      const res = await api.getEvents();
+      if (res.ok && res.data) {
+        this.recentEvents = Array.isArray(res.data) ? res.data : [];
+      }
+    },
+
+    async fetchContextPreview() {
+      this.contextPreview = await api.getContext(this.activeProject);
+    },
+
     async fetchDocs() {
-      this.docs = await api.getDocs(this.activeProject);
+      const res = await api.getDocs(this.activeProject);
+      if (res.ok && res.data) {
+        this.docs = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async fetchSyncStatus() {
-      this.syncStatus = await api.getSyncStatus(this.activeProject);
-    },
-
-    async fetchStats() {
-      const data = await api.getStats();
-      if (data) {
-        this.stats = {
-          active_memories: data.active_memories ?? 0,
-          archived_memories: data.archived_memories ?? 0,
-          active_traces: data.active_traces ?? 0,
-          unresolved_failures: data.unresolved_failures ?? 0,
-          pending_proposals: data.pending_proposals ?? 0,
-          total_projects: data.total_projects ?? 0,
-          total_sessions: data.total_sessions ?? 0,
-        };
+      const res = await api.getSyncStatus(this.activeProject);
+      if (res.ok && res.data) {
+        this.syncStatus = res.data;
       }
     },
 
     async fetchMemories() {
-      this.memories = await api.getMemories(this.activeProject);
+      const res = await api.getMemories(this.activeProject);
+      if (res.ok && res.data) {
+        this.daemonError = null;
+        this.memories = Array.isArray(res.data) ? res.data : [];
+      } else if (!res.ok) {
+        this.daemonError = res.error || 'Failed to fetch memories';
+      }
     },
 
     async fetchSkills() {
-      this.skills = await api.getSkills(this.activeProject);
+      const res = await api.getSkills(this.activeProject);
+      if (res.ok && res.data) {
+        this.skills = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async fetchConstitution() {
@@ -153,25 +272,32 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     async fetchSessions() {
-      this.sessions = await api.getSessions(this.activeProject);
-      if (this.sessions.length > 0 && !this.activeSessionId) {
-        this.selectSession(this.sessions[0].session_id);
+      const res = await api.getSessions(this.activeProject);
+      if (res.ok && res.data) {
+        this.sessions = Array.isArray(res.data) ? res.data : [];
+        if (this.sessions.length > 0 && !this.activeSessionId) {
+          this.selectSession(this.sessions[0].session_id);
+        }
       }
     },
 
     async selectSession(sessionId: string) {
       this.activeSessionId = sessionId;
       this.distillationReport = null;
-      this.sessionEvents = await api.getSessionEvents(sessionId);
+      const res = await api.getSessionEvents(sessionId);
+      if (res.ok && res.data) {
+        this.sessionEvents = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async distillSession(sessionId: string) {
       this.isDistilling = true;
       try {
-        const report = await api.distillSession(sessionId);
-        if (report) {
-          this.distillationReport = report;
-          this.showLiveToast('100-to-1 Trajectory Distillation synthesized successfully', 'success');
+        const res = await api.distillSession(sessionId);
+        if (res.ok && res.data) {
+          this.distillationReport = res.data;
+          const { success } = useToast();
+          success('Trajectory distillation complete');
         }
       } finally {
         this.isDistilling = false;
@@ -179,52 +305,64 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     async fetchTraces() {
-      this.traces = await api.getTraces(this.activeProject);
+      const res = await api.getTraces(this.activeProject);
+      if (res.ok && res.data) {
+        this.traces = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async fetchFailures() {
-      this.failures = await api.getFailures(this.activeProject);
+      const res = await api.getFailures(this.activeProject);
+      if (res.ok && res.data) {
+        this.failures = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async fetchProposals() {
-      this.proposals = await api.getProposals(this.activeProject);
+      const res = await api.getProposals(this.activeProject);
+      if (res.ok && res.data) {
+        this.proposals = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
     async fetchProjects() {
-      this.projects = await api.getProjects();
+      const res = await api.getProjects();
+      if (res.ok && res.data) {
+        this.projects = Array.isArray(res.data) ? res.data : [];
+      }
     },
 
-    async decideProposal(id: string, approved: boolean) {
-      const ok = await api.decideProposal(id, approved);
-      if (ok) {
+
+    async decideProposal(id: string, approved: boolean, reason?: string) {
+      const res = await api.decideProposal(id, approved, reason);
+      const { success, error } = useToast();
+      if (res.ok) {
         this.proposals = this.proposals.filter((p) => p.id !== id);
         this.stats.pending_proposals = Math.max(0, this.stats.pending_proposals - 1);
-        this.showLiveToast(
-          `Proposal ${approved ? 'approved' : 'rejected'} successfully`,
-          approved ? 'success' : 'warning'
-        );
+        success(approved ? 'Suggestion approved' : 'Suggestion rejected');
         this.fetchMemories();
         this.fetchProposalsSummary();
+      } else {
+        error(res.error || 'Failed to decide proposal');
       }
+      return res.ok;
     },
 
     async fetchProposalsSummary() {
-      const summary = await api.getProposalsSummary(this.activeProject);
-      if (summary) {
-        this.proposalsSummary = summary;
+      const res = await api.getProposalsSummary(this.activeProject);
+      if (res.ok && res.data) {
+        this.proposalsSummary = res.data;
       }
-      return summary;
+      return res.data;
     },
 
     async decideAllProposals(approved: boolean, proposalType?: string | null) {
       this.isLoading = true;
       const res = await api.decideAllProposals(approved, proposalType, this.activeProject);
-      if (res && res.success) {
-        const action = approved ? 'Approved' : 'Rejected';
-        this.showLiveToast(
-          `${action} ${res.result.decided_count} proposals (${res.result.archived_memories_count} duplicates archived)`,
-          approved ? 'success' : 'info'
-        );
+      const { success, error } = useToast();
+      if (res.ok && res.data) {
+        const count = res.data.result?.decided_count || 'all';
+        success(`${approved ? 'Approved' : 'Rejected'} ${count} suggestions`);
         await Promise.allSettled([
           this.fetchProposals(),
           this.fetchProposalsSummary(),
@@ -232,10 +370,10 @@ export const useAutoMemoryStore = defineStore('automemory', {
           this.fetchMemories(),
         ]);
       } else {
-        this.showLiveToast('Failed to execute bulk proposal decision', 'warning');
+        error(res.error || 'Failed to execute bulk decision');
       }
       this.isLoading = false;
-      return res;
+      return res.data;
     },
 
     async fetchMode() {
@@ -246,65 +384,102 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     async setMode(mode: 'vibe' | 'strict' | 'review', project?: string) {
-      const ok = await api.setMode(mode, project || this.activeProject);
-      if (ok) {
+      const res = await api.setMode(mode, project || this.activeProject);
+      const { success, error } = useToast();
+      if (res.ok) {
         this.currentMode = mode;
-        this.showLiveToast(`Autopilot mode switched to ${mode.toUpperCase()}`, 'success');
+        success(`Safety mode set to ${mode === 'strict' ? 'Strict' : mode === 'review' ? 'Balanced' : 'Relaxed'}`);
+      } else {
+        error(res.error || 'Failed to switch mode');
       }
+      return res.ok;
     },
 
     async fetchGuardrailRules() {
-      this.guardrailRules = await api.getGuardrailRules();
-    },
-
-    async evaluateGuardrail(tool_name: string, args: Record<string, any>) {
-      return api.evaluateGuardrail({
-        tool_name,
-        args,
-        project_id: this.activeProject,
-        mode: this.currentMode,
-      });
+      const res = await api.getGuardrailRules();
+      if (res.ok && res.data) {
+        this.guardrailRules = res.data;
+      }
     },
 
     async archiveMemory(id: string) {
-      const ok = await api.archiveMemory(id);
-      if (ok) {
+      const mem = this.memories.find((m) => m.id === id);
+      const res = await api.archiveMemory(id);
+      const { success, error } = useToast();
+      if (res.ok) {
         this.memories = this.memories.filter((m) => m.id !== id);
         this.stats.active_memories = Math.max(0, this.stats.active_memories - 1);
         this.stats.archived_memories += 1;
-        this.showLiveToast('Memory archived successfully', 'success');
+
+        // Undo action restores memory
+        success(
+          'Archived. Agents will stop using this.',
+          async () => {
+            if (mem) {
+              await api.addMemory({
+                summary: mem.summary,
+                content: mem.content,
+                type: mem.type,
+              });
+              await this.fetchMemories();
+            }
+          },
+          'Undo'
+        );
+      } else {
+        error(res.error || 'Failed to archive note');
       }
-      return ok;
+      return res.ok;
     },
 
     async addMemory(payload: { summary: string; content?: string; type?: string }) {
-      const ok = await api.addMemory(payload);
-      if (ok) {
+      const res = await api.addMemory({
+        ...payload,
+        project_id: this.activeProject,
+      });
+      const { success, error } = useToast();
+      if (res.ok) {
         await this.fetchMemories();
-        this.showLiveToast('Added. Every agent on this project will see it.', 'success');
+        await this.fetchStats();
+        success('Added to Project brain. Every agent will see it.');
+      } else {
+        error(res.error || 'Failed to add note');
       }
-      return ok;
+      return res.ok;
     },
 
-    async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string }) {
-      const ok = await api.updateMemory(id, payload);
-      if (ok) {
+    async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string; pinned?: boolean }) {
+      const res = await api.updateMemory(id, payload);
+      const { success, error } = useToast();
+      if (res.ok) {
         const mem = this.memories.find((m) => m.id === id);
         if (mem) {
           if (payload.summary) mem.summary = payload.summary;
           if (payload.content) mem.content = payload.content;
+          if (payload.pinned !== undefined) mem.status = payload.pinned ? 'pinned' : 'active';
         }
-        this.showLiveToast('Memory updated successfully', 'success');
+        success('Note updated');
+      } else {
+        error(res.error || 'Failed to update note');
       }
-      return ok;
+      return res.ok;
+    },
+
+    async togglePin(memory: Memory) {
+      const isPinned = memory.status === 'pinned';
+      return this.updateMemory(memory.id, {
+        pinned: !isPinned,
+        reason: isPinned ? 'Unpinned by human' : 'Pinned by human',
+      });
     },
 
     async resolveFailure(id: string, fixApplied: string, verificationResult?: string) {
-      const ok = await api.resolveFailure(id, {
+      const res = await api.resolveFailure(id, {
         fix_applied: fixApplied,
         verification_result: verificationResult,
       });
-      if (ok) {
+      const { success, error } = useToast();
+      if (res.ok) {
         const f = this.failures.find((item) => item.id === id);
         if (f) {
           f.status = 'resolved';
@@ -312,9 +487,11 @@ export const useAutoMemoryStore = defineStore('automemory', {
           if (verificationResult) f.verification_result = verificationResult;
         }
         this.stats.unresolved_failures = Math.max(0, this.stats.unresolved_failures - 1);
-        this.showLiveToast('Failure resolved and playbook recorded', 'success');
+        success('Resolved and saved to playbook');
+      } else {
+        error(res.error || 'Failed to resolve failure');
       }
-      return ok;
+      return res.ok;
     },
 
     async addGuardrailRule(rule: {
@@ -325,34 +502,52 @@ export const useAutoMemoryStore = defineStore('automemory', {
       description?: string;
       mitigation_hint?: string;
     }) {
-      const ok = await api.addGuardrailRule({
+      const res = await api.addGuardrailRule({
         ...rule,
         project_id: this.activeProject,
       });
-      if (ok) {
-        this.showLiveToast(`Custom guardrail rule '${rule.name}' activated`, 'success');
+      const { success, error } = useToast();
+      if (res.ok) {
+        success(`Guardrail rule '${rule.name}' saved`);
         await this.fetchGuardrailRules();
+      } else {
+        error(res.error || 'Failed to add rule');
       }
-      return ok;
+      return res.ok;
     },
 
     async deleteGuardrailRule(id: string) {
-      const ok = await api.deleteGuardrailRule(id);
-      if (ok) {
+      const rule = this.guardrailRules.find((r) => r.id === id);
+      const res = await api.deleteGuardrailRule(id);
+      const { success, error } = useToast();
+      if (res.ok) {
         this.guardrailRules = this.guardrailRules.filter((r) => r.id !== id);
-        this.showLiveToast('Custom guardrail rule deleted', 'info');
+        success(
+          'Rule deleted',
+          async () => {
+            if (rule) {
+              await this.addGuardrailRule(rule);
+            }
+          },
+          'Undo'
+        );
+      } else {
+        error(res.error || 'Failed to delete rule');
       }
-      return ok;
+      return res.ok;
     },
 
     async toggleGuardrailRule(id: string, enabled: boolean) {
-      const ok = await api.toggleGuardrailRule(id, enabled);
-      if (ok) {
+      const res = await api.toggleGuardrailRule(id, enabled);
+      const { success, error } = useToast();
+      if (res.ok) {
         const r = this.guardrailRules.find((rule) => rule.id === id);
         if (r) r.enabled = enabled;
-        this.showLiveToast(`Rule ${enabled ? 'enabled' : 'disabled'}`, 'info');
+        success(`Rule ${enabled ? 'enabled' : 'disabled'}`);
+      } else {
+        error(res.error || 'Failed to toggle rule');
       }
-      return ok;
+      return res.ok;
     },
 
     // ── WebSocket Real-Time Engine ──────────────────────────────────────────
@@ -368,69 +563,42 @@ export const useAutoMemoryStore = defineStore('automemory', {
       });
 
       setInterval(() => {
-        if (wsClient) {
-          this.isConnected = wsClient.isConnected.value;
+        if (wsClient && wsClient.isConnected.value) {
+          this.isConnected = true;
+          this.daemonError = null;
+        } else if (this.daemonError !== null) {
+          this.isConnected = false;
         }
       }, 500);
     },
 
-    sendWsRpc(method: string, params: Record<string, any> = {}) {
-      if (wsClient) {
-        wsClient.sendRpc(method, params);
-      }
-    },
-
     handleIncomingWsMessage(msg: any) {
-      // 1. Handle RPC responses
       if (msg.result) {
         if (msg.result.active_memories !== undefined) {
           this.stats = { ...this.stats, ...msg.result };
         } else if (Array.isArray(msg.result)) {
-          if (msg.result.length > 0 && msg.result[0].content !== undefined) {
+          if (msg.result.length === 0 || msg.result[0].content !== undefined) {
             this.memories = msg.result;
-          } else if (msg.result.length > 0 && msg.result[0].session_id !== undefined) {
+          } else if (msg.result[0].session_id !== undefined) {
             this.sessions = msg.result;
           }
         }
         return;
       }
 
-      // 2. Handle Real-Time Event Broadcasts
       if (msg.event_type) {
         const evType = msg.event_type as string;
-        this.showLiveToast(`⚡ Live event: ${evType}`, 'info');
-
-        if (msg.session_id && msg.session_id === this.activeSessionId) {
-          this.sessionEvents.push({
-            event_id: msg.event_id || `ev-${Date.now()}`,
-            session_id: msg.session_id,
-            event_type: evType,
-            timestamp: msg.timestamp || new Date().toISOString(),
-            adapter_id: msg.agent?.adapter_id || 'agy',
-            tool_name: msg.tool?.tool_name || null,
-            tool_args: msg.tool?.input_preview || null,
-            tool_output: msg.tool?.output_preview || null,
-            is_error: msg.tool?.is_error ?? false,
-            raw_payload: msg.raw_payload,
-          });
-        }
-
         if (evType.includes('memory') || evType.includes('save')) {
           this.fetchMemories();
           this.fetchStats();
-        } else if (evType.includes('failure') || evType.includes('error')) {
-          this.fetchFailures();
-          this.fetchStats();
-        } else if (evType.includes('trace')) {
-          this.fetchTraces();
-          this.fetchSkills();
-          this.fetchStats();
+        } else if (evType.includes('lease') || evType.includes('lock')) {
+          this.fetchCoordination();
         } else if (evType.includes('proposal')) {
           this.fetchProposals();
           this.fetchStats();
         } else {
-          this.fetchSessions();
-          this.fetchStats();
+          this.fetchCoordination();
+          this.fetchEvents();
         }
       }
     },

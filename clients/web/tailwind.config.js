@@ -13,37 +13,67 @@ export default {
   theme: {
     extend: {
       colors: {
+        bg: 'var(--bg)',
+        surface: {
+          DEFAULT: 'var(--surface)',
+          2: 'var(--surface-2)',
+        },
+        border: {
+          DEFAULT: 'var(--border)',
+          strong: 'var(--border-strong)',
+        },
+        text: {
+          DEFAULT: 'var(--text)',
+          muted: 'var(--text-muted)',
+        },
+        accent: {
+          DEFAULT: 'var(--accent)',
+          solid: 'var(--accent-solid)',
+          fg: 'var(--accent-fg)',
+        },
+        ok: {
+          DEFAULT: 'var(--ok)',
+          bg: 'var(--ok-bg)',
+        },
+        warn: {
+          DEFAULT: 'var(--warn)',
+          bg: 'var(--warn-bg)',
+        },
+        bad: {
+          DEFAULT: 'var(--bad)',
+          bg: 'var(--bad-bg)',
+        },
+        info: {
+          DEFAULT: 'var(--info)',
+          bg: 'var(--info-bg)',
+        },
+        overlay: 'var(--overlay)',
+
+        // Backwards compatibility aliases
         dark: {
-          950: '#000000',
-          900: '#080808',
-          850: '#0f0f0f',
-          800: '#151515',
-          700: '#222222',
-          600: '#333333',
+          950: '#0b0c0e',
+          900: 'var(--surface)',
+          850: 'var(--surface-2)',
+          800: 'var(--surface-2)',
+          700: 'var(--border)',
+          600: 'var(--text-muted)',
         },
         gold: {
           400: '#ffd043',
-          500: '#ffc000',
+          500: 'var(--accent)',
           600: '#e0a800',
         },
-        cyan: {
-          400: '#38bdf8',
-          500: '#29abe2',
-          600: '#0284c7',
-        },
-        accent: {
-          green: '#10b981',
-          red: '#ef4444',
-          purple: '#a855f7',
-        }
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
       },
       fontFamily: {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
-      animation: {
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'spin-slow': 'spin 12s linear infinite',
+      borderRadius: {
+        card: '8px',
+        pill: '9999px',
       },
     },
   },

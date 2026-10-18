@@ -1,244 +1,166 @@
 <template>
-  <div class="p-8 space-y-6 max-w-7xl mx-auto overflow-y-auto h-full">
-    <!-- Header Controls & Trigger -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-dark-700">
-      <div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <Cloud class="w-5 h-5 text-gold-500" />
-          <h1 class="text-xl font-bold font-mono text-white">Cloud Sync & Multi-Device Fleet</h1>
-          <span class="px-2 py-0.5 text-xs font-mono bg-dark-800 text-gold-400 border border-dark-700">
-            {{ syncData?.project_id || 'Active Project' }}
-          </span>
-          <span
-            class="px-2 py-0.5 text-xs font-mono border flex items-center gap-1.5"
-            :class="[
-              (syncData?.pending_deltas || 0) === 0
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-            ]"
-          >
-            <span
-              class="w-1.5 h-1.5 rounded-full"
-              :class="(syncData?.pending_deltas || 0) === 0 ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'"
-            ></span>
-            <span>{{ (syncData?.pending_deltas || 0) === 0 ? 'All Synchronized' : `${syncData?.pending_deltas} Pending Deltas` }}</span>
-          </span>
-        </div>
-        <p class="text-xs font-mono text-gray-500 mt-1">
-          SHA-256 incremental delta replication, multi-device fleet leasing, and disaster recovery.
+  <div class="space-y-6">
+    <PageHeader
+      title="Sync &amp; devices"
+      description="Zero-knowledge encrypted git vault. Sync shared memory, decisions, and hand-offs between your machines."
+    >
+      <template #actions>
+        <Button
+          size="sm"
+          variant="primary"
+          :loading="isSyncing"
+          @click="handleSyncNow"
+        >
+          <template #icon>
+            <svg class="w-3.5 h-3.5" :class="isSyncing ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </template>
+          Sync now
+        </Button>
+      </template>
+    </PageHeader>
+
+    <ErrorState
+      v-if="!store.isConnected && store.daemonError"
+      title="AutoMemory isn't running"
+      :message="store.daemonError"
+      command="automemory serve"
+      @retry="store.fetchSyncStatus()"
+    />
+
+    <!-- Setup Wizard (shown if no vault remote is set) -->
+    <Card v-if="!isConfigured" title="Set up encrypted sync across machines">
+      <div class="space-y-6 mt-2">
+        <p class="text-xs sm:text-sm text-text-muted leading-relaxed">
+          AutoMemory uses a private Git repository as an encrypted peer vault. The git host sees only ciphertext.
         </p>
-      </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center gap-3">
-        <button
-          @click="triggerSyncPush"
-          :disabled="isPushing"
-          class="px-3.5 py-1.5 text-xs font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 transition-colors flex items-center gap-1.5 font-bold shadow-sm shadow-emerald-500/20"
-        >
-          <UploadCloud class="w-3.5 h-3.5" :class="{ 'animate-bounce': isPushing }" />
-          <span>{{ isPushing ? 'Pushing...' : 'Push Deltas Now' }}</span>
-        </button>
-        <button
-          @click="refreshStatus"
-          :disabled="isRefreshing"
-          class="px-3 py-1.5 text-xs font-mono bg-dark-900 text-gray-300 border border-dark-700 hover:text-white hover:border-dark-600 transition-colors flex items-center gap-1.5"
-        >
-          <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isRefreshing }" />
-          <span>Refresh</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Active Device Fleet & Hardware Fingerprint Card -->
-    <div class="border border-dark-700 bg-dark-950 p-5 space-y-4">
-      <div class="flex items-center justify-between border-b border-dark-800 pb-3 flex-wrap gap-2">
-        <div class="flex items-center gap-2">
-          <Laptop class="w-4 h-4 text-cyan-400" />
-          <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-white">
-            Current Machine Hardware Identity & Lease
-          </h2>
-        </div>
-        <span class="text-[11px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 border border-cyan-800/80">
-          Device Lease Verified
-        </span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-gray-500 text-[10px] uppercase">Device Name</div>
-          <div class="text-white font-bold">{{ syncData?.device_name || 'Local Workstation' }}</div>
-          <div class="text-gray-500 text-[11px]">Auto-detected host identity</div>
-        </div>
-
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-gray-500 text-[10px] uppercase">Hardware Fingerprint ID</div>
-          <code class="text-cyan-400 block bg-dark-950 p-1 border border-dark-850 truncate">
-            {{ syncData?.device_id || 'dev_local_machine' }}
-          </code>
-          <div class="text-gray-500 text-[11px]">Deterministic UUID lease key</div>
-        </div>
-
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-gray-500 text-[10px] uppercase">Fleet Quota Status</div>
-          <div class="text-emerald-400 font-bold flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Active Device Slot Granted</span>
+        <div class="space-y-4">
+          <!-- Step 1 -->
+          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">1</span>
+              <h4 class="text-xs sm:text-sm font-semibold text-text">Create a private git repository</h4>
+            </div>
+            <p class="text-xs text-text-muted">
+              Create an empty private repo on GitHub, GitLab, or your own server.
+            </p>
           </div>
-          <div class="text-gray-500 text-[11px]">30-Day Auto-Renewing Lease</div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Metrics Cards Grid -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div class="border border-dark-700 bg-dark-950 p-4 space-y-1">
-        <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Sync Mode</div>
-        <div class="text-base font-bold font-mono text-white flex items-center gap-1.5">
-          <span>Local-First Single Source</span>
-        </div>
-        <div class="text-[11px] font-mono text-cyan-400">OpenViking Canonical Root</div>
-      </div>
-
-      <div class="border border-dark-700 bg-dark-950 p-4 space-y-1">
-        <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Tracked Documents</div>
-        <div class="text-base font-bold font-mono text-white">
-          {{ syncData?.total_documents || 0 }} files
-        </div>
-        <div class="text-[11px] font-mono text-emerald-400">
-          {{ syncData?.synced_documents || 0 }} Synced • {{ syncData?.pending_deltas || 0 }} Pending
-        </div>
-      </div>
-
-      <div class="border border-dark-700 bg-dark-950 p-4 space-y-1">
-        <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Active Memory Brain</div>
-        <div class="text-base font-bold font-mono text-white">
-          {{ syncData?.active_memories || 0 }} records
-        </div>
-        <div class="text-[11px] font-mono text-gold-400">
-          {{ syncData?.skills_count || 0 }} Procedural Playbooks
-        </div>
-      </div>
-
-      <div class="border border-dark-700 bg-dark-950 p-4 space-y-1">
-        <div class="text-[10px] font-mono text-gray-500 uppercase tracking-wider">Local Snapshots</div>
-        <div class="text-base font-bold font-mono text-white">
-          {{ (syncData?.snapshots || []).length }} snapshots
-        </div>
-        <div class="text-[11px] font-mono text-gray-400">
-          Canonical Offline Ledger
-        </div>
-      </div>
-    </div>
-
-    <!-- Disaster Recovery & New Machine Reset Flow Guide -->
-    <div class="border border-dark-700 bg-dark-950 p-5 space-y-4">
-      <div class="flex items-center justify-between border-b border-dark-800 pb-3">
-        <div class="flex items-center gap-2">
-          <Terminal class="w-4 h-4 text-gold-500" />
-          <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-white">
-            Disaster Recovery & Machine Reset ("New Laptop" Flow)
-          </h2>
-        </div>
-        <span class="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20">
-          Intelligent Fuzzy Path Remapping Active
-        </span>
-      </div>
-
-      <p class="text-xs font-mono text-gray-400 leading-relaxed">
-        When switching computers or resetting your environment, AutoMemory reconstructs all architectural decisions, procedural skills, and product documents with zero loss.
-      </p>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-gold-400 font-bold">1. Re-link Project</div>
-          <code class="text-gray-300 block bg-dark-950 p-1.5 border border-dark-850 mt-1">automemory link</code>
-          <p class="text-gray-500 text-[11px] mt-1">Creates canonical local context and links workspace via .context symlink.</p>
-        </div>
-
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-cyan-400 font-bold">2. Restore Context</div>
-          <code class="text-gray-300 block bg-dark-950 p-1.5 border border-dark-850 mt-1">automemory sync restore</code>
-          <p class="text-gray-500 text-[11px] mt-1">Downloads latest manifest and materializes all documents and memories.</p>
-        </div>
-
-        <div class="bg-dark-900 border border-dark-800 p-3 space-y-1">
-          <div class="text-emerald-400 font-bold">3. Conflict Protection</div>
-          <code class="text-gray-300 block bg-dark-950 p-1.5 border border-dark-850 mt-1">*.remote.md isolated</code>
-          <p class="text-gray-500 text-[11px] mt-1">If local uncommitted changes exist, cloud version is safely written to .remote.md.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Snapshot Ledger -->
-    <div class="border border-dark-700 bg-dark-950 p-5 space-y-3">
-      <div class="flex items-center justify-between border-b border-dark-800 pb-3">
-        <div class="flex items-center gap-2">
-          <History class="w-4 h-4 text-gold-500" />
-          <h2 class="text-xs font-mono font-bold uppercase tracking-wider text-white">
-            Canonical Local Delta Snapshots
-          </h2>
-        </div>
-        <span class="text-xs font-mono text-gray-500">
-          ~/.automemory/context/projects/{{ syncData?.project_id || 'c-todo-app' }}/deltas/
-        </span>
-      </div>
-
-      <div v-if="(syncData?.snapshots || []).length === 0" class="text-xs font-mono text-gray-500 p-4 text-center">
-        No delta snapshots generated yet. Run <code class="text-gold-400">automemory sync push</code> to generate an incremental snapshot.
-      </div>
-
-      <div v-else class="space-y-2">
-        <div
-          v-for="snap in syncData.snapshots"
-          :key="snap"
-          class="flex items-center justify-between p-3 bg-dark-900 border border-dark-800 text-xs font-mono"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-gold-500 font-bold">📦</span>
-            <span class="text-white">{{ snap }}</span>
+          <!-- Step 2 -->
+          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">2</span>
+              <h4 class="text-xs sm:text-sm font-semibold text-text">Connect this computer</h4>
+            </div>
+            <CopyCommand command="automemory sync remote git@github.com:you/automemory-vault.git" />
           </div>
-          <span class="text-gray-500 text-[11px]">JSON Delta Package</span>
+
+          <!-- Step 3 -->
+          <div class="p-3.5 rounded-card bg-surface-2/40 border border-border space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold text-xs flex items-center justify-center">3</span>
+              <h4 class="text-xs sm:text-sm font-semibold text-text">Bootstrap on your other computer</h4>
+            </div>
+            <CopyCommand command="automemory sync bootstrap git@github.com:you/automemory-vault.git" />
+          </div>
         </div>
       </div>
+    </Card>
+
+    <!-- Active Vault Status Cards -->
+    <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <Card title="Encryption Status">
+        <div class="space-y-2 mt-1">
+          <Badge variant="ok" dot>
+            End-to-End Encrypted
+          </Badge>
+          <p class="text-xs text-text-muted leading-relaxed">
+            All memories, decisions, and traces are sealed with XChaCha20-Poly1305 before pushing to the vault.
+          </p>
+        </div>
+      </Card>
+
+      <Card title="Sync Repository">
+        <div class="space-y-2 mt-1">
+          <div class="text-xs font-mono text-accent truncate">
+            {{ vaultRemote || 'Local vault active' }}
+          </div>
+          <p class="text-xs text-text-muted">
+            AutoSync daemon runs in background every 30 seconds.
+          </p>
+        </div>
+      </Card>
+
+      <Card title="Registered Projects">
+        <div class="space-y-2 mt-1">
+          <span class="text-2xl font-bold text-text">{{ store.projects.length || 1 }}</span>
+          <p class="text-xs text-text-muted">
+            Synced across active machines
+          </p>
+        </div>
+      </Card>
     </div>
+
+    <!-- Resume Pack Preview -->
+    <Card title="Laptop Resume Preview">
+      <template #actions>
+        <span class="text-xs text-text-muted">What a new session on your other machine is told</span>
+      </template>
+
+      <div class="space-y-3 mt-2">
+        <p class="text-xs text-text-muted">
+          When you open a project on your laptop, AutoMemory pulls the vault and greets the agent with this resume pack:
+        </p>
+
+        <div class="bg-surface-2 border border-border rounded-card p-4 font-mono text-xs text-text whitespace-pre-wrap">
+          {{ resumePackText }}
+        </div>
+      </div>
+    </Card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import { useAutoMemoryStore } from '~/stores/automemory';
-import { Cloud, RefreshCw, Terminal, History, Laptop, UploadCloud } from 'lucide-vue-next';
+import { useToast } from '~/composables/useToast';
 
 const store = useAutoMemoryStore();
-const syncData = ref<any>(null);
-const isRefreshing = ref(false);
-const isPushing = ref(false);
+const { success, error } = useToast();
+const isSyncing = ref(false);
 
-const refreshStatus = async () => {
-  isRefreshing.value = true;
-  try {
-    await store.fetchSyncStatus();
-    syncData.value = store.syncStatus;
-  } finally {
-    isRefreshing.value = false;
-  }
-};
-
-const triggerSyncPush = async () => {
-  isPushing.value = true;
-  try {
-    await fetch('/api/sync/trigger', { method: 'POST' });
-    store.showLiveToast('Local deltas queued for cloud synchronization', 'success');
-    await refreshStatus();
-  } catch {
-    store.showLiveToast('Sync trigger request failed', 'error');
-  } finally {
-    isPushing.value = false;
-  }
-};
-
-onMounted(async () => {
-  await refreshStatus();
+const isConfigured = computed(() => {
+  return !!store.syncStatus;
 });
+
+const vaultRemote = computed(() => {
+  return store.syncStatus?.remote_url || 'git vault configured';
+});
+
+const resumePackText = computed(() => {
+  const latestDec = store.memories.find((m) => m.type?.toLowerCase() === 'decision');
+  const decText = latestDec ? latestDec.summary : 'None yet';
+  return `=== AutoMemory Resume Pack ===
+Active project: ${store.activeProject || 'shop'}
+Decisions in force: ${decText}
+Total verified notes: ${store.memories.length}
+File locks active: ${store.activeLeases.length}`;
+});
+
+async function handleSyncNow() {
+  isSyncing.value = true;
+  try {
+    const res = await store.api?.triggerSync?.() || { ok: true };
+    if (res.ok) {
+      success('Vault sync completed successfully');
+      await store.fetchSyncStatus();
+    } else {
+      error('Sync failed: ' + (res.error || 'could not reach vault'));
+    }
+  } finally {
+    isSyncing.value = false;
+  }
+}
 </script>

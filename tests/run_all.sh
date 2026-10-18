@@ -31,6 +31,7 @@ run "shared instruction files"        python3 tests/scenarios/rules_export.py
 run "registration + hook robustness"  python3 tests/scenarios/registration.py
 run "human password gate"             python3 tests/scenarios/human_gate.py
 run "dashboard API"                   python3 tests/scenarios/dashboard.py
+run "dashboard UI contrast"           python3 tests/ui/contrast.py
 run "eval harness maths"              python3 tests/eval/run_eval.py selftest
 if [ "$QUICK" = 0 ]; then
   run "CodeIntel smoke (real engine)" python3 tests/codeintel/smoke.py
