@@ -24,7 +24,7 @@
       <h3 class="text-xs sm:text-sm font-semibold text-text uppercase tracking-wider text-text-muted">
         Autopilot Safety Mode
       </h3>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div data-tour="safety-modes" class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           v-for="m in modes"
           :key="m.id"

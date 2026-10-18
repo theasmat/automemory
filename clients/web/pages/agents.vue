@@ -1,6 +1,7 @@
 <template>
   <div class="space-y-6">
     <PageHeader
+      data-tour="agents-header"
       title="Agents &amp; locks"
       description="Mutual exclusion across worktrees. File locks prevent collisions and race conditions between parallel agents."
     >

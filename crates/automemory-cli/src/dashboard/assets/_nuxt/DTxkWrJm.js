@@ -1,0 +1,1 @@
+import{j as e,S as t,c as o,o as n}from"./DdmKJ9eJ.js";const s={class:"p-8 text-center text-text-muted text-sm"},_=e({__name:"proposals",setup(a){return t("/inbox",{replace:!0}),(c,r)=>(n(),o("div",s,"Redirecting to Inbox..."))}});export{_ as default};

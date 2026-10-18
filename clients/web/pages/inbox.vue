@@ -1,6 +1,7 @@
 <template>
   <div class="space-y-6">
     <PageHeader
+      data-tour="inbox-header"
       title="Inbox"
       description="Review suggestions submitted by agents before they become persistent project knowledge."
     >

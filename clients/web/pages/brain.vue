@@ -1,6 +1,7 @@
 <template>
   <div class="space-y-6">
     <PageHeader
+      data-tour="brain-header"
       title="Project brain"
       :description="`Shared persistent context for ${store.activeProject || 'all agents'}. Every session starts from these notes.`"
     >

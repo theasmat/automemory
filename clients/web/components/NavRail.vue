@@ -82,6 +82,7 @@
 
   <!-- Mobile Bottom Tab Bar (< 768px) -->
   <nav
+    data-tour="nav-rail"
     class="md:hidden fixed bottom-0 inset-x-0 bg-bg/95 backdrop-blur-md border-t border-border z-40 flex items-center justify-around h-14 px-2"
     aria-label="Mobile navigation"
   >

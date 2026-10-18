@@ -1,202 +1,192 @@
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAutoMemoryStore } from '~/stores/automemory';
 
+export type Placement = 'top' | 'bottom' | 'left' | 'right';
+
 export interface CoachStep {
   id: string;
-  targetSelector: string;
+  /** CSS selector of the element to spotlight. Omit for a centered card (welcome, finish). */
+  target?: string;
   title: string;
-  content: string;
+  body: string;
   route?: string;
-  tryActionLabel?: string;
-  tryAction?: () => Promise<void> | void;
+  placement?: Placement;
+  /** Optional extra button on the step (secondary action). */
+  action?: { label: string; to?: string; run?: () => void };
 }
 
-const currentStepIndex = ref(0);
-const targetRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
+export interface TargetRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+const index = ref(0);
+const rect = ref<TargetRect | null>(null);
+
+/** Tour steps, in the order a new user should meet things. Keep copy to one or two short lines. */
+const STEPS: CoachStep[] = [
+  {
+    id: 'welcome',
+    title: 'Welcome to AutoMemory',
+    body: 'Your coding agents now share one memory. Take a one-minute look around, or skip and explore on your own.',
+    route: '/',
+  },
+  {
+    id: 'nav',
+    target: '[data-tour="nav-rail"]',
+    title: 'Six places, six questions',
+    body: 'Home shows what needs you. Project brain is what agents know. The rest cover agents, suggestions, sync and safety.',
+    route: '/',
+    placement: 'right',
+  },
+  {
+    id: 'setup',
+    target: '[data-tour="setup-card"]',
+    title: 'Start here',
+    body: 'Three short steps: connect an agent, teach it something, protect your work. Each one ticks itself when done.',
+    route: '/',
+    placement: 'bottom',
+  },
+  {
+    id: 'search',
+    target: '[data-tour="search"]',
+    title: 'Find or do anything',
+    body: 'Press ⌘K to search notes or run a command, like adding a note or syncing.',
+    route: '/',
+    placement: 'bottom',
+  },
+  {
+    id: 'brain',
+    target: '[data-tour="brain-header"]',
+    title: 'Teach every agent once',
+    body: 'Add a note here and every agent on this project starts from it. Decisions are shown first.',
+    route: '/brain',
+    placement: 'bottom',
+  },
+  {
+    id: 'agents',
+    target: '[data-tour="agents-header"]',
+    title: 'See who is working',
+    body: 'When two agents want the same file, one waits. You will see who holds what, and why.',
+    route: '/agents',
+    placement: 'bottom',
+  },
+  {
+    id: 'inbox',
+    target: '[data-tour="inbox-header"]',
+    title: 'You stay in charge',
+    body: 'Agents suggest what to remember. Approve or reject here before it becomes shared knowledge.',
+    route: '/inbox',
+    placement: 'bottom',
+  },
+  {
+    id: 'safety',
+    target: '[data-tour="safety-modes"]',
+    title: 'Choose how careful to be',
+    body: 'Relaxed warns, Balanced blocks risky commands, Strict requires a file lock for every edit.',
+    route: '/safety',
+    placement: 'top',
+  },
+  {
+    id: 'done',
+    title: 'You are all set',
+    body: 'Add your first note to see it work. You can replay this tour any time from the help menu.',
+    route: '/',
+    action: { label: 'Add a note', to: '/brain' },
+  },
+];
+
+/** The first matching element that is actually on screen (desktop and mobile layouts share a selector). */
+function findVisible(selector?: string): HTMLElement | null {
+  if (!selector || typeof document === 'undefined') return null;
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).find((e) => visible(e)) ?? null;
+}
+
+function visible(el: Element | null): el is HTMLElement {
+  if (!el) return false;
+  const r = (el as HTMLElement).getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
 
 export function useCoachTour() {
   const router = useRouter();
   const store = useAutoMemoryStore();
 
-  const steps: CoachStep[] = [
-    {
-      id: 'nav',
-      targetSelector: '[data-tour="nav-rail"]',
-      route: '/',
-      title: '1. Six places, one for each question',
-      content: 'AutoMemory organizes your work into 6 task areas: Home, Project brain, Agents & locks, Suggestions inbox, Sync & devices, and Safety.',
-    },
-    {
-      id: 'needs-you',
-      targetSelector: '[data-tour="needs-you"]',
-      route: '/',
-      title: '2. Needs you',
-      content: 'The only place with attention color: suggestions waiting for review, long-held file locks, and collisions requiring human attention.',
-      tryActionLabel: 'View inbox',
-      tryAction: () => {
-        router.push('/inbox');
-      },
-    },
-    {
-      id: 'brain',
-      targetSelector: '[data-tour="brain-card"]',
-      route: '/',
-      title: '3. Project brain',
-      content: 'Verified facts, architectural decisions, and lessons shared with every agent session. Decisions outrank notes and are presented first.',
-      tryActionLabel: 'Explore brain',
-      tryAction: () => {
-        router.push('/brain');
-      },
-    },
-    {
-      id: 'agents',
-      targetSelector: '[data-tour="agents-card"]',
-      route: '/',
-      title: '4. Agents & locks',
-      content: 'Live coordination and advisory file locks. Automatic leases stop concurrent agents from colliding and stepping on the same files.',
-      tryActionLabel: 'See locks',
-      tryAction: () => {
-        router.push('/agents');
-      },
-    },
-    {
-      id: 'setup',
-      targetSelector: '[data-tour="setup-card"]',
-      route: '/',
-      title: '5. Getting started checklist',
-      content: 'Dynamic checklist tracking connected agents, instruction files, human password, and multi-machine sync. Ticks live as you run commands.',
-    },
-    {
-      id: 'safety',
-      targetSelector: '[data-tour="safety-mode"]',
-      route: '/',
-      title: '6. Safety & modes',
-      content: 'Switch between Relaxed, Balanced, and Strict modes. Set a human password to protect sensitive rule changes and approvals.',
-      tryActionLabel: 'Open safety',
-      tryAction: () => {
-        router.push('/safety');
-      },
-    },
-  ];
+  const steps = STEPS;
+  const current = computed(() => steps[index.value]);
+  const isFirst = computed(() => index.value === 0);
+  const isLast = computed(() => index.value === steps.length - 1);
 
-  const currentStep = computed(() => steps[currentStepIndex.value]);
-  const isFirst = computed(() => currentStepIndex.value === 0);
-  const isLast = computed(() => currentStepIndex.value === steps.length - 1);
-  const totalSteps = steps.length;
-
-  function updateTargetPosition() {
-    if (!store.isTourActive || typeof window === 'undefined') return;
-    const step = currentStep.value;
-    if (!step) return;
-
-    const el = document.querySelector(step.targetSelector);
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      targetRect.value = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      };
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      // Fallback center of screen
-      targetRect.value = {
-        top: window.innerHeight / 2 - 100,
-        left: window.innerWidth / 2 - 150,
-        width: 300,
-        height: 200,
-      };
+  /** Measure the spotlight target; null means "show a centered card". */
+  function measure() {
+    const step = current.value;
+    if (!step?.target || typeof document === 'undefined') {
+      rect.value = null;
+      return;
     }
+    const el = findVisible(step.target);
+    if (!el) {
+      rect.value = null;
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    rect.value = { top: r.top, left: r.left, width: r.width, height: r.height };
   }
 
-  async function goToStep(idx: number) {
-    if (idx < 0 || idx >= steps.length) return;
-    currentStepIndex.value = idx;
-    const step = steps[idx];
+  async function show(i: number) {
+    if (i < 0 || i >= steps.length) return;
+    index.value = i;
+    const step = steps[i];
     if (step.route && router.currentRoute.value.path !== step.route) {
       await router.push(step.route);
     }
+    // Wait for the page to render, then bring the target into view and measure it.
     await nextTick();
-    setTimeout(() => {
-      updateTargetPosition();
-    }, 150);
+    for (let tries = 0; tries < 10; tries++) {
+      if (!step.target || findVisible(step.target)) break;
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    const el = findVisible(step.target);
+    if (el) {
+      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+    }
+    measure();
   }
 
-  function startTour() {
+  function start() {
     store.startTour();
-    goToStep(0);
+    show(0);
   }
 
   function next() {
-    if (isLast.value) {
-      finishTour();
-    } else {
-      goToStep(currentStepIndex.value + 1);
-    }
+    if (isLast.value) finish();
+    else show(index.value + 1);
   }
 
   function prev() {
-    if (!isFirst.value) {
-      goToStep(currentStepIndex.value - 1);
-    }
+    if (!isFirst.value) show(index.value - 1);
   }
 
-  function skipTour() {
+  function skip() {
     store.stopTour();
     store.updateOnboardingProgress({ action: 'dismiss', flag: 'tour_skipped' });
   }
 
-  function finishTour() {
+  function finish() {
     store.stopTour();
     store.updateOnboardingProgress({ action: 'mark_done', step_id: 'tour_completed' });
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (!store.isTourActive) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      skipTour();
-    } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
-      e.preventDefault();
-      next();
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      prev();
-    }
-  }
-
+  // The store starts the tour (welcome card, help drawer); begin at the first step.
   watch(
     () => store.isTourActive,
     (active) => {
-      if (active) {
-        window.addEventListener('keydown', handleKeydown);
-        window.addEventListener('resize', updateTargetPosition);
-        window.addEventListener('scroll', updateTargetPosition);
-        goToStep(0);
-      } else {
-        window.removeEventListener('keydown', handleKeydown);
-        window.removeEventListener('resize', updateTargetPosition);
-        window.removeEventListener('scroll', updateTargetPosition);
-      }
+      if (active) show(0);
     }
   );
 
-  return {
-    steps,
-    currentStep,
-    currentStepIndex,
-    totalSteps,
-    isFirst,
-    isLast,
-    targetRect,
-    startTour,
-    goToStep,
-    next,
-    prev,
-    skipTour,
-    finishTour,
-    updateTargetPosition,
-  };
+  return { steps, current, index, isFirst, isLast, rect, start, show, next, prev, skip, finish, measure };
 }

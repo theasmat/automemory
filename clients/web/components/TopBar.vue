@@ -1,5 +1,5 @@
 <template>
-  <header class="h-14 bg-bg border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4 flex-shrink-0 z-20">
+  <header class="h-14 bg-bg/80 backdrop-blur-md border-b border-border/60 px-4 sm:px-6 flex items-center justify-between gap-4 flex-shrink-0 z-20">
     <div class="flex items-center gap-3 min-w-0">
       <!-- Project Picker -->
       <div class="relative flex items-center">
@@ -7,7 +7,7 @@
         <select
           id="project-select"
           v-model="store.activeProject"
-          class="bg-surface-2 border border-border text-xs sm:text-sm font-semibold rounded-card px-2.5 py-1 text-text pr-7 focus:border-accent focus:outline-none appearance-none cursor-pointer"
+          class="bg-surface-2 border border-transparent text-xs sm:text-sm font-semibold rounded-pill px-3 py-1.5 text-text pr-7 focus:border-accent focus:outline-none appearance-none cursor-pointer"
           @change="onProjectChange"
         >
           <option :value="null">All Projects</option>
@@ -36,7 +36,8 @@
       <!-- Search / Command Palette Trigger -->
       <button
         type="button"
-        class="hidden sm:flex items-center gap-2 bg-surface-2 hover:bg-surface border border-border rounded-card px-3 py-1 text-xs text-text-muted transition-colors hover:border-text-muted/40"
+        data-tour="search"
+        class="hidden sm:flex items-center gap-2 bg-surface-2 hover:bg-border/70 rounded-pill px-3.5 py-1.5 text-xs text-text-muted transition-colors"
         @click="$emit('open-palette')"
       >
         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -48,8 +49,8 @@
 
       <!-- Connection Pill -->
       <div
-        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-pill text-xs font-medium border"
-        :class="store.isConnected ? 'bg-ok-bg text-ok border-ok/30' : 'bg-warn-bg text-warn border-warn/30'"
+        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-pill text-xs font-medium"
+        :class="store.isConnected ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'"
         :title="store.isConnected ? 'Daemon WebSocket connected' : 'Connecting to daemon...'"
       >
         <span class="w-1.5 h-1.5 rounded-full" :class="store.isConnected ? 'bg-ok' : 'bg-warn animate-pulse'" />
@@ -59,7 +60,7 @@
       <!-- Theme Toggle -->
       <button
         type="button"
-        class="flex items-center gap-1.5 px-2.5 py-1 rounded-card border border-border bg-surface-2/60 text-xs text-text hover:text-accent hover:border-accent transition-colors cursor-pointer select-none"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-surface-2 text-xs text-text hover:bg-border/70 transition-colors cursor-pointer select-none"
         :aria-label="'Theme: ' + themeLabel"
         :title="'Theme: ' + themeLabel + ' (click to cycle System / Light / Dark)'"
         @click="cycleTheme"

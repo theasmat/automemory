@@ -1,29 +1,21 @@
 <template>
-  <div class="space-y-6">
-    <!-- Greeting & High-level Status -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+  <div class="space-y-8">
+    <!-- Greeting -->
+    <div class="flex items-end justify-between gap-4">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-text">
-          {{ greeting }}. {{ activeSummary }}
-        </h1>
-        <p class="text-xs sm:text-sm text-text-muted mt-0.5">
-          Everything your agents know, share, and need approval for.
-        </p>
+        <h1 class="text-2xl sm:text-[32px] sm:leading-tight font-semibold tracking-tight text-text">{{ greeting }}</h1>
+        <p class="text-base text-text-muted mt-1">{{ store.activeProject ? `Project ${store.activeProject}` : 'All projects' }}</p>
       </div>
-
-      <div class="flex items-center gap-2">
-        <Button size="sm" variant="secondary" @click="store.fetchAll()">
-          <template #icon>
-            <svg class="w-3.5 h-3.5" :class="store.isLoading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </template>
-          Refresh
-        </Button>
-      </div>
+      <Button size="sm" variant="secondary" @click="store.fetchAll()">
+        <template #icon>
+          <svg class="w-3.5 h-3.5" :class="store.isLoading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </template>
+        Refresh
+      </Button>
     </div>
 
-    <!-- Daemon Down Error State -->
     <ErrorState
       v-if="!store.isConnected && store.daemonError"
       title="AutoMemory isn't running"
@@ -32,209 +24,99 @@
       @retry="store.fetchAll()"
     />
 
-    <!-- First-run Onboarding Welcome Card -->
     <WelcomeCard />
 
-    <!-- 2-Column Responsive Dashboard Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Left Column: Needs you + Setup checklist -->
-      <div class="space-y-6">
-        <!-- Needs You Card (Attention state) -->
-        <div data-tour="needs-you">
-          <Card
-            v-if="hasNeedsYou"
-            title="Needs you"
-            accent-border
-            custom-class="border-warn/40 bg-warn/5"
-          >
-          <template #icon>
-            <span class="w-2 h-2 rounded-full bg-warn" />
-          </template>
-
-          <div class="space-y-3 mt-1">
-            <div
-              v-if="store.stats.pending_proposals > 0"
-              class="flex items-center justify-between gap-3 p-3 rounded-card bg-surface border border-border"
-            >
-              <div>
-                <p class="text-sm font-semibold text-text">
-                  {{ store.stats.pending_proposals }} suggestion{{ store.stats.pending_proposals === 1 ? '' : 's' }} to review
-                </p>
-                <p class="text-xs text-text-muted mt-0.5">
-                  Agents learned new project facts or conventions awaiting verification.
-                </p>
-              </div>
-              <NuxtLink to="/inbox">
-                <Button size="sm" variant="primary">
-                  Review now &rarr;
-                </Button>
-              </NuxtLink>
-            </div>
-
-            <div
-              v-if="longHeldLocks.length > 0"
-              class="flex items-center justify-between gap-3 p-3 rounded-card bg-surface border border-border"
-            >
-              <div>
-                <p class="text-sm font-semibold text-text">
-                  {{ longHeldLocks.length }} file lock{{ longHeldLocks.length === 1 ? '' : 's' }} held over 30 min
-                </p>
-                <p class="text-xs text-text-muted mt-0.5">
-                  {{ longHeldLocks[0]?.agent }} holds {{ longHeldLocks[0]?.scope }}.
-                </p>
-              </div>
-              <NuxtLink to="/agents">
-                <Button size="sm" variant="secondary">
-                  See locks &rarr;
-                </Button>
-              </NuxtLink>
-            </div>
-          </div>
+    <!-- At a glance: three tiles, one number each -->
+    <section aria-label="At a glance" class="grid grid-cols-3 gap-3 sm:gap-4">
+      <NuxtLink to="/agents" data-tour="agents-card" class="group">
+        <Card hover custom-class="h-full">
+          <p class="text-sm text-text-muted">Agents</p>
+          <p class="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-text">{{ workingCount }}</p>
+          <p class="mt-1 text-sm text-text-muted hidden sm:block">{{ agentsLine }}</p>
         </Card>
-
-        <!-- All Clear Pill if nothing needs human -->
-        <Card v-else title="Needs you">
-          <div class="flex items-center gap-2.5 text-xs sm:text-sm text-text-muted py-1">
-            <span class="w-2 h-2 rounded-full bg-ok" />
-            <span>All clear. No pending suggestions or blocked locks.</span>
-          </div>
+      </NuxtLink>
+      <NuxtLink to="/brain" data-tour="brain-card" class="group">
+        <Card hover custom-class="h-full">
+          <p class="text-sm text-text-muted">Project brain</p>
+          <p class="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-text">{{ noteCount }}</p>
+          <p class="mt-1 text-sm text-text-muted hidden sm:block">{{ decisionCount }} decision{{ decisionCount === 1 ? '' : 's' }}</p>
         </Card>
-        </div>
-
-        <!-- Setup Checklist -->
-        <div data-tour="setup-card">
-          <Checklist
-            title="Setup checklist"
-            :items="store.setupChecklist"
-          />
-        </div>
-      </div>
-
-      <!-- Right Column: Agents + What agents know + Activity stream -->
-      <div class="space-y-6">
-        <!-- Agents Card -->
-        <div data-tour="agents-card">
-          <Card title="Connected agents">
-            <template #actions>
-              <NuxtLink to="/agents" class="text-xs text-accent hover:underline">
-                Manage locks &rarr;
-              </NuxtLink>
-            </template>
-
-            <div class="space-y-2 mt-2">
-              <div
-                v-for="agent in store.connectedAgents"
-                :key="agent.id"
-                class="flex items-center justify-between p-2.5 rounded-card bg-surface-2/40 border border-border"
-              >
-                <div class="flex items-center gap-2.5">
-                  <span
-                    class="w-2 h-2 rounded-full"
-                    :class="[
-                      agent.status === 'editing' ? 'bg-warn animate-pulse' :
-                      agent.status === 'active' ? 'bg-ok' :
-                      agent.status === 'idle' ? 'bg-accent' :
-                      'bg-text-muted/30'
-                    ]"
-                  />
-                  <div>
-                    <div class="text-xs sm:text-sm font-semibold text-text flex items-center gap-2">
-                      <span>{{ agent.name }}</span>
-                      <Badge v-if="agent.status === 'editing'" variant="warn">
-                        Editing
-                      </Badge>
-                    </div>
-                    <div v-if="agent.locks?.length" class="text-[11px] font-mono text-text-muted truncate max-w-xs">
-                      {{ agent.locks.join(', ') }}
-                    </div>
-                  </div>
-                </div>
-
-                <span class="text-xs text-text-muted capitalize">
-                  {{ agent.status }}
-                </span>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <!-- What Agents Know -->
-        <div data-tour="brain-card">
-          <Card title="What agents know">
-            <template #actions>
-              <NuxtLink to="/brain">
-                <Button size="sm" variant="secondary">
-                  Open Project brain &rarr;
-                </Button>
-              </NuxtLink>
-            </template>
-
-            <div class="space-y-3 mt-1">
-              <div class="flex items-center gap-4 text-xs sm:text-sm text-text">
-                <span class="font-semibold">{{ decisionCount }} decisions</span>
-                <span class="text-text-muted">&bull;</span>
-                <span class="font-semibold">{{ noteCount }} notes</span>
-                <span class="text-text-muted">&bull;</span>
-                <span class="text-text-muted">{{ store.stats.active_traces }} verified traces</span>
-              </div>
-
-              <div v-if="latestDecision" class="p-3 rounded-card bg-surface-2 border border-border">
-                <span class="text-[11px] font-semibold text-accent uppercase tracking-wider block mb-1">
-                  Latest Decision
-                </span>
-                <p class="text-xs sm:text-sm font-medium text-text">
-                  &ldquo;{{ latestDecision.summary || latestDecision.content }}&rdquo;
-                </p>
-              </div>
-
-              <button
-                type="button"
-                class="text-xs text-accent hover:underline flex items-center gap-1 font-medium"
-                @click="previewDrawerOpen = true"
-              >
-                <span>Preview what the next agent is told</span>
-                <span>&rarr;</span>
-              </button>
-            </div>
-          </Card>
-        </div>
-
-        <!-- Recent Activity Feed -->
-        <Card title="Recent activity">
-          <div v-if="recentSentences.length === 0" class="text-xs text-text-muted py-2">
-            No activity events recorded yet. Connect an agent to begin.
-          </div>
-          <div v-else class="space-y-2 mt-1">
-            <div
-              v-for="(item, idx) in recentSentences"
-              :key="idx"
-              class="flex items-start gap-2.5 text-xs text-text py-1 border-b border-border/40 last:border-none"
-            >
-              <span class="text-text-muted font-mono text-[11px] flex-shrink-0 mt-0.5">
-                {{ item.time }}
-              </span>
-              <span class="leading-relaxed">{{ item.text }}</span>
-            </div>
-          </div>
+      </NuxtLink>
+      <NuxtLink to="/inbox" data-tour="needs-you" class="group">
+        <Card hover custom-class="h-full">
+          <p class="text-sm text-text-muted flex items-center gap-2">
+            Needs you
+            <span v-if="needsCount > 0" class="w-2 h-2 rounded-full bg-warn" aria-hidden="true" />
+          </p>
+          <p class="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-text">{{ needsCount }}</p>
+          <p class="mt-1 text-sm text-text-muted hidden sm:block">{{ needsCount > 0 ? 'Review suggestions and locks' : 'All clear' }}</p>
         </Card>
-      </div>
+      </NuxtLink>
+    </section>
+
+    <!-- Long-held lock notice, only when relevant -->
+    <div
+      v-if="longHeldLocks.length > 0"
+      class="flex items-center justify-between gap-3 rounded-card bg-warn-bg px-5 py-4"
+    >
+      <p class="text-sm text-text">
+        <span class="font-medium">{{ longHeldLocks[0]?.agent }}</span> has held
+        <span class="font-mono">{{ longHeldLocks[0]?.scope }}</span> for a while.
+      </p>
+      <NuxtLink to="/agents"><Button size="sm" variant="secondary">See locks</Button></NuxtLink>
     </div>
+
+    <!-- Guided setup -->
+    <div data-tour="setup-card">
+      <Checklist title="Get started" :items="store.setupChecklist" />
+    </div>
+
+    <!-- Details -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <Card title="Your agents">
+        <template #actions>
+          <NuxtLink to="/agents" class="text-sm text-accent hover:underline">Manage</NuxtLink>
+        </template>
+        <ul class="divide-y divide-border/60">
+          <li v-for="agent in store.connectedAgents" :key="agent.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+            <div class="flex items-center gap-3 min-w-0">
+              <span
+                class="w-2 h-2 rounded-full flex-shrink-0"
+                :class="agent.status === 'editing' ? 'bg-warn animate-pulse' : agent.status === 'active' ? 'bg-ok' : agent.status === 'idle' ? 'bg-accent' : 'bg-text-muted/30'"
+              />
+              <div class="min-w-0">
+                <div class="text-[15px] text-text">{{ agent.name }}</div>
+                <div v-if="agent.locks?.length" class="text-xs font-mono text-text-muted truncate">{{ agent.locks.join(', ') }}</div>
+              </div>
+            </div>
+            <span class="text-sm text-text-muted capitalize flex-shrink-0">{{ agent.status === 'editing' ? 'Editing' : agent.status.replace('_', ' ') }}</span>
+          </li>
+        </ul>
+      </Card>
+
+      <Card title="Recent activity">
+        <template #actions>
+          <button type="button" class="text-sm text-accent hover:underline" @click="previewDrawerOpen = true">What agents are told</button>
+        </template>
+        <p v-if="recentSentences.length === 0" class="text-sm text-text-muted">Nothing yet. Activity appears here once an agent connects.</p>
+        <ul v-else class="divide-y divide-border/60">
+          <li v-for="(item, idx) in recentSentences" :key="idx" class="flex items-baseline gap-3 py-3 first:pt-0 last:pb-0">
+            <span class="text-xs text-text-muted w-12 flex-shrink-0 tabular-nums">{{ item.time }}</span>
+            <span class="text-sm text-text">{{ item.text }}</span>
+          </li>
+        </ul>
+      </Card>
+    </section>
 
     <!-- Preview Drawer -->
     <Drawer
       :is-open="previewDrawerOpen"
-      title="What the Next Agent is Told"
-      description="The prompt payload injected into new agent sessions"
+      title="What the next agent is told"
+      description="Every new session in this project starts from this."
       @close="previewDrawerOpen = false"
     >
-      <div class="space-y-4">
-        <p class="text-xs text-text-muted">
-          Every coding agent starting a session in this repository starts from this verified context block.
-        </p>
-
-        <div class="bg-surface-2 border border-border rounded-card p-4 font-mono text-xs text-text whitespace-pre-wrap overflow-x-auto max-h-[60vh]">
-          {{ store.contextPreview || '_No context assembled yet. Add notes to Project brain._' }}
-        </div>
+      <div class="bg-surface-2 rounded-xl p-4 font-mono text-xs text-text whitespace-pre-wrap overflow-x-auto max-h-[60vh]">
+        {{ store.contextPreview || 'Nothing assembled yet. Add a note in Project brain.' }}
       </div>
     </Drawer>
   </div>
@@ -254,14 +136,16 @@ const greeting = computed(() => {
   return 'Good evening';
 });
 
-const activeSummary = computed(() => {
-  const activeCount = store.connectedAgents.filter((a) => a.status === 'editing' || a.status === 'active').length;
-  const project = store.activeProject || 'your project';
-  if (activeCount > 0) {
-    return `${activeCount} agent${activeCount === 1 ? ' is' : 's are'} working on ${project}`;
-  }
-  return `0 agents are currently working on ${project}`;
+const workingCount = computed(
+  () => store.connectedAgents.filter((a) => a.status === 'editing' || a.status === 'active').length
+);
+const linkedCount = computed(() => store.connectedAgents.filter((a) => a.status !== 'not connected').length);
+const agentsLine = computed(() => {
+  if (workingCount.value > 0) return `${workingCount.value} working now`;
+  if (linkedCount.value > 0) return `${linkedCount.value} connected, all idle`;
+  return 'None connected yet';
 });
+const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length);
 
 const hasNeedsYou = computed(() => {
   return store.stats.pending_proposals > 0 || longHeldLocks.value.length > 0;

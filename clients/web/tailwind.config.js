@@ -1,3 +1,12 @@
+/**
+ * Theme colours are CSS variables, which Tailwind cannot apply an opacity to (`border-border/60`
+ * would silently be dropped). This turns "bg-surface-2/60" into a color-mix of the variable.
+ */
+const v = (name) => ({ opacityValue }) =>
+  opacityValue === undefined || String(opacityValue).includes('var(')
+    ? `var(--${name})`
+    : `color-mix(in srgb, var(--${name}) ${Math.round(Number(opacityValue) * 100)}%, transparent)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -13,56 +22,59 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: 'var(--bg)',
+        bg: v('bg'),
         surface: {
-          DEFAULT: 'var(--surface)',
-          2: 'var(--surface-2)',
+          DEFAULT: v('surface'),
+          2: v('surface-2'),
         },
         border: {
-          DEFAULT: 'var(--border)',
-          strong: 'var(--border-strong)',
+          DEFAULT: v('border'),
+          strong: v('border-strong'),
         },
         text: {
-          DEFAULT: 'var(--text)',
-          muted: 'var(--text-muted)',
+          DEFAULT: v('text'),
+          muted: v('text-muted'),
         },
         accent: {
-          DEFAULT: 'var(--accent)',
-          solid: 'var(--accent-solid)',
-          fg: 'var(--accent-fg)',
+          DEFAULT: v('accent'),
+          solid: v('accent-solid'),
+          fg: v('accent-fg'),
         },
         ok: {
-          DEFAULT: 'var(--ok)',
-          bg: 'var(--ok-bg)',
+          DEFAULT: v('ok'),
+          bg: v('ok-bg'),
         },
         warn: {
-          DEFAULT: 'var(--warn)',
-          bg: 'var(--warn-bg)',
+          DEFAULT: v('warn'),
+          bg: v('warn-bg'),
         },
         bad: {
-          DEFAULT: 'var(--bad)',
-          bg: 'var(--bad-bg)',
+          DEFAULT: v('bad'),
+          bg: v('bad-bg'),
         },
         info: {
-          DEFAULT: 'var(--info)',
-          bg: 'var(--info-bg)',
+          DEFAULT: v('info'),
+          bg: v('info-bg'),
         },
-        overlay: 'var(--overlay)',
+        overlay: v('overlay'),
 
         // Backwards compatibility aliases
         dark: {
           950: '#0b0c0e',
-          900: 'var(--surface)',
-          850: 'var(--surface-2)',
-          800: 'var(--surface-2)',
-          700: 'var(--border)',
-          600: 'var(--text-muted)',
+          900: v('surface'),
+          850: v('surface-2'),
+          800: v('surface-2'),
+          700: v('border'),
+          600: v('text-muted'),
         },
         gold: {
           400: '#ffd043',
-          500: 'var(--accent)',
+          500: v('accent'),
           600: '#e0a800',
         },
+      },
+      borderColor: {
+        DEFAULT: v('border'),
       },
       boxShadow: {
         card: 'var(--shadow-card)',
@@ -72,7 +84,7 @@ export default {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
       borderRadius: {
-        card: '8px',
+        card: '14px',
         pill: '9999px',
       },
     },

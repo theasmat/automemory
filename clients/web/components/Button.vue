@@ -2,7 +2,7 @@
   <button
     :type="type || 'button'"
     :disabled="disabled || loading"
-    class="inline-flex items-center justify-center gap-2 rounded-card font-medium transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
+    class="inline-flex items-center justify-center gap-2 rounded-pill font-medium transition-colors focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
     :class="[
       sizeClasses,
       variantClasses,
@@ -52,24 +52,24 @@ defineEmits<{
 const sizeClasses = computed(() => {
   switch (props.size) {
     case 'sm':
-      return 'px-2.5 py-1 text-xs';
+      return 'px-3 py-1.5 text-xs';
     case 'lg':
       return 'px-5 py-2.5 text-base';
     default:
-      return 'px-3.5 py-1.5 text-sm';
+      return 'px-4 py-2 text-sm';
   }
 });
 
 const variantClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'bg-accent-solid text-accent-fg hover:opacity-95 font-semibold shadow-sm';
+      return 'bg-accent-solid text-accent-fg hover:opacity-90 font-semibold';
     case 'danger':
-      return 'bg-transparent border border-bad text-bad hover:bg-bad-bg font-medium';
+      return 'bg-bad-bg text-bad hover:opacity-80 font-medium';
     case 'ghost':
       return 'bg-transparent text-text-muted hover:text-text hover:bg-surface-2';
     default:
-      return 'bg-transparent border border-border-strong text-text hover:bg-surface-2';
+      return 'bg-surface-2 text-text hover:bg-border/80';
   }
 });
 </script>

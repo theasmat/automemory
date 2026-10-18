@@ -1,7 +1,7 @@
 <template>
   <div class="w-full">
     <div v-if="label" class="text-xs font-medium text-text-muted mb-1">{{ label }}</div>
-    <div class="flex items-center justify-between gap-2 bg-surface-2 border border-border rounded-card px-3 py-2 text-[13px] font-mono">
+    <div class="flex items-center justify-between gap-2 bg-surface-2 rounded-xl px-3 py-2 text-[13px] font-mono">
       <code class="text-text select-all overflow-x-auto whitespace-nowrap">{{ command }}</code>
       <div class="flex items-center gap-1.5 flex-shrink-0">
         <button
