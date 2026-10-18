@@ -19,6 +19,65 @@ pub struct Step {
     pub link: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LearnTopic {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub summary: &'static str,
+    pub content: &'static str,
+}
+
+pub const LEARN_TOPICS: &[LearnTopic] = &[
+    LearnTopic {
+        id: "memory",
+        title: "Memory & Preferences",
+        summary: "Store shared facts, preferences, lessons, and patterns across agents",
+        content: "AutoMemory shares verified facts, preferences, patterns, and warnings across agents.\nMemories can be global or scoped to a project. Pinned memories act as invariants.\n\nSave a memory or preference:\n  automemory note \"We use pnpm workspaces across all packages\"\n  automemory note \"Production API uses port 8080\" -t preference\n\nList and search saved memories:\n  automemory memory list\n  automemory memory search \"database\"\n\nArchive an outdated memory:\n  automemory memory archive <id>",
+    },
+    LearnTopic {
+        id: "decisions",
+        title: "Architectural Decisions",
+        summary: "Record binding architectural choices with reasons and alternatives",
+        content: "Architectural decisions are immutable records with rationale, alternatives, and dissent.\nActive decisions outrank notes and are always presented to agents first.\n\nRecord an architectural decision:\n  automemory decision record --topic \"Storage\" --decision \"SQLite WAL\" --reason \"Fast local ACID\"\n\nList recorded decisions:\n  automemory decision list\n  automemory decision get <id>\n\nDecisions are automatically exported into your project's AGENTS.md instruction file.",
+    },
+    LearnTopic {
+        id: "locks",
+        title: "Advisory File Locks",
+        summary: "Prevent concurrent agents from overwriting the same files",
+        content: "Advisory file and symbol locks prevent concurrent agents from overwriting the same code.\nWhen agent A edits a file, an automatic lease is held; agent B gets an immediate warning or deny.\n\nInspect active locks and recent lock coverage:\n  automemory locks\n  automemory locks --coverage\n\nManually release or override a lock:\n  automemory unlock src/main.rs\n  automemory unlock --force src/main.rs",
+    },
+    LearnTopic {
+        id: "handoff",
+        title: "Session Continuity & Handoffs",
+        summary: "Pass context packets between sessions under a 400-token budget",
+        content: "Session continuity ensures a new agent session starts exactly where the last one stopped.\nBaton packets pass git status, recent edits, open decisions, and optional notes under 400 tokens.\n\nLeave a handoff for the next session or agent:\n  automemory handoff \"Finished auth API refactor; tests pass\"\n\nResume from the last session's handoff packet:\n  automemory resume\n\nAgents automatically receive the resume packet on their first prompt.",
+    },
+    LearnTopic {
+        id: "sync",
+        title: "Encrypted Multi-Machine Sync",
+        summary: "Synchronize memory vaults via git with client-side AES-256 encryption",
+        content: "Sync multi-machine memory through a private, encrypted git repository (your memory vault).\nAll data is client-side encrypted with AES-256-GCM before leaving this machine.\n\nSet up your private sync remote repository:\n  automemory sync remote https://github.com/your-org/memory-vault.git\n\nTrigger an immediate background sync cycle:\n  automemory sync auto\n\nPair a second machine using your recovery phrase:\n  automemory sync pair",
+    },
+    LearnTopic {
+        id: "modes",
+        title: "Autopilot Safety Modes",
+        summary: "Control autonomous agent authority: vibe, review, or strict",
+        content: "AutoMemory operates in three distinct autopilot guardrail modes:\n  - vibe:   Autonomous development; non-blocking warnings on risk.\n  - review: High-risk mutations (rm -rf, git push -f) generate review proposals.\n  - strict: High-risk operations are denied; strict lease collision blocking.\n\nView or change the current autopilot mode:\n  automemory mode\n  automemory mode set review\n  automemory mode set strict",
+    },
+    LearnTopic {
+        id: "export-rules",
+        title: "Instruction Files (AGENTS.md)",
+        summary: "Keep AGENTS.md, CLAUDE.md and .cursorrules up to date automatically",
+        content: "Instruction files let every AI tool (Claude, Codex, Cursor, Gemini) start informed.\nAutoMemory writes a marked block into AGENTS.md, CLAUDE.md, and .cursorrules without tool calls.\n\nUpdate all detected instruction files:\n  automemory export-rules\n\nVerify if instruction files are up to date:\n  automemory export-rules --check\n\nOnly the <!-- automemory:begin --> block is touched; user text is preserved.",
+    },
+    LearnTopic {
+        id: "embeddings",
+        title: "Hybrid Retrieval & Embeddings",
+        summary: "Combine fast FTS5 keyword matching with vector semantic search",
+        content: "AutoMemory supports hybrid search combining SQLite FTS5 BM25 keyword matching with vectors.\nChoose between fast offline keyword recall or semantic embeddings (local, Ollama, OpenAI).\n\nCheck current embedding engine status:\n  automemory embeddings status\n\nReindex vector embeddings for all project memories:\n  automemory embeddings reindex\n\nConfigure embedding provider:\n  automemory embeddings set-provider local",
+    },
+];
+
 /// Compute the getting started checklist for the current environment.
 pub fn checklist(db: &Database, home: &Path, cwd: &Path) -> Vec<Step> {
     let ob = onboarding::load(db);

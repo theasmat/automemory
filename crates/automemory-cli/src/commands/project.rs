@@ -167,7 +167,7 @@ pub fn remove(name_or_path: &str) -> Result<()> {
         println!("✓ Removed project '{}' from global registry.", name_or_path);
     } else {
         println!(
-            "⚠ Project '{}' was not found in global registry.",
+            "⚠ Project '{}' was not found in global registry. Try: `automemory project list`",
             name_or_path
         );
     }

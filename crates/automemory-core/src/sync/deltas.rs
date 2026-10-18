@@ -225,7 +225,13 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
     let mut cache = KeyCache::new();
     let mut ops = Vec::new();
     // Records of a project with no key (not a git repository) are skipped: they stay local.
+    // Demo records (tagged metadata.demo = true or project_id = 'demo') are also excluded.
     let mut consider = |kind: &str, id: String, updated_at: DateTime<Utc>, value: serde_json::Value| {
+        if value.get("metadata").and_then(|m| m.get("demo")).and_then(|v| v.as_bool()) == Some(true)
+            || value.get("project_id").and_then(|p| p.as_str()) == Some("demo")
+        {
+            return;
+        }
         let Some(wire) = to_transport(db, &mut cache, value) else { return };
         let op = make_op(kind, id, updated_at, device_id, wire);
         if applied.get(&op.id).map(|fp| fp == &op.fingerprint) != Some(true) {

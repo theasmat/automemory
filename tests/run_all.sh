@@ -31,6 +31,8 @@ run "shared instruction files"        python3 tests/scenarios/rules_export.py
 run "registration + hook robustness"  python3 tests/scenarios/registration.py
 run "human password gate"             python3 tests/scenarios/human_gate.py
 run "dashboard API"                   python3 tests/scenarios/dashboard.py
+run "onboarding checklist"            python3 tests/scenarios/onboarding.py
+run "guided tour and demo"            python3 tests/scenarios/tour.py
 run "dashboard UI contrast"           python3 tests/ui/contrast.py
 run "eval harness maths"              python3 tests/eval/run_eval.py selftest
 if [ "$QUICK" = 0 ]; then

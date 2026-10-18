@@ -30,7 +30,7 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
             super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global)
         }
         None => {
-            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all", agent);
+            println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all\nTry: `automemory connect agy` or `automemory connect all`", agent);
             Ok(())
         }
     }
@@ -49,7 +49,7 @@ pub(crate) fn read_json_or_empty(path: &Path) -> Result<serde_json::Value> {
     }
     serde_json::from_str(&text).map_err(|e| {
         anyhow::anyhow!(
-            "refusing to modify {}: not valid JSON ({e}). Fix or move the file, then re-run connect.",
+            "refusing to modify {}: not valid JSON ({e}). Try: fix or move the file, then re-run connect.",
             path.display()
         )
     })
@@ -126,7 +126,7 @@ fn merge_agy_hooks(path: &Path, exe_path: &str) -> Result<()> {
     }
     let mut root = read_json_or_empty(path)?;
     if !root.is_object() {
-        anyhow::bail!("refusing to modify {}: top-level JSON is not an object", path.display());
+        anyhow::bail!("refusing to modify {}: top-level JSON is not an object. Try: verify the JSON configuration file syntax.", path.display());
     }
     root["automemory"] = agy_hooks_value(exe_path);
     write_atomic(path, &serde_json::to_string_pretty(&root)?)
@@ -303,7 +303,7 @@ pub(crate) fn merge_native_hooks(
     let mut root: serde_json::Value = read_json_or_empty(path)?;
     if !root.is_object() {
         anyhow::bail!(
-            "refusing to modify {}: top-level JSON is not an object",
+            "refusing to modify {}: top-level JSON is not an object. Try: verify the JSON configuration file syntax.",
             path.display()
         );
     }
@@ -797,7 +797,7 @@ pub(crate) fn connect_all(
     println!("  goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes.");
     println!("========================================================");
     if !failures.is_empty() {
-        anyhow::bail!("failed to connect: {}", failures.join(", "));
+        anyhow::bail!("failed to connect: {}. Try: check permissions and configuration file paths.", failures.join(", "));
     }
     Ok(())
 }

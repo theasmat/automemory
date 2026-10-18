@@ -173,7 +173,12 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
 pub fn build_rules_view(db: &Database, project_id: Option<&str>) -> String {
     const MAX: usize = 3000;
     let mut out = String::new();
-    let decisions = db.list_decisions(project_id, Some(DecisionStatus::Active), 12).unwrap_or_default();
+    let decisions: Vec<_> = db
+        .list_decisions(project_id, Some(DecisionStatus::Active), 12)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| d.project_id.as_deref() != Some("demo"))
+        .collect();
     if !decisions.is_empty() {
         out.push_str("### Decisions in force\n");
         for d in &decisions {
@@ -189,6 +194,8 @@ pub fn build_rules_view(db: &Database, project_id: Option<&str>) -> String {
             !m.summary.starts_with("Session checkpoint")
                 && matches!(m.memory_type, Preference | Warning | Lesson | Pattern | Fact)
                 && m.source_kind == User
+                && m.project_id.as_deref() != Some("demo")
+                && m.metadata.get("demo").and_then(|v| v.as_bool()) != Some(true)
         })
         .collect();
     // Most important first; id breaks ties so the output is stable between runs.

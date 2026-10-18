@@ -282,7 +282,14 @@ impl Database {
             .collect();
         let fts_query = if words.is_empty() {
             let list = self.list_memories(project_id, Some(MemoryStatus::Active), None, limit)?;
-            return Ok(list.into_iter().map(|m| (m, 1.0)).collect());
+            return Ok(list
+                .into_iter()
+                .filter(|m| {
+                    m.project_id.as_deref() != Some("demo")
+                        && m.metadata.get("demo").and_then(|v| v.as_bool()) != Some(true)
+                })
+                .map(|m| (m, 1.0))
+                .collect());
         } else {
             words.join(" ")
         };
@@ -295,6 +302,8 @@ impl Database {
             FROM memories_fts fts
             JOIN memories m ON fts.id = m.id
             WHERE memories_fts MATCH ?1 AND m.status = 'active'
+              AND (m.project_id IS NULL OR m.project_id != 'demo')
+              AND (m.metadata IS NULL OR (json_extract(m.metadata, '$.demo') IS NOT 1 AND json_extract(m.metadata, '$.demo') IS NOT true))
         "#
         .to_string();
 
@@ -495,6 +504,8 @@ impl Database {
             FROM memories m
             JOIN memory_vectors e ON m.id = e.memory_id
             WHERE m.status = 'active' AND e.model = ?1
+              AND (m.project_id IS NULL OR m.project_id != 'demo')
+              AND (m.metadata IS NULL OR (json_extract(m.metadata, '$.demo') IS NOT 1 AND json_extract(m.metadata, '$.demo') IS NOT true))
         "#
         .to_string();
 

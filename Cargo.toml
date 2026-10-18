@@ -32,6 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 regex = { version = "1.10" }
 sha2 = { version = "0.10" }
 clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 rust-embed = { version = "8.5" }

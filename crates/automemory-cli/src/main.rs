@@ -7,7 +7,11 @@ use clap::{Parser, Subcommand};
 #[command(name = "automemory")]
 #[command(
     about = "AutoMemory: Open-source local-first persistent memory engine for coding agents",
-    version = "0.1.0"
+    version = "0.1.0",
+    after_help = "Command Groups:
+  Daily:     note, resume, handoff, locks, overlap, unlock, decision, memory
+  Setup:     init, connect, disconnect, doctor, next, tour, learn, demo, completions, export-rules
+  Advanced:  sync, mode, guardrail, rule, doc, eval, skill, proposal, embeddings, pin, veto, revoke, baton, stop, hooks, plugin, adapter, link, hook, serve, mcp, project"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -17,6 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize AutoMemory configuration and agent hooks
+    #[command(next_help_heading = "Setup")]
     Init {
         /// Agent to configure (e.g. agy, claude, cursor)
         #[arg(short, long, default_value = "agy")]
@@ -24,6 +29,12 @@ enum Commands {
     },
 
     /// Automatically connect and configure AutoMemory into host coding agents
+    ///
+    /// Examples:
+    ///   automemory connect claude
+    ///   automemory connect agy
+    ///   automemory connect cursor
+    #[command(next_help_heading = "Setup")]
     Connect {
         /// Agent host to connect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all)
         #[arg(default_value = "agy")]
@@ -35,6 +46,7 @@ enum Commands {
     },
 
     /// Remove exactly what `connect` wrote for one host coding agent
+    #[command(next_help_heading = "Setup")]
     Disconnect {
         /// Agent host to disconnect, or `all` (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes)
         #[arg(default_value = "agy")]
@@ -53,19 +65,87 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Run system diagnostic health checks
+    #[command(next_help_heading = "Setup")]
+    Doctor,
+
+    /// Print the best next onboarding step and command
+    #[command(next_help_heading = "Setup")]
+    Next,
+
+    /// Interactive guided tour in an isolated sandbox
+    ///
+    /// Examples:
+    ///   automemory tour
+    ///   automemory tour --auto
+    ///   automemory tour --resume
+    #[command(next_help_heading = "Setup")]
+    Tour {
+        /// Non-interactive automated tour (prints full transcript)
+        #[arg(long)]
+        auto: bool,
+
+        /// Resume tour from the last completed step
+        #[arg(long)]
+        resume: bool,
+
+        /// Reset tour progress and sandbox
+        #[arg(long)]
+        reset: bool,
+
+        /// Run a specific step (1-8)
+        #[arg(long)]
+        step: Option<usize>,
+
+        /// Disable ANSI color output
+        #[arg(long)]
+        no_color: bool,
+    },
+
+    /// Learn AutoMemory concepts, tools, and commands
+    ///
+    /// Topics: memory, decisions, locks, handoff, sync, modes, export-rules, embeddings
+    #[command(next_help_heading = "Setup")]
+    Learn {
+        /// Topic to learn about (leave empty to list topics)
+        topic: Option<String>,
+    },
+
+    /// Seed or remove sample data for exploring the dashboard and CLI
+    ///
+    /// Examples:
+    ///   automemory demo
+    ///   automemory demo --remove
+    #[command(next_help_heading = "Setup")]
+    Demo {
+        /// Remove all sample demo data
+        #[arg(long)]
+        remove: bool,
+    },
+
+    /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
+    #[command(next_help_heading = "Setup")]
+    Completions {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
+    },
+
     /// List registered agent adapters and refresh one's hook/event mappings
+    #[command(next_help_heading = "Advanced")]
     Adapter {
         #[command(subcommand)]
         command: AdapterCommands,
     },
 
     /// Link project to canonical single-source context (~/.automemory/context/projects/<id>) via local .context symlink
+    #[command(next_help_heading = "Advanced")]
     Link {
         /// Project ID or slug (inferred from directory if omitted)
         project_id: Option<String>,
     },
 
     /// Out-of-process lifecycle hook handler for coding agents
+    #[command(next_help_heading = "Advanced")]
     Hook {
         /// Agent name (e.g. agy)
         #[arg(long)]
@@ -80,13 +160,8 @@ enum Commands {
         project: String,
     },
 
-    /// Run system diagnostic health checks
-    Doctor,
-
-    /// Print the best next onboarding step and command
-    Next,
-
     /// Start the background daemon and embedded web dashboard
+    #[command(next_help_heading = "Advanced")]
     Serve {
         /// Port for dashboard web UI and HTTP MCP server
         #[arg(short, long, default_value_t = 4545)]
@@ -98,6 +173,7 @@ enum Commands {
     },
 
     /// Run the MCP server over stdio for coding agent integration
+    #[command(next_help_heading = "Advanced")]
     Mcp {
         /// Custom path to SQLite database
         #[arg(long)]
@@ -105,18 +181,30 @@ enum Commands {
     },
 
     /// Manage project registry
+    #[command(next_help_heading = "Advanced")]
     Project {
         #[command(subcommand)]
         command: ProjectCommands,
     },
 
     /// Manage persistent memory records
+    ///
+    /// Examples:
+    ///   automemory memory list
+    ///   automemory memory search "database"
+    ///   automemory memory archive <id>
+    #[command(next_help_heading = "Daily")]
     Memory {
         #[command(subcommand)]
         command: MemoryCommands,
     },
 
     /// Tell every agent something about this project, in plain words
+    ///
+    /// Examples:
+    ///   automemory note "Always run pnpm, never npm"
+    ///   automemory note "Production API uses port 8080" -t preference
+    #[command(next_help_heading = "Daily")]
     Note {
         text: String,
         /// fact (default), lesson, pattern, warning or preference
@@ -125,6 +213,12 @@ enum Commands {
     },
 
     /// Write verified project knowledge into the files agents read (AGENTS.md, .cursor/rules, ...)
+    ///
+    /// Examples:
+    ///   automemory export-rules
+    ///   automemory export-rules --check
+    ///   automemory export-rules --agent claude
+    #[command(next_help_heading = "Setup")]
     ExportRules {
         /// One agent (claude, codex, cursor, gemini-cli, copilot, windsurf, cline, roo, kiro)
         #[arg(long)]
@@ -138,70 +232,94 @@ enum Commands {
     },
 
     /// Recall mode and embedding provider (keyword or hybrid)
+    #[command(next_help_heading = "Advanced")]
     Embeddings {
         #[command(subcommand)]
         command: EmbeddingsCommands,
     },
 
     /// Show where the last session left off (hand-off, checkpoint, decisions, repository state)
+    #[command(next_help_heading = "Daily")]
     Resume,
 
     /// Write a hand-off for the next session or machine and sync it
+    #[command(next_help_heading = "Daily")]
     Handoff {
-        /// What the next session should do first
+        /// What the next session should do first (flag)
         #[arg(short, long)]
         note: Option<String>,
+
+        /// What the next session should do first (positional)
+        message: Option<String>,
     },
 
     /// Manage text-first vault sync
+    ///
+    /// Examples:
+    ///   automemory sync remote https://github.com/org/vault.git
+    ///   automemory sync auto
+    ///   automemory sync pair
+    #[command(next_help_heading = "Advanced")]
     Sync {
         #[command(subcommand)]
         command: SyncCommands,
     },
 
     /// Manage autopilot safety modes (vibe, strict, review) and guardrails
+    #[command(next_help_heading = "Advanced")]
     Mode {
         #[command(subcommand)]
         command: ModeCommands,
     },
 
     /// Manage product documentation, PRDs, ADRs, and OpenViking L0/L1 compilation
+    #[command(next_help_heading = "Advanced")]
     Doc {
         #[command(subcommand)]
         command: DocCommands,
     },
 
     /// Manage custom guardrail rules
+    #[command(next_help_heading = "Advanced")]
     Rule {
         #[command(subcommand)]
         command: RuleCommands,
     },
 
     /// Evaluate a shell command against guardrail rules without executing it
+    #[command(next_help_heading = "Advanced")]
     Guardrail {
         #[command(subcommand)]
         command: GuardrailCommands,
     },
 
     /// Run the local eval suites (retrieval, stale flags, leases, hook latency)
+    #[command(next_help_heading = "Advanced")]
     Eval {
         #[command(subcommand)]
         command: EvalCommands,
     },
 
     /// Manage synthesized procedural playbooks and agent skills
+    #[command(next_help_heading = "Advanced")]
     Skill {
         #[command(subcommand)]
         command: SkillCommands,
     },
 
     /// Manage review proposals, deduplication merges, and conflict governance
+    #[command(next_help_heading = "Advanced")]
     Proposal {
         #[command(subcommand)]
         command: ProposalCommands,
     },
 
     /// View and inspect active multi-agent file and symbol locks
+    ///
+    /// Examples:
+    ///   automemory locks
+    ///   automemory locks --coverage
+    #[command(next_help_heading = "Daily")]
     Locks {
         /// Optional project slug or ID filter
         #[arg(short, long)]
@@ -217,6 +335,7 @@ enum Commands {
     },
 
     /// Warn about other branches that change the same files as this one (run before merging)
+    #[command(next_help_heading = "Daily")]
     Overlap {
         /// Branch everything is compared against
         #[arg(long, default_value = "main")]
@@ -228,6 +347,7 @@ enum Commands {
     },
 
     /// Release or override an active resource lock
+    #[command(next_help_heading = "Daily")]
     Unlock {
         /// Resource scope (file path, glob pattern, or symbol)
         scope: String,
@@ -242,18 +362,25 @@ enum Commands {
     },
 
     /// Manage architectural decisions log with dissent and history
+    ///
+    /// Examples:
+    ///   automemory decision list
+    ///   automemory decision record --topic "Storage" --decision "SQLite WAL" --reason "Fast local ACID"
+    #[command(next_help_heading = "Daily")]
     Decision {
         #[command(subcommand)]
         command: DecisionCommands,
     },
 
     /// Pin a memory as an immutable Tier 1 invariant (human control)
+    #[command(next_help_heading = "Advanced")]
     Pin {
         /// Memory ID to pin
         id: String,
     },
 
     /// Veto and reject a candidate memory or mark invalid (human control)
+    #[command(next_help_heading = "Advanced")]
     Veto {
         /// Memory ID to veto
         id: String,
@@ -263,6 +390,7 @@ enum Commands {
     },
 
     /// Revoke and archive memories by ID, session, or agent (human control)
+    #[command(next_help_heading = "Advanced")]
     Revoke {
         /// Specific memory ID to revoke
         #[arg(long)]
@@ -276,12 +404,14 @@ enum Commands {
     },
 
     /// Agent-to-agent handoff baton management (<400-token ledger-grounded packets)
+    #[command(next_help_heading = "Advanced")]
     Baton {
         #[command(subcommand)]
         command: BatonCommands,
     },
 
     /// Kill switch: release every active lease, halting multi-agent work
+    #[command(next_help_heading = "Advanced")]
     Stop {
         /// Limit the halt to one project slug or ID
         #[arg(short, long)]
@@ -289,12 +419,14 @@ enum Commands {
     },
 
     /// Inspect and dry-run the hook pipeline (config: hooks.toml)
+    #[command(next_help_heading = "Advanced")]
     Hooks {
         #[command(subcommand)]
         command: HooksCommands,
     },
 
     /// List versioned ports and installed plugin manifests
+    #[command(next_help_heading = "Advanced")]
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,
@@ -565,6 +697,7 @@ enum RuleCommands {
         id: String,
 
         /// Enable flag (true or false)
+        #[arg(action = clap::ArgAction::Set)]
         enabled: bool,
     },
     /// Set the human password guarding safety writes (rule/hooks/mode changes)
@@ -828,7 +961,7 @@ enum MemoryCommands {
         project: Option<String>,
 
         /// Knowledge domain category (architecture, bugfix, feature, decision, lesson)
-        #[arg(short = 'c', long)]
+        #[arg(short = 'C', long)]
         category: Option<String>,
 
         /// Specific achievements reached
@@ -1034,6 +1167,8 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    maybe_print_tour_hint(&cli.command);
+
     match cli.command {
         Commands::Init { agent } => {
             commands::init::execute(Some(agent))?;
@@ -1064,6 +1199,27 @@ async fn main() -> Result<()> {
         }
         Commands::Next => {
             commands::learn::next()?;
+        }
+        Commands::Tour {
+            auto,
+            resume,
+            reset,
+            step,
+            no_color,
+        } => {
+            commands::learn::tour(auto, resume, reset, step, no_color)?;
+        }
+        Commands::Learn { topic } => {
+            commands::learn::learn(topic.as_deref())?;
+        }
+        Commands::Demo { remove } => {
+            commands::learn::demo(remove)?;
+        }
+        Commands::Completions { shell } => {
+            use clap::CommandFactory;
+            let mut cmd = Cli::command();
+            let bin_name = cmd.get_name().to_string();
+            clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
         }
         Commands::Serve { port, db } => {
             commands::serve::execute(port, db).await?;
@@ -1297,7 +1453,7 @@ async fn main() -> Result<()> {
             EmbeddingsCommands::Eval { file } => commands::embeddings::eval(file)?,
         },
         Commands::Resume => commands::continuity::resume()?,
-        Commands::Handoff { note } => commands::continuity::handoff(note).await?,
+        Commands::Handoff { note, message } => commands::continuity::handoff(note.or(message)).await?,
         Commands::Locks { project, coverage: true, days } => {
             let _ = project;
             commands::lock::coverage(days)?
@@ -1441,4 +1597,22 @@ enum EmbeddingsCommands {
     Off,
     /// Compare keyword and hybrid on labelled queries (JSON file)
     Eval { file: std::path::PathBuf },
+}
+
+fn maybe_print_tour_hint(command: &Commands) {
+    match command {
+        Commands::Tour { .. }
+        | Commands::Hook { .. }
+        | Commands::Mcp { .. }
+        | Commands::Completions { .. }
+        | Commands::Serve { .. } => return,
+        _ => {}
+    }
+    let config = automemory_core::config::Config::default_config();
+    if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
+        if db.sync_kv_get("tour_hint_shown").is_none() {
+            let _ = db.sync_kv_set("tour_hint_shown", "true");
+            eprintln!("New here? Run `automemory tour` (5 min)");
+        }
+    }
 }

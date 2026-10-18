@@ -28,6 +28,8 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Registration + hook robustness | `python3 tests/scenarios/registration.py` | `connect` for Antigravity/Claude/Codex then `disconnect all --everywhere` leaves nothing and keeps the user's files; a hook registered twice answers once; hooks never fail (corrupt database, empty or garbage input) |
 | Human password gate | `python3 tests/scenarios/human_gate.py` | With a password set, agents cannot decide proposals or change rules (MCP and CLI) |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
+| Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
+| Guided tour and demo | `python3 tests/scenarios/tour.py` | `automemory tour --auto` 8 sandbox steps, collision prevention, learn topics, demo seed and remove |
 | CodeIntel (real engine) | `python3 tests/codeintel/smoke.py` | `memory.about` returns real callers from codebase-memory-mcp; `doctor` reports its version |
 | Hook latency | `python3 tests/perf/hook_p95.py [runs] [budget_ms]` | End-to-end wall time per hook call, process start included |
 | Sync gateway | `cd workers/sync-gateway && npx vitest run` | Webhook signature checks (Stripe, LemonSqueezy) |
