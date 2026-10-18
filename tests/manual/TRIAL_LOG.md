@@ -21,7 +21,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PASS | 2026-10-19 |
 | T4 | Two agents, one file: automatic lock and collision message | PASS | 2026-10-19 |
 | T5 | Hand-off: a new session continues where the last one stopped | PASS | 2026-10-19 |
-| T6 | Safety: a destructive command is denied | PARTIAL (agy pass, Claude gate untested) | 2026-10-19 |
+| T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
 | T7 | Instruction files: `export-rules` block read by another agent | PENDING | |
 | T8 | Dashboard: pages show real data, tour and Settings work | PENDING | |
 | T9 | Human password gate | PENDING | |
@@ -267,4 +267,16 @@ Claude: hook gate NOT tested
 
 Maintainer check for T6b: a custom rule applies to `ls`, `touch`, `cat` with the matching word but not to `echo` (arguments of echo are
 treated as data, by design).
+
+### 2026-10-19 T6b Claude hook gate with a custom rule: PASS (Claude); Antigravity and audit rows not reported
+
+Run: custom critical rule `trial-block` (pattern `TRIAL_BLOCK_ME`); Claude asked to run `ls TRIAL_BLOCK_ME`.
+Result: Claude's shell command did not run. Claude showed `PreToolUse:Bash hook error: CRITICAL STOP: trial-block: Trial rule` and did not
+try to get around it (it suggested the user run it with `!` or change the hook). So the hook gate works for Claude, not only the
+generated guidance. T6 overall: PASS for both agents (Antigravity built-in rules; Claude custom rule).
+
+Notes
+- Claude calls a deny a "hook error"; the mitigation text ("Do not use that word") is not in what Claude shows, only the rule name and reason.
+- Still to confirm by the tester: `hook.deny` row for claude in `audit_log`, Antigravity with the custom rule (optional), and that
+  the `trial-block` rule was removed (`automemory rule list`, `automemory rule remove <id>`).
 
