@@ -620,7 +620,7 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "lock.acquire".to_string(),
-                description: "Acquire or renew a cooperative multi-agent lease on a file, glob pattern, or symbol to prevent collisions".to_string(),
+                description: "Acquire or renew a cooperative multi-agent lease on a file, glob pattern, or symbol. Rarely needed: edits are locked automatically by the hooks".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

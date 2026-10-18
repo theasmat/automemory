@@ -16,7 +16,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | # | Test | Status | Date |
 |---|---|---|---|
 | T0 | Baseline: clean machine, local-only registration | PASS | 2026-10-19 |
-| T1 | Claude Code: hooks fire and events are recorded | PENDING | |
+| T1 | Claude Code: hooks fire and events are recorded | PARTIAL (rerun) | 2026-10-19 |
 | T2 | Antigravity: hooks fire, no hook errors | PENDING | |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PENDING | |
 | T4 | Two agents, one file: automatic lock and collision message | PENDING | |
@@ -113,4 +113,34 @@ Notes
 - The project registers itself on the first hook run, so Strict mode can only be set after T1 (`mode set strict` now would have no project to attach to).
 - `connect` writes the AutoMemory block into AGENTS.md / CLAUDE.md / GEMINI.md, so the checklist already shows "Instruction files" done
   before any decision exists (block says how to use the tools; decisions are added later by `export-rules`).
+
+### 2026-10-19 T1 Claude Code hooks: PARTIAL (needs rerun after fixes)
+
+Run: fresh `claude` in the trial folder; prompt: add `shipping(subtotal)` to shop/pricing.py + test + run suite; `/exit`.
+Not reported: Claude's final message, whether the MCP trust prompt appeared, any hook message. (Ask for these next time.)
+
+Worked
+- Hooks fire: the database holds pre-tool / post-tool / post-tool-fail / session-end events for the whole session.
+- A "Session checkpoint" memory and a distilled "Execution outcome" memory were saved; a hand-off baton was written
+  ("12 tool calls, 0 failed", files pricing.py + test_pricing.py); `automemory resume` shows it; tests passed (6 runs).
+
+Problems found
+1. **Claude called `lock_acquire` by hand (twice)**, after loading the MCP tool through ToolSearch. Our own generated text told it to:
+   CLAUDE.md / skill / rules said "call lock.acquire before modifying shared files", and the session-start context repeated it.
+   That defeats automatic locking, and `locks --coverage` stayed at **0 file changes** (a hand-made lease means the hook records no
+   automatic coverage). Root cause: stale instruction text. **Fixed**: all generated text, the session-start context and the
+   `lock.acquire` tool description now say locks are automatic and must not be called.
+2. **Project never registered**: `project list` empty, memories saved with scope "global", `mode get` said "project not found".
+   `connect` only wrote files; nothing created the project. **Fixed**: a workspace `connect` now registers the repository folder.
+3. **Hooks pointed at the debug build** (`.../target/debug/automemory`): the earlier `connect` ran through the shell alias. **Fixed**:
+   `connect` now warns when it is run from a development build. Always connect with `~/.cargo/bin/automemory`.
+4. Hand-off "blocker: Execution of tool `read` failed": a single failed read (a file Claude probed before creating it) is shown as
+   a blocker. Cosmetic, not fixed.
+5. Inconsistent defaults: `project list` says "Default Autopilot: REVIEW" but an unregistered project falls back to VIBE. Not fixed.
+
+Also: existing `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.agents/rules/automemory.md` are written only when absent, so they keep the
+old text until removed and regenerated (`disconnect` then `connect`). Not fixed (development phase).
+
+Contract test updated: a second prompt in a registered project with nothing to say now returns `{}` instead of boilerplate context.
+Commit with the fixes: see git log.
 

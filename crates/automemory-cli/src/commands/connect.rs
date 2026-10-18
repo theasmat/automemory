@@ -10,6 +10,10 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
         .to_string_lossy()
         .to_string();
 
+    if exe_path.contains("/target/debug/") || exe_path.contains("/target/release/") {
+        println!("⚠ Hooks will run {exe_path}, a development build. For stable hooks run connect with the installed binary (~/.cargo/bin/automemory).\n");
+    }
+
     let scope_label = if global { "GLOBAL" } else { "WORKSPACE" };
     println!(
         "Connecting AutoMemory [{}] for agent: '{}'...\n",
@@ -39,6 +43,11 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
     if res.is_ok() {
         let config = automemory_core::Config::default_config();
         if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
+            // A workspace connect makes the folder a project, so memories, modes and decisions attach to it.
+            if !global && super::continuity::project_for(&db, &cwd).is_none() {
+                let root = super::rules_export::repo_root(&cwd);
+                let _ = super::project::register(None, Some(root.to_string_lossy().to_string()), None, None, false);
+            }
             let pid = super::continuity::project_for(&db, &cwd);
             let key = format!("agent_connected_notice_pending:{}", pid.as_deref().unwrap_or("global"));
             db.sync_kv_set(&key, "1");
@@ -1196,17 +1205,10 @@ At the start of any new task, feature, or refactoring:
 
 ---
 
-## 2. Resource Leases (Multi-Agent & Worktree Safety)
-Before modifying or refactoring shared files in multi-agent or parallel worktree environments:
-1. **Acquire an Advisory Lease**:
-   - Call `lock.acquire` with:
-     - `scope`: relative file path (e.g. `src/auth.c`), glob (`src/models/*.rs`), or symbol (`auth::login`).
-     - `goal`: concise description of what you are changing and why.
-     - `ttl_seconds`: estimated duration (e.g. 300 to 600s).
-   - If granted: proceed with your edits.
-   - If conflict: inspect `holder_agent`, `goal`, and `remaining_seconds`. Choose another task or wait for expiration.
-2. **Release Upon Completion**:
-   - When file edits and tests are complete, call `lock.release` to free the resource for peer agents.
+## 2. File Locks (automatic)
+Locks are automatic: AutoMemory's hooks take a lock when you edit a file and release it when the session ends.
+Do not call `lock.acquire` or `lock.release` yourself. If an edit is reported as held by another agent, read the
+holder and its goal, then pick other work or wait.
 
 ---
 
@@ -1247,7 +1249,7 @@ pub(crate) fn automemory_rules_content() -> &'static str {
 
 This workspace is integrated with **AutoMemory**.
 - **Context Awareness**: At the start of tasks, call `memory.context` or `memory.constitution` to load project invariants and active decisions.
-- **Mutual Exclusion**: Before modifying shared files, call `lock.acquire(scope="<file>", goal="<goal>")` to prevent collisions with parallel agents in other worktrees. Release with `lock.release` when done.
+- **Mutual Exclusion**: File locks are automatic (hooks lock a file when you edit it). Do not call `lock.acquire` yourself; if an edit is reported as held by another agent, pick other work or wait.
 - **Architectural Policy**: Record non-trivial architectural decisions with `decision.record` so all parallel agents see them with 0ms latency.
 - **Handoffs**: Pass context to peer workers using `baton.pass`.
 - **Pre-Tool Safety**: Pre-tool hooks intercept destructive operations (e.g. recursive root deletions, force pushes). Never attempt raw destructive shell commands.
