@@ -47,7 +47,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Candidate tier, promote on verify/human confirm | ✅ | `propose` rejected without provenance |
 | Scope-aware dedup + version history | ✅ | In-place upsert |
 | Decay, supersede chains, contradiction flag | ✅ | Contradiction = same tool, different version |
-| Vector search | ✅ (local n-gram) | Neural embeddings later |
+| Vector search | ✅ keyword (default) or hybrid; providers ngram, ollama, openai-compatible, exec | `onnx` build feature |
 | Procedural skills from trajectories | ✅ | `memory.skills` |
 | Failure catalog (`failure.save/resolve`, proactive warning) | ✅ | |
 | Constitution + token-capped context | ✅ | `boot_injection` off by default |
@@ -85,7 +85,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Interfaces
 | Feature | Status | Notes |
 |---|---|---|
-| MCP server (59 tools), CLI | ✅ | |
+| MCP server (60 tools), CLI | ✅ | |
 | Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
 | `next_action` on every tool reply | ✅ | |
@@ -99,7 +99,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 187 Rust tests + 10 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 204 Rust tests + 11 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

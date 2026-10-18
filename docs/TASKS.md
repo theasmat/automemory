@@ -64,17 +64,18 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Cross-session and cross-machine continuity, retrieval modes (design in PLAN §7-8)
 
-- [ ] Stable `project_key` (git remote / root commit) on projects; deltas carry it and map to the local project on apply
-- [ ] Op-log as the only sync path; pull on SessionStart (2 s budget), push on SessionEnd; retire last-writer-wins import
-- [ ] `tests/scenarios/two_machines.py`: two HOMEs, different checkout paths, one shared vault
-- [ ] Resume pack (`automemory resume`, `memory.resume`, shown once at session start) and hand-off bundle (branch, sha, dirty files, next step)
-- [ ] Sync baton, checkpoint, review-proposal and doc kinds; `automemory sync bootstrap` for a new machine
-- [ ] `[retrieval] mode = keyword|hybrid`; `EmbeddingProvider` v2 (id, dimensions, batch, local); vectors per (memory, model); reindex job in `serve`
-- [ ] Providers: `ngram` (exists), `ollama`, `openai`-compatible; later `onnx` (cargo feature) and `http`; `automemory embeddings status|test|reindex|eval`
+- [x] Stable `project_key` (git remote / root commit) on projects; deltas carry it and map to the local project on apply
+- [x] Op-log as the only sync path; pull on SessionStart (2 s budget), push on SessionEnd; retire last-writer-wins import
+- [x] `tests/scenarios/two_machines.py`: two HOMEs, different checkout paths, one shared vault
+- [x] Resume pack (`automemory resume`, `memory.resume`, shown once at session start) and hand-off bundle (branch, sha, dirty files, next step)
+- [x] Sync baton, checkpoint, review-proposal and doc kinds; `automemory sync bootstrap` for a new machine
+- [x] `[retrieval] mode = keyword|hybrid`; `EmbeddingProvider` v2 (model id, batch, local); vectors per (memory, model); lazy indexing during hybrid search (a background reindex in `serve` is not built; use `embeddings reindex`)
+- [x] Providers: `ngram`, `ollama`, `openai`-compatible, `exec` (any command); `automemory embeddings status|test|reindex|use|off|eval`; `tests/scenarios/embeddings_modes.py`
+- [ ] `onnx` provider (optional cargo feature); sync of vectors between machines (each machine re-embeds today)
 
 ## Docs hygiene
 
-- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 187 Rust tests at last check)
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 204 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

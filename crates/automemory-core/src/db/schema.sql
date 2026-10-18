@@ -475,6 +475,18 @@ CREATE TABLE IF NOT EXISTS project_keys (
     project_key TEXT NOT NULL UNIQUE
 );
 
+-- Vectors per (memory, embedding model): switching model never mixes vector spaces
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL,
+    embedding BLOB NOT NULL,
+    content_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (memory_id, model),
+    FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE
+);
+
 -- Sync watermarks + applied delta files (incremental op-log sync)
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,

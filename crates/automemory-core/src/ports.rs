@@ -279,6 +279,22 @@ pub const EMBEDDING_API_VERSION: &str = "1";
 /// local projection engine; API providers implement this trait.
 pub trait EmbeddingProvider: Send + Sync {
     fn embed(&self, text: &str) -> Result<Vec<f32>>;
+
+    /// Many texts at once; providers with a batch endpoint override this.
+    fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        texts.iter().map(|t| self.embed(t)).collect()
+    }
+
+    /// Identity of the vector space, e.g. `ngram-v1`, `ollama:nomic-embed-text`. Vectors are stored
+    /// per model id and only ever compared with vectors of the same id.
+    fn model_id(&self) -> String {
+        "custom".to_string()
+    }
+
+    /// False when text leaves the machine.
+    fn is_local(&self) -> bool {
+        true
+    }
 }
 
 pub struct LocalEmbeddings {
@@ -302,6 +318,10 @@ impl Default for LocalEmbeddings {
 impl EmbeddingProvider for LocalEmbeddings {
     fn embed(&self, text: &str) -> Result<Vec<f32>> {
         self.engine.embed_text(text)
+    }
+
+    fn model_id(&self) -> String {
+        "ngram-v1".to_string()
     }
 }
 

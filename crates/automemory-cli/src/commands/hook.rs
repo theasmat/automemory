@@ -216,7 +216,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
                 parts.extend(resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)));
             }
             if boot_on && first_step {
-                let ctx = automemory_core::retrieval::RetrievalEngine::new(&db)
+                let ctx = automemory_core::retrieval::RetrievalEngine::keyword_only(&db)
                     .assemble_context(effective_project_id, None, 2000)
                     .unwrap_or_default();
                 if !ctx.trim().is_empty() {
@@ -230,7 +230,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             emit!("{{}}");
             return Ok(());
         }
-        let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
+        let engine = automemory_core::retrieval::RetrievalEngine::keyword_only(&db);
         let ctx = engine
             .assemble_context(effective_project_id, None, 2000)
             .unwrap_or_default();

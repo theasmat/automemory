@@ -18,7 +18,83 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub locks: LockSettings,
     #[serde(default)]
+    pub retrieval: RetrievalSettings,
+    #[serde(default)]
+    pub embeddings: EmbeddingSettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
+}
+
+/// `[retrieval]`: how recall finds memories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalSettings {
+    /// `keyword` (default: FTS5, paths, trust, recency; no model, no network) or `hybrid`
+    /// (the same plus vector similarity from `[embeddings]`, fused by rank).
+    #[serde(default = "default_retrieval_mode")]
+    pub mode: String,
+}
+
+fn default_retrieval_mode() -> String {
+    "keyword".to_string()
+}
+
+impl Default for RetrievalSettings {
+    fn default() -> Self {
+        Self { mode: default_retrieval_mode() }
+    }
+}
+
+impl RetrievalSettings {
+    pub fn is_hybrid(&self) -> bool {
+        self.mode.eq_ignore_ascii_case("hybrid")
+    }
+}
+
+/// `[embeddings]`: read only in hybrid mode.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingSettings {
+    /// `ngram` (built in, offline), `ollama`, `openai` (any OpenAI-compatible endpoint),
+    /// `exec` (a command: JSON texts in, JSON vectors out) or `onnx` (optional build feature).
+    #[serde(default = "default_embedding_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+    /// Base URL (ollama, openai) or the command line (exec).
+    #[serde(default)]
+    pub endpoint: String,
+    /// NAME of the environment variable holding the API key; the key itself is never stored.
+    #[serde(default)]
+    pub api_key_env: String,
+    /// Hosted providers send memory text off the machine; this must be true to allow it.
+    #[serde(default)]
+    pub allow_network: bool,
+    /// Request a vector size from providers that support it (OpenAI-style `dimensions`).
+    #[serde(default)]
+    pub dimensions: Option<usize>,
+    #[serde(default = "default_embedding_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_embedding_provider() -> String {
+    "ngram".to_string()
+}
+
+fn default_embedding_timeout() -> u64 {
+    8
+}
+
+impl Default for EmbeddingSettings {
+    fn default() -> Self {
+        Self {
+            provider: default_embedding_provider(),
+            model: String::new(),
+            endpoint: String::new(),
+            api_key_env: String::new(),
+            allow_network: false,
+            dimensions: None,
+            timeout_secs: default_embedding_timeout(),
+        }
+    }
 }
 
 /// Automatic file locking (`[locks]` in config.toml).
@@ -112,6 +188,8 @@ impl Default for GlobalConfig {
             defaults: DefaultSettings::default(),
             security: SecurityConfig::default(),
             locks: LockSettings::default(),
+            retrieval: RetrievalSettings::default(),
+            embeddings: EmbeddingSettings::default(),
             projects: Vec::new(),
         }
     }

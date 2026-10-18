@@ -2,30 +2,71 @@ use super::decay::MemoryDecayScorer;
 use super::scorer::HybridScorer;
 use crate::db::Database;
 use crate::models::*;
-use crate::ports::{EmbeddingProvider, LocalEmbeddings};
+use crate::ports::EmbeddingProvider;
 use anyhow::Result;
 
 pub struct RetrievalEngine<'a> {
     db: &'a Database,
-    embeddings: Box<dyn EmbeddingProvider>,
+    /// `None` in keyword mode: the vector leg is skipped entirely.
+    embeddings: Option<Box<dyn EmbeddingProvider>>,
     scorer: HybridScorer,
     decay_scorer: MemoryDecayScorer,
 }
 
 impl<'a> RetrievalEngine<'a> {
+    /// Recall as configured: `[retrieval] mode = "keyword"` (default) or `"hybrid"` with the
+    /// provider from `[embeddings]`. A provider that cannot be built falls back to keyword mode.
     pub fn new(db: &'a Database) -> Self {
-        Self {
-            db,
-            embeddings: Box::new(LocalEmbeddings::new()),
-            scorer: HybridScorer::default(),
-            decay_scorer: MemoryDecayScorer::default(),
+        let cfg = crate::config::GlobalConfig::load().unwrap_or_default();
+        let embeddings = if cfg.retrieval.is_hybrid() {
+            match crate::embeddings::provider_from_settings(&cfg.embeddings) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    tracing::warn!("hybrid recall unavailable, using keyword recall: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Self { db, embeddings, scorer: HybridScorer::default(), decay_scorer: MemoryDecayScorer::default() }
+    }
+
+    /// Always keyword recall: for hooks, which must never wait on a model or the network.
+    pub fn keyword_only(db: &'a Database) -> Self {
+        Self { db, embeddings: None, scorer: HybridScorer::default(), decay_scorer: MemoryDecayScorer::default() }
+    }
+
+    /// Embeds a few not-yet-embedded memories before a search, so hybrid recall improves as
+    /// memories are used even without the background worker. Errors only mean keyword recall.
+    fn warm_vectors(&self) {
+        if let Some(p) = &self.embeddings {
+            if let Err(e) = crate::embeddings::index_pending(self.db, p.as_ref(), 16) {
+                tracing::warn!("embedding indexing skipped: {e}");
+            }
+        }
+    }
+
+    /// Nearest memories by vector, or nothing in keyword mode or when the provider fails.
+    fn vector_leg(&self, query: &str, project_id: Option<&str>, limit: usize) -> Vec<(Memory, f32)> {
+        let Some(p) = &self.embeddings else { return Vec::new() };
+        match p.embed(query) {
+            Ok(emb) if !emb.is_empty() => self
+                .db
+                .search_memories_vector(&emb, &p.model_id(), project_id, limit)
+                .unwrap_or_default(),
+            Ok(_) => Vec::new(),
+            Err(e) => {
+                tracing::warn!("query embedding failed, keyword recall only: {e}");
+                Vec::new()
+            }
         }
     }
 
     /// Swaps the embedding backend (e.g. an API provider in tests or
     /// team setups) without touching ranking logic.
     pub fn with_embeddings(mut self, provider: Box<dyn EmbeddingProvider>) -> Self {
-        self.embeddings = provider;
+        self.embeddings = Some(provider);
         self
     }
 
@@ -196,14 +237,8 @@ impl<'a> RetrievalEngine<'a> {
                 .db
                 .search_memories_fts(&expanded_query, project_id, 15)
                 .unwrap_or_default();
-            let query_emb = self.embeddings.embed(&expanded_query).unwrap_or_default();
-            let vec_results = if !query_emb.is_empty() {
-                self.db
-                    .search_memories_vector(&query_emb, project_id, 15)
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
+            self.warm_vectors();
+            let vec_results = self.vector_leg(&expanded_query, project_id, 15);
 
             let scored = self.scorer.fuse_and_rank(fts_results, vec_results, 10);
             if scored.is_empty() {
@@ -456,14 +491,8 @@ impl<'a> RetrievalEngine<'a> {
             .db
             .search_memories_fts(&expanded_query, project_id, limit * 2)
             .unwrap_or_default();
-        let query_emb = self.embeddings.embed(&expanded_query).unwrap_or_default();
-        let vec_results = if !query_emb.is_empty() {
-            self.db
-                .search_memories_vector(&query_emb, project_id, limit * 2)
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        self.warm_vectors();
+        let vec_results = self.vector_leg(&expanded_query, project_id, limit * 2);
 
         let scored_memories = self.scorer.fuse_and_rank(fts_results, vec_results, limit);
         for candidate in scored_memories {

@@ -51,7 +51,7 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 | CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `GraphCodeIntel` file-hash fallback when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
 | MemoryStore | Persist memories, decisions, ledger | SQLite WAL |
 | Retriever | Rank candidates | FTS5 BM25 × decay × confidence; local n-gram vector projection |
-| EmbeddingProvider | Text → vectors | Local n-gram projection (not neural) |
+| EmbeddingProvider | Text → vectors | `[embeddings]` provider: n-gram (default), Ollama, OpenAI-compatible HTTP, or any command (`exec`); vectors stored per model in `memory_vectors`. Used only when `[retrieval] mode = "hybrid"`; hooks are always keyword-only; remote endpoints need `allow_network` and get redacted text; any provider failure falls back to keyword |
 | Verifier | Check a claim against reality | Symbol / file-hash verifier |
 | TrustPolicy | Source → tier; what is returned as fact | Built-in tiers |
 | GuardrailRule | Block catastrophic actions | Shell tokenizer + rule set |
@@ -99,7 +99,7 @@ Hook management: `automemory hooks enable|disable|move|add|test`, shadow mode (l
 
 One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`, run atomically under `BEGIN IMMEDIATE`; a failed step aborts and rolls back instead of bumping the version. Lease acquisition is also one `BEGIN IMMEDIATE` transaction, because every hook is its own process. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
 
-**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_embeddings`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`.
+**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`.
 
 **Memory:** `scope` (global|project), `type` (fact, decision, lesson, pattern, warning, observation, preference, skill), `status` (active, candidate, pinned, stale, changed, superseded, archived, invalid, review), `source_kind`, `confidence`, `importance`, `freshness`, tags/entities/metadata. Dedup: scope-aware in-place upsert with a version row.
 
@@ -143,7 +143,7 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 
 ## 9. Interfaces
 
-**MCP (59 tools, stdio + HTTP).**
+**MCP (60 tools, stdio + HTTP).**
 
 | Group | Tools |
 |---|---|

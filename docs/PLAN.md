@@ -141,6 +141,8 @@ an optional later index. No vector database server.
 **When to turn hybrid on:** only if `embeddings eval` beats keyword on labelled queries, or the store passes about
 2-5k active memories. Evidence from other systems is mixed (docs/research/memory_improvement.md).
 
+**Status (Oct 2026):** built and tested (`embeddings` module, CLI, `tests/scenarios/embeddings_modes.py`). Not built: `onnx` provider, vector sync between machines, background reindex in `serve`.
+
 ## 8. Same experience in another session or on another machine
 
 "Experience" means three things: what the project **knows** (memories, decisions, failures, skills), what is **in

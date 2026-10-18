@@ -26,6 +26,7 @@ run "two-agent collision"             python3 tests/scenarios/collision.py
 run "automatic locking v2"          python3 tests/scenarios/locking_v2.py
 run "session lifecycle"               python3 tests/scenarios/session_lifecycle.py
 run "two machines (git vault)"        python3 tests/scenarios/two_machines.py
+run "embeddings modes"                python3 tests/scenarios/embeddings_modes.py
 run "registration + hook robustness"  python3 tests/scenarios/registration.py
 run "human password gate"             python3 tests/scenarios/human_gate.py
 run "dashboard API"                   python3 tests/scenarios/dashboard.py

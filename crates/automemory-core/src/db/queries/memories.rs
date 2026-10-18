@@ -9,6 +9,17 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use std::str::FromStr;
 
+/// What gets embedded for a memory: the summary and the start of the content.
+pub fn embedding_text(summary: &str, content: &str) -> String {
+    let body: String = content.chars().take(1500).collect();
+    format!("{summary}\n{body}")
+}
+
+pub fn text_hash(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
 impl Database {
     pub fn save_memory(&self, mem: &Memory) -> Result<()> {
         // Scope-Aware Deduplication: Check if active memory with same summary exists in this scope
@@ -467,9 +478,11 @@ impl Database {
         Ok(list)
     }
 
+    /// Nearest active memories by cosine similarity among vectors of `model`.
     pub fn search_memories_vector(
         &self,
         query_embedding: &[f32],
+        model: &str,
         project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<(Memory, f32)>> {
@@ -480,20 +493,20 @@ impl Database {
                    m.created_at, m.updated_at, m.last_recalled_at, m.tags, m.entities, m.metadata,
                    e.embedding
             FROM memories m
-            JOIN memory_embeddings e ON m.id = e.memory_id
-            WHERE m.status = 'active'
+            JOIN memory_vectors e ON m.id = e.memory_id
+            WHERE m.status = 'active' AND e.model = ?1
         "#
         .to_string();
 
         if let Some(pid) = project_id {
             sql.push_str(&format!(
-                " AND (m.scope = 'global' OR m.project_id = '{}')",
+                " AND (m.scope = 'global' OR m.project_id = '{0}' OR m.project_id IN (SELECT slug FROM projects WHERE id = '{0}'))",
                 sql_str(pid)
             ));
         }
 
         let mut stmt = conn.prepare(&sql)?;
-        let mut rows = stmt.query([])?;
+        let mut rows = stmt.query(params![model])?;
         let mut candidates = Vec::new();
 
         while let Some(row) = rows.next()? {
@@ -507,6 +520,72 @@ impl Database {
         candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         candidates.truncate(limit);
         Ok(candidates)
+    }
+
+    /// Stores (or replaces) the vector of one memory for `model`.
+    pub fn upsert_memory_vector(&self, memory_id: &str, model: &str, vector: &[f32], content_hash: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO memory_vectors (memory_id, model, dimensions, embedding, content_hash, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(memory_id, model) DO UPDATE SET
+                dimensions = excluded.dimensions, embedding = excluded.embedding,
+                content_hash = excluded.content_hash, updated_at = excluded.updated_at",
+            params![
+                memory_id,
+                model,
+                vector.len() as i64,
+                VectorEngine::to_blob(vector),
+                content_hash,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Active memories with no vector for `model`, or whose text changed since it was embedded:
+    /// `(id, text to embed, content hash)`.
+    pub fn memories_needing_vectors(&self, model: &str, limit: usize) -> Result<Vec<(String, String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.summary, m.content, v.content_hash
+             FROM memories m
+             LEFT JOIN memory_vectors v ON v.memory_id = m.id AND v.model = ?1
+             WHERE m.status = 'active'
+             ORDER BY m.updated_at DESC",
+        )?;
+        let rows = stmt.query_map(params![model], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<String>>(3)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows.flatten() {
+            let (id, summary, content, stored) = row;
+            let text = embedding_text(&summary, &content);
+            let hash = text_hash(&text);
+            if stored.as_deref() != Some(hash.as_str()) {
+                out.push((id, text, hash));
+                if out.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// `(embedded, active)` memory counts for `model`, and the other models present.
+    pub fn vector_coverage(&self, model: &str) -> Result<(usize, usize, Vec<(String, usize)>)> {
+        let conn = self.conn();
+        let active: i64 = conn.query_row("SELECT COUNT(*) FROM memories WHERE status = 'active'", [], |r| r.get(0))?;
+        let embedded: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM memory_vectors v JOIN memories m ON m.id = v.memory_id WHERE m.status = 'active' AND v.model = ?1",
+            params![model],
+            |r| r.get(0),
+        )?;
+        let mut stmt = conn.prepare("SELECT model, COUNT(*) FROM memory_vectors WHERE model != ?1 GROUP BY model")?;
+        let others = stmt
+            .query_map(params![model], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize)))?
+            .flatten()
+            .collect();
+        Ok((embedded as usize, active as usize, others))
     }
 
     pub fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {

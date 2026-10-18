@@ -113,6 +113,12 @@ enum Commands {
         command: MemoryCommands,
     },
 
+    /// Recall mode and embedding provider (keyword or hybrid)
+    Embeddings {
+        #[command(subcommand)]
+        command: EmbeddingsCommands,
+    },
+
     /// Show where the last session left off (hand-off, checkpoint, decisions, repository state)
     Resume,
 
@@ -992,6 +998,7 @@ async fn main() -> Result<()> {
 
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
+        .with_writer(std::io::stderr)
         .with_target(false)
         .compact()
         .try_init();
@@ -1242,6 +1249,16 @@ async fn main() -> Result<()> {
                 commands::proposal::reject_all(proposal_type, project)?;
             }
         },
+        Commands::Embeddings { command } => match command {
+            EmbeddingsCommands::Status => commands::embeddings::status()?,
+            EmbeddingsCommands::Test => commands::embeddings::test()?,
+            EmbeddingsCommands::Reindex { all } => commands::embeddings::reindex(all)?,
+            EmbeddingsCommands::Use { provider, model, endpoint, api_key_env, allow_network } => {
+                commands::embeddings::use_provider(provider, model, endpoint, api_key_env, allow_network)?
+            }
+            EmbeddingsCommands::Off => commands::embeddings::off()?,
+            EmbeddingsCommands::Eval { file } => commands::embeddings::eval(file)?,
+        },
         Commands::Resume => commands::continuity::resume()?,
         Commands::Handoff { note } => commands::continuity::handoff(note).await?,
         Commands::Locks { project, coverage: true, days } => {
@@ -1355,4 +1372,36 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum EmbeddingsCommands {
+    /// Mode, provider and how many memories are indexed
+    Status,
+    /// Embed one sentence with the configured provider
+    Test,
+    /// Embed memories that have no vector yet (--all: recompute every one)
+    Reindex {
+        #[arg(long)]
+        all: bool,
+    },
+    /// Switch to hybrid recall with a provider: ngram, ollama, openai, exec
+    Use {
+        provider: String,
+        #[arg(long)]
+        model: Option<String>,
+        /// Base URL, or the command for `exec`
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Name of the environment variable holding the API key
+        #[arg(long)]
+        api_key_env: Option<String>,
+        /// Allow memory text to be sent to a non-local endpoint
+        #[arg(long)]
+        allow_network: bool,
+    },
+    /// Back to keyword recall
+    Off,
+    /// Compare keyword and hybrid on labelled queries (JSON file)
+    Eval { file: std::path::PathBuf },
 }

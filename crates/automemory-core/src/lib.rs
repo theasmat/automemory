@@ -6,6 +6,7 @@ pub mod config;
 pub mod crypto;
 pub mod db;
 pub mod docs;
+pub mod embeddings;
 pub mod eval;
 pub mod extraction;
 pub mod graph;

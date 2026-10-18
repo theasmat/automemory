@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 13;
+const LATEST_SCHEMA_VERSION: i32 = 14;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -408,6 +408,26 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
         step(conn, "PRAGMA user_version = 13", [])?;
+    }
+
+    if version < 14 {
+        step(
+            conn,
+            r#"
+            CREATE TABLE IF NOT EXISTS memory_vectors (
+                memory_id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                dimensions INTEGER NOT NULL,
+                embedding BLOB NOT NULL,
+                content_hash TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (memory_id, model),
+                FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE
+            );
+            "#,
+            [],
+        )?;
+        step(conn, "PRAGMA user_version = 14", [])?;
     }
     Ok(())
 }
