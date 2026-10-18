@@ -24,6 +24,11 @@
       @retry="store.fetchAll()"
     />
 
+    <div v-if="store.daemonOutdated" class="rounded-card bg-warn-bg px-5 py-4 text-sm text-text" role="status">
+      This dashboard is newer than the AutoMemory daemon that is running, so some parts will be empty.
+      Restart it with <code class="font-mono">automemory serve</code>.
+    </div>
+
     <WelcomeCard />
 
     <!-- At a glance: three tiles, one number each -->
@@ -124,7 +129,18 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useAutoMemoryStore } from '~/stores/automemory';
+import { useAutoMemoryStore, agentLabel } from '~/stores/automemory';
+
+/** "claude" -> "Claude Code"; unknown names are shown as they are. */
+function agentName(a: any): string {
+  const id = agentLabel(a);
+  if (!id) return 'An agent';
+  if (id.includes('claude')) return 'Claude Code';
+  if (id.includes('cursor')) return 'Cursor';
+  if (id.includes('codex')) return 'Codex';
+  if (id.includes('agy') || id.includes('antigravity')) return 'Antigravity';
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
 
 const store = useAutoMemoryStore();
 const previewDrawerOpen = ref(false);
@@ -172,7 +188,7 @@ const latestDecision = computed(() => {
 const recentSentences = computed(() => {
   return store.recentEvents.slice(0, 5).map((e: any) => {
     const time = e.timestamp || e.created_at ? new Date(e.timestamp || e.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'now';
-    const agent = e.agent || 'Agent';
+    const agent = agentName(e.agent);
     const action = e.event_type || e.tool_name || 'recorded an action';
     return {
       time,

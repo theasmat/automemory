@@ -19,6 +19,12 @@ import { useToast } from '~/composables/useToast';
 
 let wsClient: ReturnType<typeof useWsPulse> | null = null;
 
+/** Events carry the agent as an object ({adapter_id}), leases as a string; return a lowercase name for matching. */
+export function agentLabel(a: any): string {
+  if (typeof a === 'string') return a.toLowerCase();
+  return String(a?.adapter_id ?? a?.name ?? '').toLowerCase();
+}
+
 export const useAutoMemoryStore = defineStore('automemory', {
   state: () => ({
     stats: {
@@ -74,6 +80,7 @@ export const useAutoMemoryStore = defineStore('automemory', {
       tour_step: 0,
     } as OnboardingState,
     learnTopics: [] as LearnTopic[],
+    daemonOutdated: false,
     isTourActive: false,
     tourKind: 'intro' as 'intro' | 'showcase',
     isHelpDrawerOpen: false,
@@ -117,10 +124,10 @@ export const useAutoMemoryStore = defineStore('automemory', {
 
       return known.map((a) => {
         const heldLeases = leases.filter(
-          (l: any) => l.agent?.toLowerCase().includes(a.id) || l.agent?.toLowerCase().includes(a.name.toLowerCase())
+          (l: any) => agentLabel(l.agent).includes(a.id) || agentLabel(l.agent).includes(a.name.toLowerCase())
         );
         const lastEv = events.find(
-          (e: any) => e.agent?.toLowerCase().includes(a.id) || e.agent?.toLowerCase().includes(a.name.toLowerCase())
+          (e: any) => agentLabel(e.agent).includes(a.id) || agentLabel(e.agent).includes(a.name.toLowerCase())
         );
 
         let status = 'not connected';
@@ -223,29 +230,32 @@ export const useAutoMemoryStore = defineStore('automemory', {
 
     async fetchSetup() {
       const res = await api.getSetup();
-      if (res.ok && res.data) {
+      if (res.ok && Array.isArray(res.data)) {
         this.setupSteps = res.data;
+        this.daemonOutdated = false;
+      } else if (res.error?.includes('older than this dashboard')) {
+        this.daemonOutdated = true;
       }
     },
 
     async fetchOnboarding() {
       const res = await api.getOnboarding();
-      if (res.ok && res.data) {
-        this.onboardingState = res.data;
+      if (res.ok && res.data && typeof res.data === 'object') {
+        this.onboardingState = { ...this.onboardingState, ...res.data, dismissed_flags: res.data.dismissed_flags ?? {}, completed_steps: res.data.completed_steps ?? [] };
       }
     },
 
     async fetchLearnTopics() {
       const res = await api.getLearnTopics();
-      if (res.ok && res.data) {
+      if (res.ok && Array.isArray(res.data)) {
         this.learnTopics = res.data;
       }
     },
 
     async updateOnboardingProgress(payload: Record<string, any>) {
       const res = await api.updateOnboarding(payload);
-      if (res.ok && res.data) {
-        this.onboardingState = res.data;
+      if (res.ok && res.data && typeof res.data === 'object') {
+        this.onboardingState = { ...this.onboardingState, ...res.data, dismissed_flags: res.data.dismissed_flags ?? {}, completed_steps: res.data.completed_steps ?? [] };
       }
       return res.ok;
     },

@@ -157,6 +157,7 @@ import {
   Share2 as GraphIcon,
   Sliders as RecallIcon,
   MoreHorizontal as MoreHorizontalIcon,
+  Settings as SettingsIcon,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -194,6 +195,7 @@ const advancedNav = [
   { path: '/constitution', label: 'Rules of the project', icon: RulesIcon },
   { path: '/graph', label: 'Knowledge graph', icon: GraphIcon },
   { path: '/recall', label: 'Recall settings', icon: RecallIcon },
+  { path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 function isActive(path: string): boolean {

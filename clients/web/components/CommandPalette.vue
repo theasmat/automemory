@@ -144,7 +144,7 @@ function close() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+  if ((e.metaKey || e.ctrlKey) && e.key?.toLowerCase() === 'k') {
     e.preventDefault();
     if (isOpen.value) close();
     else open();

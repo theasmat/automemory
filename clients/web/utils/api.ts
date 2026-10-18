@@ -14,6 +14,9 @@ import type {
 } from '~/types';
 import { usePasswordModal } from '~/composables/usePasswordModal';
 
+/** Shown when the daemon answers a new route with the HTML shell instead of JSON. */
+export const OUTDATED = 'The AutoMemory daemon is older than this dashboard. Restart it: automemory serve';
+
 export interface ApiResponse<T> {
   ok: boolean;
   data: T | null;
@@ -49,6 +52,11 @@ export async function request<T>(endpoint: string, options?: RequestInit): Promi
       const data = JSON.parse(text) as T;
       return { ok: true, data };
     } catch {
+      // An HTML page where JSON was expected: the daemon does not know this route (it is older
+      // than this dashboard) or something else answers on this port.
+      if (/^\s*<(!doctype|html)/i.test(text)) {
+        return { ok: false, data: null, error: OUTDATED };
+      }
       return { ok: true, data: text as unknown as T };
     }
   } catch (err: any) {

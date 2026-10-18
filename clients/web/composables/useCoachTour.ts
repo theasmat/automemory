@@ -25,6 +25,8 @@ export interface TargetRect {
 
 const index = ref(0);
 const rect = ref<TargetRect | null>(null);
+/** The step whose target has already been scrolled into view (so polling does not keep scrolling). */
+let scrolledFor = '';
 
 /** Tour steps, in the order a new user should meet things. Keep copy to one or two short lines. */
 const INTRO_STEPS: CoachStep[] = [
@@ -247,20 +249,32 @@ export function useCoachTour() {
   const isFirst = computed(() => index.value === 0);
   const isLast = computed(() => index.value === steps.value.length - 1);
 
-  /** Measure the spotlight target; null means "show a centered card". */
+  /**
+   * Measure the spotlight target; null means "show a centered card". Called on a timer while the
+   * tour is open, so a page that renders late (data still loading) is picked up as soon as the
+   * target appears, and the highlight follows layout shifts.
+   */
   function measure() {
     const step = current.value;
     if (!step?.target || typeof document === 'undefined') {
-      rect.value = null;
+      if (rect.value) rect.value = null;
       return;
     }
     const el = findVisible(step.target);
     if (!el) {
-      rect.value = null;
+      if (rect.value) rect.value = null;
       return;
     }
+    if (scrolledFor !== step.id) {
+      scrolledFor = step.id;
+      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+    }
     const r = el.getBoundingClientRect();
-    rect.value = { top: r.top, left: r.left, width: r.width, height: r.height };
+    const next = { top: r.top, left: r.left, width: r.width, height: r.height };
+    const prev = rect.value;
+    if (!prev || prev.top !== next.top || prev.left !== next.left || prev.width !== next.width || prev.height !== next.height) {
+      rect.value = next;
+    }
   }
 
   async function show(i: number) {
@@ -270,15 +284,13 @@ export function useCoachTour() {
     if (step.route && router.currentRoute.value.path !== step.route) {
       await router.push(step.route);
     }
-    // Wait for the page to render, then bring the target into view and measure it.
+    // Wait (up to 4 s) for the page to render its target, then measure; the timer keeps following it.
     await nextTick();
-    for (let tries = 0; tries < 10; tries++) {
+    scrolledFor = '';
+    rect.value = null;
+    for (let tries = 0; tries < 40; tries++) {
       if (!step.target || findVisible(step.target)) break;
-      await new Promise((r) => setTimeout(r, 60));
-    }
-    const el = findVisible(step.target);
-    if (el) {
-      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+      await new Promise((r) => setTimeout(r, 100));
     }
     measure();
   }

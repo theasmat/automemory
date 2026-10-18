@@ -88,6 +88,7 @@ const GAP = 14; // distance from target to card
 const EDGE = 12; // minimum distance to the viewport edge
 
 let previouslyFocused: HTMLElement | null = null;
+let follow: ReturnType<typeof setInterval> | null = null;
 
 function readSizes() {
   if (typeof window === 'undefined') return;
@@ -211,12 +212,14 @@ watch(
     if (active) {
       previouslyFocused = document.activeElement as HTMLElement | null;
       window.addEventListener('keydown', onKeydown);
+      follow = setInterval(measure, 200);
       window.addEventListener('resize', onViewportChange);
       window.addEventListener('scroll', onViewportChange, { passive: true, capture: true });
       await nextTick();
       readSizes();
     } else {
       window.removeEventListener('keydown', onKeydown);
+      if (follow) clearInterval(follow);
       window.removeEventListener('resize', onViewportChange);
       window.removeEventListener('scroll', onViewportChange, true);
       previouslyFocused?.focus?.();
@@ -225,14 +228,19 @@ watch(
   { immediate: true }
 );
 
-// Re-read the card size and move focus to the main button after every step.
-watch([index, rect], async () => {
+// Re-read the card size whenever the target moves; focus the main button only when the step changes.
+watch(rect, async () => {
+  await nextTick();
+  readSizes();
+});
+watch(index, async () => {
   await nextTick();
   readSizes();
   primary.value?.focus({ preventScroll: true });
 });
 
 onBeforeUnmount(() => {
+  if (follow) clearInterval(follow);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('resize', onViewportChange);
   window.removeEventListener('scroll', onViewportChange, true);
