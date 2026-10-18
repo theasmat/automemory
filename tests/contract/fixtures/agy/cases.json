@@ -5,6 +5,12 @@
   {"name": "antigravity run_command recursive delete of root: flat deny", "event": "pre-tool", "style": "flat",
    "payload": {"conversationId": "a1", "toolCall": {"name": "run_command", "args": {"CommandLine": "rm -rf /"}}},
    "expect": {"kind": "deny", "contains": "CRITICAL STOP"}},
+  {"name": "antigravity PreInvocation with nothing to say prints an empty object", "event": "boot", "style": "flat",
+   "payload": {"conversationId": "a1", "invocationNum": 3, "initialNumSteps": 10},
+   "expect": {"kind": "allow"}},
+  {"name": "antigravity Stop answers with a decision it accepts", "event": "stop", "style": "flat",
+   "payload": {"conversationId": "a1", "executionNum": 1, "terminationReason": "model_stop", "fullyIdle": true},
+   "expect": {"kind": "allow"}},
   {"name": "antigravity post-tool prints an empty object", "event": "post-tool", "style": "flat",
    "payload": {"conversationId": "a1", "toolCall": {"name": "view_file", "args": {"AbsolutePath": "/tmp/x"}}},
    "expect": {"kind": "allow"}}

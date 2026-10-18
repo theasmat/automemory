@@ -241,6 +241,25 @@ impl Database {
         Ok(rows.flatten().collect())
     }
 
+    /// Keep a message for the session's agent until a hook that can show it runs.
+    pub fn push_note(&self, session_id: &str, text: &str) {
+        let _ = self.conn().execute(
+            "INSERT INTO session_notes (session_id, ts, text) VALUES (?1, ?2, ?3)",
+            params![session_id, Utc::now().to_rfc3339(), text],
+        );
+    }
+
+    /// The session's waiting notes, oldest first; each is delivered once.
+    pub fn drain_notes(&self, session_id: &str) -> Vec<String> {
+        let conn = self.conn();
+        let notes: Vec<String> = conn
+            .prepare("SELECT text FROM session_notes WHERE session_id = ?1 ORDER BY id")
+            .and_then(|mut s| s.query_map(params![session_id], |r| r.get(0)).map(|rows| rows.flatten().collect()))
+            .unwrap_or_default();
+        let _ = conn.execute("DELETE FROM session_notes WHERE session_id = ?1", params![session_id]);
+        notes
+    }
+
     pub fn record_alert(&self, project_id: Option<&str>, path: &str, agent: &str, session: &str, message: &str) {
         let _ = self.conn().execute(
             "INSERT INTO lock_alerts (ts, project_id, path, holder_agent, holder_session, message) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

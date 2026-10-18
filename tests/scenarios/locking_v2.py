@@ -76,6 +76,29 @@ def main():
         p, raw, _ = sb.hook("codex", "prompt", {"session_id": "F", "prompt": "hello"})
         rep.check("shared.rs" not in raw, "an agent is not told about its own files", raw[:240])
 
+        # 4b. Antigravity: its hooks accept a fixed schema (antigravity.google/docs/hooks).
+        def agy(event, **payload):
+            return sb.hook("agy", event, {"conversationId": "agyB", **payload})
+
+        pre(sb, "claude", "A2", "Edit", file_path="src/agy.rs")  # Claude holds src/agy.rs
+        p, raw, _ = agy("boot", invocationNum=2)
+        rep.check("injectSteps" in (p or {}) and "src/agy.rs" in raw,
+                  "agy PreInvocation injects the files other agents hold", raw[:240])
+        rep.check(set(p or {}) == {"injectSteps"}, "agy PreInvocation output has only injectSteps", raw[:240])
+        tool = {"toolCall": {"name": "run_command", "args": {"CommandLine": "echo x >> src/agy.rs"}}}
+        agy("pre-tool", **tool)
+        (sb.project / "src").mkdir(exist_ok=True)
+        (sb.project / "src" / "agy.rs").write_text("changed by agy's command")
+        p, raw, _ = agy("post-tool", **tool)
+        rep.check(raw.strip() == "{}", "agy PostToolUse prints exactly {} (any other field is an error)", raw[:200])
+        p, raw, _ = agy("boot", invocationNum=3)
+        rep.check("Lock warning" in raw and "claude" in raw,
+                  "the collision found afterwards reaches agy on its next PreInvocation", raw[:300])
+        p, raw, _ = agy("boot", invocationNum=4)
+        rep.check("Lock warning" not in raw, "a note is delivered once", raw[:300])
+        p, raw, _ = agy("stop", executionNum=1, terminationReason="model_stop", fullyIdle=True)
+        rep.check(p == {"decision": "allow"}, "agy Stop answers with a decision", raw[:200])
+
         # 5. Ignore policy: build output and lockfiles never lock.
         for path in ("target/debug/out.o", "node_modules/x/index.js", "Cargo.lock"):
             pre(sb, "claude", "H", "Write", file_path=path)

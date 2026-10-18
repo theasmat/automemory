@@ -32,6 +32,8 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 1. `automemory connect agy` in the repo (workspace) and `automemory connect agy -g` for global.
 2. Start Antigravity in the repo; confirm the `automemory` MCP server is listed and `.agents/hooks.json` exists.
 3. Repeat A3, A6 and A8.
+4. Antigravity shows no `reason` text on an allowed tool call, so in Vibe mode a collision is made visible through the next-step message ("Files other agents are editing right now…"), not on the call itself. Only Strict mode blocks. Use `sed -i ''` on macOS (BSD sed) in test prompts.
+5. A hook error in Antigravity mentioning "unknown field" means AutoMemory printed a field its schema rejects: report the text.
 
 ## D. Two agents, one repo (human version of `tests/scenarios/collision.py`)
 

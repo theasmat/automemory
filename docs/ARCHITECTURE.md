@@ -81,6 +81,8 @@ Agents emit native events → adapter normalizes → pipeline runs ordered handl
 | `user-prompt-submit` | UserPromptSubmit | One-line nudge only if work is assigned |
 | `subagent-*`, `pre/post-compact`, `notify` | — | Ledger only, for attribution/replay |
 
+**Antigravity output schema** (antigravity.google/docs/hooks; it rejects unknown fields): PreToolUse `{decision: allow|ask|deny, reason}` (`reason` on an allow is not shown to the model), PostToolUse `{}` only, PreInvocation `{injectSteps:[{ephemeralMessage}]}`, Stop `{decision: continue|<other>}`. So for `--agent agy` the hook prints only those: anything it wants the model to see (waiting notes from reconciliation, files other agents hold, boot context on step 0) goes out on the next PreInvocation as an `ephemeralMessage`, and a Stop never blocks except with `decision: continue`. A deny in Strict mode is a hard block. Notes wait in `session_notes`.
+
 Hook contract: one JSON event in (`event, agent, session, tool, paths, symbols`), one JSON decision out (`decision, message, lease`). Hot-path budget **< 5 ms p95** (measured ~1.26 ms mean). Hook invocations distill synchronously on Stop/PostCommit; the `serve` daemon also runs extraction and consolidation workers.
 
 Project detection: exact root path → git root → remote fingerprint → approved alias; unregistered projects are never auto-created in the cloud.

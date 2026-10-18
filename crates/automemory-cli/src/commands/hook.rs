@@ -84,7 +84,8 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         && matches!(
             canonical,
             Some(
-                CanonicalEvent::PreToolUse
+                CanonicalEvent::SessionStart
+                    | CanonicalEvent::PreToolUse
                     | CanonicalEvent::PostToolUse
                     | CanonicalEvent::UserPromptSubmit
                     | CanonicalEvent::SubagentStart
@@ -97,6 +98,24 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         let boot_on = GlobalConfig::load()
             .map(|g| g.defaults.boot_injection)
             .unwrap_or(false);
+        // Antigravity's PreInvocation runs before every model step and takes `injectSteps`
+        // (its other output fields are rejected), so it carries waiting notes, the files
+        // other agents hold, and the boot context on the first step only.
+        if agy_style(agent) {
+            let mut parts = db.drain_notes(&session_id);
+            parts.extend(others_leases_note(&db, effective_project_id, &session_id));
+            let first_step = raw_payload.get("invocationNum").and_then(|v| v.as_i64()) == Some(0);
+            if boot_on && first_step {
+                let ctx = automemory_core::retrieval::RetrievalEngine::new(&db)
+                    .assemble_context(effective_project_id, None, 2000)
+                    .unwrap_or_default();
+                if !ctx.trim().is_empty() {
+                    parts.push(ctx);
+                }
+            }
+            println!("{}", agy_injection(&parts));
+            return Ok(());
+        }
         if !boot_on {
             println!("{{}}");
             return Ok(());
@@ -209,13 +228,20 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                 "{}",
                 native_gate_output(gate_event, merged.decision, &merged.reason)
             );
-        } else if merged.reason.is_empty() {
-            println!("{}", json!({"decision": merged.decision.as_str()}));
         } else {
-            println!(
-                "{}",
-                json!({"decision": merged.decision.as_str(), "reason": merged.reason})
-            );
+            // Antigravity accepts allow / ask / deny (not "warn"); a reason rides along.
+            let decision = match merged.decision {
+                GateDecision::Warn => GateDecision::Allow,
+                d => d,
+            };
+            if merged.reason.is_empty() {
+                println!("{}", json!({"decision": decision.as_str()}));
+            } else {
+                println!(
+                    "{}",
+                    json!({"decision": decision.as_str(), "reason": merged.reason})
+                );
+            }
         }
         if merged.decision == GateDecision::Deny {
             return Ok(());
@@ -326,7 +352,12 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     if canonical == Some(CanonicalEvent::Stop) {
         if let Some(owed) = pending_work_nudge(&db, effective_project_id, &session_id) {
             active_notifier().notify("stop blocked", &owed);
-            println!("{}", json!({"decision": "block", "reason": owed}));
+            if agy_style(agent) {
+                // Antigravity: "continue" keeps the agent running, anything else lets it stop.
+                println!("{}", json!({"decision": "continue", "reason": owed}));
+            } else {
+                println!("{}", json!({"decision": "block", "reason": owed}));
+            }
             return Ok(());
         }
         // Stop fires after every agent turn, so leases stay (renewed by activity, expiring
@@ -353,7 +384,14 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     ) {
         match post_note {
             Some(n) if native_hook_style(agent) => println!("{}", native_context("PostToolUse", &n)),
-            Some(n) => println!("{}", json!({ "note": n })),
+            // Antigravity's PostToolUse output must be {}: keep the note for its next PreInvocation.
+            Some(n) => {
+                db.push_note(&session_id, &n);
+                println!("{{}}");
+            }
+            None if agy_style(agent) && canonical == Some(CanonicalEvent::Stop) => {
+                println!("{}", json!({"decision": "allow"}))
+            }
             None => println!("{{}}"),
         }
     }
@@ -407,6 +445,19 @@ fn native_hook_style(agent: &str) -> bool {
         agent.to_ascii_lowercase().as_str(),
         "claude" | "claude-code" | "claudecode" | "codex" | "openai"
     )
+}
+
+/// Antigravity (`agy`) has its own hook schema, documented at antigravity.google/docs/hooks.
+fn agy_style(agent: &str) -> bool {
+    matches!(agent.to_ascii_lowercase().as_str(), "agy" | "antigravity")
+}
+
+/// PreInvocation output that adds a message to the model's next step.
+fn agy_injection(parts: &[String]) -> Value {
+    if parts.is_empty() {
+        return json!({});
+    }
+    json!({ "injectSteps": [{ "ephemeralMessage": format!("[AutoMemory] {}", parts.join(" ")) }] })
 }
 
 /// `hookSpecificOutput` carrying extra model-visible context.
@@ -1072,5 +1123,16 @@ mod native_hook_tests {
         let raw = json!({"session_id": "s", "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {"stdout": "ok"}});
         let tool = normalize_payload("post-tool", &raw).0.unwrap();
         assert_eq!(tool.output.unwrap()["stdout"], "ok");
+    }
+
+    #[test]
+    fn antigravity_gets_only_fields_its_schema_accepts() {
+        assert!(agy_style("agy") && !agy_style("claude"));
+        assert_eq!(agy_injection(&[]), json!({}));
+        let out = agy_injection(&["Files other agents are editing: a.rs".into()]);
+        let msg = out["injectSteps"][0]["ephemeralMessage"].as_str().unwrap();
+        assert!(msg.starts_with("[AutoMemory]") && msg.contains("a.rs"));
+        // The only top-level key is injectSteps; Antigravity rejects unknown fields.
+        assert_eq!(out.as_object().unwrap().keys().collect::<Vec<_>>(), ["injectSteps"]);
     }
 }

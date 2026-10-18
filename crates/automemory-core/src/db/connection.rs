@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 10;
+const LATEST_SCHEMA_VERSION: i32 = 11;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -373,6 +373,23 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
         step(conn, "PRAGMA user_version = 10", [])?;
+    }
+
+    if version < 11 {
+        step(
+            conn,
+            r#"
+            CREATE TABLE IF NOT EXISTS session_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                ts TEXT NOT NULL,
+                text TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_notes_session ON session_notes(session_id);
+            "#,
+            [],
+        )?;
+        step(conn, "PRAGMA user_version = 11", [])?;
     }
     Ok(())
 }

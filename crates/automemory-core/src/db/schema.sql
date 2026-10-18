@@ -452,6 +452,16 @@ CREATE TABLE IF NOT EXISTS lock_alerts (
     message TEXT NOT NULL
 );
 
+-- Notes for a session's agent that its hooks cannot print immediately (Antigravity's
+-- PostToolUse output may only be {}); delivered on its next PreInvocation.
+CREATE TABLE IF NOT EXISTS session_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_notes_session ON session_notes(session_id);
+
 -- Sync watermarks + applied delta files (incremental op-log sync)
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,

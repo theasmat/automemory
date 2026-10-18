@@ -41,6 +41,8 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Shell write prediction; `git status` reconciliation with retroactive leases and PostToolUse warnings
 - [x] Prompt hook lists files other agents hold; `locks --coverage` and `doctor` coverage line
 - [x] Watcher alerts for changes under an idle holder's lease (dashboard)
+- [x] Antigravity hook output follows its documented schema (found by a live run: PostToolUse `note` was rejected); notes delivered on PreInvocation
+- [ ] Verify in a live Antigravity session that the PreInvocation message reaches the model and Strict-mode deny blocks the call
 - [ ] Re-run `automemory connect claude -g` (and codex) so the new SessionEnd hook is installed; leases still expire after 10 idle minutes without it
 - [ ] After a week of real use: read `automemory locks --coverage`; if below 80%, look at which `reconciled`/`unattributed` writes dominate
 - [ ] Optional wait-for-lock mode (hook waits a few seconds for a held file); hard/soft per-path policy beyond `ignore`
@@ -49,7 +51,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 177 Rust tests at last check)
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 178 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 
