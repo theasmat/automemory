@@ -19,7 +19,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T1 | Claude Code: hooks fire and events are recorded | PASS | 2026-10-19 |
 | T2 | Antigravity: hooks fire, no hook errors | PASS (data) | 2026-10-19 |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PASS | 2026-10-19 |
-| T4 | Two agents, one file: automatic lock and collision message | PARTIAL | 2026-10-19 |
+| T4 | Two agents, one file: automatic lock and collision message | PASS | 2026-10-19 |
 | T5 | Hand-off: a new session continues where the last one stopped | PENDING | |
 | T6 | Safety: a destructive command is denied | PENDING | |
 | T7 | Instruction files: `export-rules` block read by another agent | PENDING | |
@@ -209,4 +209,22 @@ Result so far
 - Not tested: the **hook-level gate** (Strict mode blocking an actual edit by another agent), because the agent checked first.
   Needs the "edit directly, do not check locks" variant (T4b below).
 - Not yet reported: retry while Claude is open, Claude exit, retry after release, `git diff --stat`, coverage.
+
+### 2026-10-19 T4 Collision (T4b, gate forced): PASS
+
+Run: Claude held `shop/checkout.py` (six edits, tests between); Antigravity was told not to call AutoMemory tools and to edit directly.
+
+Result
+- Antigravity's edit was denied by the hook with the message
+  `tool call denied by pre-tool hook: Collision prevented: 'shop/checkout.py' is locked by agent 'claude' (Goal: 'editing shop/checkout.py', 426s remaining)`.
+  It stayed blocked until Claude's session ended; then its edit went through (`# reviewed by agy` is line 1; two agy edits at 21:21).
+- `git diff --stat`: catalog.py +4, checkout.py +18/-2, pricing.py +4. All of Claude's edits survived; 7 tests pass.
+- Coverage: 18 file changes, 18 (100%) leased before the write, 0 found after the fact.
+
+Notes / found
+- At the time of the check, `automemory locks` still showed a lease held by **agy** on checkout.py (597s left): the Antigravity session was
+  still open. It should clear when that session ends or goes idle; verify in T5 (`automemory locks` after closing everything).
+- **Denied attempts were not recorded anywhere** (audit_log empty, no event row), so a block could not be shown on the dashboard.
+  **Fixed**: a denied or "ask" gate now writes an `audit_log` row `hook.deny` (agent, session, paths, reason). Verified in a scratch
+  repo. Installed. (The dashboard does not show it yet.)
 

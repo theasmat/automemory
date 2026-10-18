@@ -335,6 +335,15 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
         let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
         let merged = merge_decision(&results);
+        // Blocks and questions leave a trace (dashboard "recently blocked"); allowed calls are in the event log.
+        if matches!(merged.decision.as_str(), "deny" | "ask") {
+            let _ = db.log_audit(
+                &format!("hook.{}", merged.decision.as_str()),
+                "tool",
+                tool_name,
+                &json!({ "agent": agent, "session": session_id, "paths": paths, "reason": merged.reason }),
+            );
+        }
         if native_hook_style(agent) {
             emit!(
                 "{}",
