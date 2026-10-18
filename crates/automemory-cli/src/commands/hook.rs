@@ -17,25 +17,99 @@ use std::process::Command;
 use uuid::Uuid;
 
 /// Main entrypoint for the CLI `hook` command.
-/// Evaluates guardrails on `pre-tool` events and records append-only event traces.
-pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
-    // Read stdin payload if piped; skip if running interactively in terminal
+
+// ── Entry point: always answers in the agent's own schema ────────────────────────────
+// A hook that prints nothing, prints a second JSON object, or exits non-zero is an error to
+// the agent (Antigravity even rejects unknown fields), so every path ends with exactly one
+// valid reply, and the same reply for the same event arriving twice.
+
+static EMITTED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+macro_rules! emit {
+    ($($arg:tt)*) => { emit_line(format!($($arg)*)) };
+}
+
+fn emit_line(line: String) {
+    println!("{line}");
+    if let Ok(mut out) = EMITTED.lock() {
+        out.push(line);
+    }
+}
+
+fn emitted_output() -> Option<String> {
+    EMITTED.lock().ok().filter(|o| !o.is_empty()).map(|o| o.join("\n"))
+}
+
+/// True when the payload carries an id unique to this step (Claude/Codex `tool_use_id`,
+/// Antigravity `stepIdx`/`invocationNum`/`executionNum`, Codex `turn_id`).
+fn has_unique_step_id(input: &str) -> bool {
+    serde_json::from_str::<Value>(input).is_ok_and(|v| {
+        ["tool_use_id", "toolUseId", "stepIdx", "invocationNum", "executionNum", "turn_id"]
+            .iter()
+            .any(|k| v.get(k).is_some())
+    })
+}
+
+/// What to say when the hook itself failed: let the action proceed, in a valid shape.
+pub(crate) fn fail_open_output(agent: &str, event: &str) -> Value {
+    let gate = matches!(
+        CanonicalEvent::from_cli(event),
+        Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit | CanonicalEvent::Stop)
+    );
+    if gate && agy_style(agent) {
+        json!({"decision": "allow"})
+    } else if gate && !native_hook_style(agent) && event == "pre-tool" {
+        json!({"decision": "allow"})
+    } else {
+        json!({})
+    }
+}
+
+/// Entry point for `automemory hook`. Never fails: panics and errors become a fail-open reply
+/// on stdout (the error goes to stderr), and a duplicate registration of the same hook
+/// (e.g. global and workspace) replays the first reply instead of acting twice.
+pub fn run(agent: &str, event: &str, project_arg: &str) {
     let mut input = String::new();
     if !io::stdin().is_terminal() {
         let _ = io::stdin().read_to_string(&mut input);
     }
-    let raw_payload: Value = serde_json::from_str(&input).unwrap_or_else(|_| json!({}));
+    let db = Config::default_config();
+    let db = Database::open(&db.db_path).ok();
+    let key = automemory_core::locking::hook_key(agent, event, &input);
+    // Only payloads that identify one specific step can be told apart from a genuine repeat
+    // (an agent retrying the same edit a moment later must get a fresh decision).
+    let claimable = has_unique_step_id(&input);
+    if let (Some(db), true) = (&db, claimable) {
+        if let Some(cached) = db.replay_or_claim_hook(&key) {
+            println!("{cached}");
+            return;
+        }
+    }
+    let outcome = std::panic::catch_unwind(|| execute_with_input(agent, event, project_arg, &input));
+    match outcome {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("[AutoMemory] hook error (failing open): {e:#}"),
+        Err(_) => eprintln!("[AutoMemory] hook panicked (failing open)"),
+    }
+    if emitted_output().is_none() {
+        emit!("{}", fail_open_output(agent, event));
+    }
+    if let (Some(db), Some(out), true) = (&db, emitted_output(), claimable) {
+        db.finish_hook(&key, &out);
+    }
+}
+
+
+/// Evaluates guardrails on `pre-tool` events and records append-only event traces.
+pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &str) -> Result<()> {
+    let raw_payload: Value = serde_json::from_str(input).unwrap_or_else(|_| json!({}));
 
     // Quick open database; gracefully fail-open if DB is unreachable
     let config = Config::default_config();
     let db = match Database::open(&config.db_path) {
         Ok(d) => d,
         Err(_) => {
-            if event == "pre-tool" {
-                println!("{}", json!({"decision": "allow"}));
-            } else {
-                println!("{{}}");
-            }
+            emit!("{}", fail_open_output(agent, event));
             return Ok(());
         }
     };
@@ -113,11 +187,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                     parts.push(ctx);
                 }
             }
-            println!("{}", agy_injection(&parts));
+            emit!("{}", agy_injection(&parts));
             return Ok(());
         }
         if !boot_on {
-            println!("{{}}");
+            emit!("{{}}");
             return Ok(());
         }
         let engine = automemory_core::retrieval::RetrievalEngine::new(&db);
@@ -126,9 +200,9 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             .unwrap_or_default();
         if !ctx.trim().is_empty() {
             if native_hook_style(agent) {
-                println!("{}", native_context("SessionStart", &ctx));
+                emit!("{}", native_context("SessionStart", &ctx));
             } else {
-                println!(
+                emit!(
                     "{}",
                     json!({
                         "context": ctx,
@@ -138,7 +212,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                 );
             }
         } else {
-            println!("{{}}");
+            emit!("{{}}");
         }
         return Ok(());
     }
@@ -153,11 +227,11 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         .flatten()
         .collect();
         if parts.is_empty() {
-            println!("{{}}");
+            emit!("{{}}");
         } else if native_hook_style(agent) {
-            println!("{}", native_context("UserPromptSubmit", &parts.join(" ")));
+            emit!("{}", native_context("UserPromptSubmit", &parts.join(" ")));
         } else {
-            println!("{}", json!({ "nudge": parts.join(" ") }));
+            emit!("{}", json!({ "nudge": parts.join(" ") }));
         }
         return Ok(());
     }
@@ -224,7 +298,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
         let merged = merge_decision(&results);
         if native_hook_style(agent) {
-            println!(
+            emit!(
                 "{}",
                 native_gate_output(gate_event, merged.decision, &merged.reason)
             );
@@ -235,9 +309,9 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
                 d => d,
             };
             if merged.reason.is_empty() {
-                println!("{}", json!({"decision": decision.as_str()}));
+                emit!("{}", json!({"decision": decision.as_str()}));
             } else {
-                println!(
+                emit!(
                     "{}",
                     json!({"decision": decision.as_str(), "reason": merged.reason})
                 );
@@ -307,7 +381,7 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
     if canonical == Some(CanonicalEvent::SessionEnd) {
         let _ = db.release_leases(&session_id, None);
         db.drop_snapshot(&session_id);
-        println!("{{}}");
+        emit!("{{}}");
         return Ok(());
     }
 
@@ -354,15 +428,20 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
             active_notifier().notify("stop blocked", &owed);
             if agy_style(agent) {
                 // Antigravity: "continue" keeps the agent running, anything else lets it stop.
-                println!("{}", json!({"decision": "continue", "reason": owed}));
+                emit!("{}", json!({"decision": "continue", "reason": owed}));
             } else {
-                println!("{}", json!({"decision": "block", "reason": owed}));
+                emit!("{}", json!({"decision": "block", "reason": owed}));
             }
             return Ok(());
         }
         // Stop fires after every agent turn, so leases stay (renewed by activity, expiring
         // when idle); SessionEnd releases them. Only the in-flight marker is cleared.
         let _ = db.finish_snapshot(&session_id);
+        // Antigravity has no SessionEnd. A Stop with nothing left running means the agent has
+        // finished, so its files are free; the next edit takes them again.
+        if agy_style(agent) && raw_payload.get("fullyIdle").and_then(|v| v.as_bool()) == Some(true) {
+            let _ = db.release_leases(&session_id, None);
+        }
     }
 
     // PostCommit staleness: committed files flip linked memories to `changed`.
@@ -383,16 +462,16 @@ pub fn execute(agent: &str, event: &str, project_arg: &str) -> Result<()> {
         Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
     ) {
         match post_note {
-            Some(n) if native_hook_style(agent) => println!("{}", native_context("PostToolUse", &n)),
+            Some(n) if native_hook_style(agent) => emit!("{}", native_context("PostToolUse", &n)),
             // Antigravity's PostToolUse output must be {}: keep the note for its next PreInvocation.
             Some(n) => {
                 db.push_note(&session_id, &n);
-                println!("{{}}");
+                emit!("{{}}");
             }
             None if agy_style(agent) && canonical == Some(CanonicalEvent::Stop) => {
-                println!("{}", json!({"decision": "allow"}))
+                emit!("{}", json!({"decision": "allow"}))
             }
-            None => println!("{{}}"),
+            None => emit!("{{}}"),
         }
     }
     Ok(())
@@ -1134,5 +1213,25 @@ mod native_hook_tests {
         assert!(msg.starts_with("[AutoMemory]") && msg.contains("a.rs"));
         // The only top-level key is injectSteps; Antigravity rejects unknown fields.
         assert_eq!(out.as_object().unwrap().keys().collect::<Vec<_>>(), ["injectSteps"]);
+    }
+
+    #[test]
+    fn a_failed_hook_still_answers_in_the_agents_schema() {
+        // Antigravity needs a decision on PreToolUse and Stop; everything else takes {}.
+        assert_eq!(fail_open_output("agy", "pre-tool"), json!({"decision": "allow"}));
+        assert_eq!(fail_open_output("agy", "stop"), json!({"decision": "allow"}));
+        assert_eq!(fail_open_output("agy", "post-tool"), json!({}));
+        assert_eq!(fail_open_output("agy", "boot"), json!({}));
+        // Claude Code and Codex treat {} as "no opinion".
+        assert_eq!(fail_open_output("claude", "pre-tool"), json!({}));
+        assert_eq!(fail_open_output("codex", "stop"), json!({}));
+    }
+
+    #[test]
+    fn only_payloads_with_a_step_id_are_deduplicated() {
+        assert!(has_unique_step_id(r#"{"conversationId":"c","stepIdx":3}"#));
+        assert!(has_unique_step_id(r#"{"session_id":"s","tool_use_id":"toolu_1"}"#));
+        assert!(!has_unique_step_id(r#"{"session_id":"s","tool_name":"Edit"}"#));
+        assert!(!has_unique_step_id("not json"));
     }
 }

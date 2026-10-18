@@ -462,6 +462,13 @@ CREATE TABLE IF NOT EXISTS session_notes (
 );
 CREATE INDEX IF NOT EXISTS idx_session_notes_session ON session_notes(session_id);
 
+-- Identical hook invocations (a hook registered twice) answer once
+CREATE TABLE IF NOT EXISTS hook_claims (
+    key TEXT PRIMARY KEY,
+    ts INTEGER NOT NULL,
+    output TEXT
+);
+
 -- Sync watermarks + applied delta files (incremental op-log sync)
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,

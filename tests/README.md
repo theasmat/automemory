@@ -23,6 +23,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Two-agent collision | `python3 tests/scenarios/collision.py` | A second agent editing a leased file is told (Vibe) or denied (Strict) with no `lock.acquire`; unrelated files stay silent; parallel lease requests |
 | Automatic locking v2 | `python3 tests/scenarios/locking_v2.py` | Leases survive Stop and end at SessionEnd; shell writes are leased before they run; unpredictable script writes are caught afterwards and collisions reported; prompt lists others' files; ignored paths; coverage report |
 | Session lifecycle | `python3 tests/scenarios/session_lifecycle.py` | Stop leaves a checkpoint memory for sessions that edited files |
+| Registration + hook robustness | `python3 tests/scenarios/registration.py` | `connect` for Antigravity/Claude/Codex then `disconnect all --everywhere` leaves nothing and keeps the user's files; a hook registered twice answers once; hooks never fail (corrupt database, empty or garbage input) |
 | Human password gate | `python3 tests/scenarios/human_gate.py` | With a password set, agents cannot decide proposals or change rules (MCP and CLI) |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | CodeIntel (real engine) | `python3 tests/codeintel/smoke.py` | `memory.about` returns real callers from codebase-memory-mcp; `doctor` reports its version |

@@ -22,10 +22,6 @@ use super::connect::{get_vscode_user_dir, CURSOR_RULES};
 enum Removal {
     /// Strip `mcpServers.automemory` from a JSON MCP config file.
     McpServerJson(PathBuf),
-    /// Strip the top-level `automemory` key from a hooks JSON file.
-    HooksKey(PathBuf),
-    /// Remove a directory tree created by connect.
-    PluginDir(PathBuf),
     /// Delete `.cursorrules` on exact template match.
     CursorRules(PathBuf),
     /// Strip our appended block from a Goose YAML config.
@@ -38,6 +34,14 @@ enum Removal {
     ZedJson(PathBuf),
     /// Strip our groups from a Claude Code / Codex hooks JSON (`hooks.<Event>[]`).
     NativeHooks(PathBuf),
+    /// Strip the `automemory` key from an Antigravity hooks.json (other hooks stay).
+    AgyHooks(PathBuf),
+    /// Delete a folder we created (skill or legacy plugin) when only our files are in it.
+    OwnedDir(PathBuf),
+    /// Delete a file only if it still holds exactly what `connect` wrote.
+    OwnedFile(PathBuf, String),
+    /// Remove our block from `.git/hooks/post-commit`.
+    GitHook(PathBuf),
     /// Strip `[mcp_servers.automemory]` tables from a Codex `config.toml`.
     CodexToml(PathBuf),
 }
@@ -74,15 +78,32 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
     let ops = match agent {
         "agy" => {
             if global {
-                vec![Removal::McpServerJson(
-                    home.join(".gemini").join("config/mcp_config.json"),
-                )]
+                let g = home.join(".gemini");
+                vec![
+                    Removal::McpServerJson(g.join("config/mcp_config.json")),
+                    Removal::AgyHooks(g.join("config/hooks.json")),
+                    Removal::OwnedDir(g.join("config/skills/automemory")),
+                    Removal::OwnedDir(g.join("antigravity-cli/skills/automemory")),
+                    Removal::OwnedDir(g.join("config/plugins/automemory")),
+                ]
             } else {
                 vec![
                     Removal::McpServerJson(ws(&[".agents", "mcp_config.json"])),
-                    Removal::McpServerJson(ws(&[".mcp.json"])),
-                    Removal::HooksKey(ws(&[".agents", "hooks.json"])),
-                    Removal::PluginDir(ws(&[".agents", "plugins", "automemory"])),
+                    Removal::AgyHooks(ws(&[".agents", "hooks.json"])),
+                    Removal::OwnedDir(ws(&[".agents", "skills", "automemory"])),
+                    Removal::OwnedDir(ws(&[".agents", "plugins", "automemory"])),
+                    Removal::OwnedFile(
+                        ws(&[".agents", "rules", "automemory.md"]),
+                        super::connect::automemory_rules_content().to_string(),
+                    ),
+                    Removal::OwnedFile(
+                        ws(&["AGENTS.md"]),
+                        super::connect::automemory_rules_content().to_string(),
+                    ),
+                    Removal::OwnedFile(
+                        ws(&["GEMINI.md"]),
+                        super::connect::automemory_rules_content().to_string(),
+                    ),
                 ]
             }
         }
@@ -97,6 +118,10 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
             } else {
                 ws(&[".claude", "settings.local.json"])
             }),
+            Removal::OwnedFile(
+                ws(&["CLAUDE.md"]),
+                super::connect::automemory_rules_content().to_string(),
+            ),
         ],
         "claude-desktop" => {
             #[cfg(target_os = "macos")]
@@ -260,27 +285,6 @@ fn strip_mcp_server(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// Removes the top-level `automemory` hooks key; deletes the file if empty.
-fn strip_hooks_key(path: &Path) -> Result<bool> {
-    let mut val = match read_json(path) {
-        Some(v) => v,
-        None => return Ok(false),
-    };
-    let changed = val
-        .as_object_mut()
-        .map(|obj| obj.remove("automemory").is_some())
-        .unwrap_or(false);
-    if !changed {
-        return Ok(false);
-    }
-    if val.as_object().map(|o| o.is_empty()).unwrap_or(false) {
-        fs::remove_file(path)?;
-    } else {
-        write_json(path, &val)?;
-    }
-    Ok(true)
-}
-
 /// Removes our appended Goose block only on exact shape match:
 /// `- name: automemory` + `type: stdio` + `cmd:` mentioning automemory +
 /// `args:` + `- mcp`, directly under an `extensions:` header.
@@ -430,15 +434,6 @@ fn strip_zed_entry(path: &Path) -> Result<bool> {
 fn apply(op: &Removal) -> Result<bool> {
     match op {
         Removal::McpServerJson(p) => strip_mcp_server(p),
-        Removal::HooksKey(p) => strip_hooks_key(p),
-        Removal::PluginDir(p) => {
-            if p.exists() {
-                fs::remove_dir_all(p)?;
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        }
         Removal::CursorRules(p) => match fs::read_to_string(p) {
             Ok(content) if content == CURSOR_RULES => {
                 fs::remove_file(p)?;
@@ -458,6 +453,20 @@ fn apply(op: &Removal) -> Result<bool> {
         Removal::ContinueJson(p) => strip_continue_entry(p),
         Removal::ZedJson(p) => strip_zed_entry(p),
         Removal::NativeHooks(p) => super::connect::strip_native_hooks(p),
+        Removal::AgyHooks(p) => super::connect::strip_agy_hooks(p),
+        Removal::OwnedDir(p) => Ok(remove_owned_dir(p)),
+        Removal::OwnedFile(p, expected) => match fs::read_to_string(p) {
+            Ok(content) if &content == expected => {
+                fs::remove_file(p)?;
+                Ok(true)
+            }
+            Ok(_) => {
+                println!("  ⚠ Kept edited file (not our template): {}", p.display());
+                Ok(false)
+            }
+            Err(_) => Ok(false),
+        },
+        Removal::GitHook(root) => super::connect::remove_git_post_commit_hook(root),
         Removal::CodexToml(p) => super::connect::strip_codex_toml(p),
     }
 }
@@ -465,50 +474,141 @@ fn apply(op: &Removal) -> Result<bool> {
 fn describe(op: &Removal) -> String {
     match op {
         Removal::McpServerJson(p) => format!("MCP server entry in {}", p.display()),
-        Removal::HooksKey(p) => format!("hooks key in {}", p.display()),
-        Removal::PluginDir(p) => format!("plugin dir {}", p.display()),
         Removal::CursorRules(p) => format!(".cursorrules at {}", p.display()),
         Removal::GooseYaml(p) => format!("Goose block in {}", p.display()),
         Removal::AiderYaml(p) => format!("Aider block in {}", p.display()),
         Removal::ContinueJson(p) => format!("Continue entry in {}", p.display()),
         Removal::ZedJson(p) => format!("Zed entry in {}", p.display()),
         Removal::NativeHooks(p) => format!("AutoMemory hooks in {}", p.display()),
+        Removal::AgyHooks(p) => format!("Antigravity hooks in {}", p.display()),
+        Removal::OwnedDir(p) => format!("folder {}", p.display()),
+        Removal::OwnedFile(p, _) => format!("generated file {}", p.display()),
+        Removal::GitHook(p) => format!("git post-commit block in {}", p.display()),
         Removal::CodexToml(p) => format!("Codex MCP table in {}", p.display()),
     }
 }
 
-/// Removes exactly what `connect` wrote for one agent. Third-party entries
-/// (e.g. a separately configured `codebase-memory` server) are left intact.
-pub fn execute(agent: &str, global: bool) -> Result<()> {
-    let canonical = find_adapter(agent).map(|a| a.adapter_id().to_string());
-    let Some(id) = canonical else {
-        anyhow::bail!("Unknown agent: '{agent}'. See `automemory adapter list`.");
-    };
-    if id == "all" {
-        anyhow::bail!("Disconnect one agent at a time (no `all`); repeat per agent as needed.");
+/// A folder we created: only deleted when every file in it is one `connect` writes, so a user's
+/// own files in the same place are never lost.
+fn remove_owned_dir(dir: &Path) -> bool {
+    if !dir.is_dir() {
+        return false;
     }
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let scope = if global { "GLOBAL" } else { "WORKSPACE" };
-    println!("Disconnecting AutoMemory [{scope}] for agent: '{id}'...\n");
+    if dir.file_name().is_some_and(|n| n == "automemory") && dir.parent().is_some_and(|p| p.ends_with("plugins")) {
+        return super::connect::remove_owned_plugin_dir(dir);
+    }
+    let ours = |name: &str| matches!(name, "SKILL.md");
+    let only_ours = fs::read_dir(dir)
+        .map(|rd| rd.flatten().all(|e| ours(&e.file_name().to_string_lossy())))
+        .unwrap_or(false);
+    if only_ours {
+        fs::remove_dir_all(dir).is_ok()
+    } else {
+        println!("  ⚠ Kept {} (it holds files AutoMemory did not write)", dir.display());
+        false
+    }
+}
 
-    let mut removed = 0;
-    for op in targets(&id, &home, &cwd, global)? {
-        match apply(&op) {
-            Ok(true) => {
-                println!("  ✓ Removed {}", describe(&op));
-                removed += 1;
-            }
-            Ok(false) => {}
-            Err(e) => println!("  ⚠ Skipped {}: {e}", describe(&op)),
+/// Whether the operation still has something of ours to remove (read-only).
+fn present(op: &Removal) -> bool {
+    let has = |p: &Path| fs::read_to_string(p).is_ok_and(|t| t.contains("automemory"));
+    match op {
+        Removal::McpServerJson(p)
+        | Removal::NativeHooks(p)
+        | Removal::AgyHooks(p)
+        | Removal::ContinueJson(p)
+        | Removal::ZedJson(p)
+        | Removal::GooseYaml(p)
+        | Removal::AiderYaml(p)
+        | Removal::CodexToml(p) => has(p),
+        Removal::OwnedDir(p) => p.is_dir(),
+        Removal::CursorRules(p) => p.is_file(),
+        Removal::OwnedFile(p, expected) => fs::read_to_string(p).is_ok_and(|t| &t == expected),
+        Removal::GitHook(root) => {
+            let git = automemory_core::sync::GitSync::resolve_git_canonical_root(root).unwrap_or(root.clone());
+            fs::read_to_string(git.join(".git/hooks/post-commit")).is_ok_and(|t| t.contains("AutoMemory") || t.contains("automemory post-commit"))
         }
     }
-    if removed == 0 {
-        println!(
-            "  Nothing AutoMemory-owned found; check manual steps in hooks-configuration.md §7."
-        );
+}
+
+/// Everything AutoMemory has registered for any agent, in the current workspace and globally.
+/// Backs `doctor` and the tests that prove a full disconnect leaves nothing behind.
+pub fn inventory(home: &Path, cwd: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for is_global in [false, true] {
+        for a in super::adapter::ADAPTERS.iter() {
+            for op in targets(a.id, home, cwd, is_global).unwrap_or_default() {
+                if present(&op) {
+                    found.push(format!("{} [{}]: {}", a.id, if is_global { "global" } else { "workspace" }, describe(&op)));
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+fn scopes(global: bool, everywhere: bool) -> Vec<bool> {
+    if everywhere { vec![false, true] } else { vec![global] }
+}
+
+/// Removes exactly what `connect` wrote for one agent, or for every agent with `all`. Third-party
+/// entries (e.g. a separately configured `codebase-memory` server) are left intact. `dry_run`
+/// lists what is registered without changing anything.
+pub fn execute(agent: &str, global: bool, everywhere: bool, dry_run: bool) -> Result<()> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    run(&home, &cwd, agent, global, everywhere, dry_run)
+}
+
+fn run(home: &Path, cwd: &Path, agent: &str, global: bool, everywhere: bool, dry_run: bool) -> Result<()> {
+    let ids: Vec<String> = if agent.eq_ignore_ascii_case("all") {
+        super::adapter::ADAPTERS.iter().map(|a| a.id.to_string()).collect()
     } else {
-        println!("\n✓ Disconnected '{id}' ({removed} change(s)). Local memory data left intact.");
+        let Some(a) = find_adapter(agent) else {
+            anyhow::bail!("Unknown agent: '{agent}'. Use a name from `automemory adapter list`, or `all`.");
+        };
+        vec![a.adapter_id().to_string()]
+    };
+    let all = ids.len() > 1;
+    let verb = if dry_run { "Registered" } else { "Removing" };
+    let mut count = 0;
+    for is_global in scopes(global, everywhere) {
+        let scope = if is_global { "GLOBAL" } else { "WORKSPACE" };
+        println!("{verb} AutoMemory [{scope}] for: {}\n", if all { "all agents".to_string() } else { ids[0].clone() });
+        let mut ops = Vec::new();
+        for id in &ids {
+            ops.extend(targets(id, home, cwd, is_global)?);
+        }
+        if all && !is_global {
+            ops.push(Removal::GitHook(cwd.to_path_buf()));
+        }
+        for op in ops {
+            if dry_run {
+                if present(&op) {
+                    println!("  • {}", describe(&op));
+                    count += 1;
+                }
+                continue;
+            }
+            match apply(&op) {
+                Ok(true) => {
+                    println!("  ✓ Removed {}", describe(&op));
+                    count += 1;
+                }
+                Ok(false) => {}
+                Err(e) => println!("  ⚠ Skipped {}: {e}", describe(&op)),
+            }
+        }
+        println!();
+    }
+    if dry_run {
+        println!("{count} AutoMemory registration(s) found.");
+    } else if count == 0 {
+        println!("Nothing AutoMemory-owned found.");
+    } else {
+        println!("✓ {count} change(s). Local memory data (~/.automemory) left intact; delete that folder to remove it too.");
     }
     Ok(())
 }
@@ -560,10 +660,10 @@ mod tests {
         let dir = sandbox("hooks");
         let path = dir.join("hooks.json");
         fs::write(&path, r#"{"automemory": {"enabled": true}, "user": {}}"#).unwrap();
-        assert!(strip_hooks_key(&path).unwrap());
+        assert!(super::super::connect::strip_agy_hooks(&path).unwrap());
         assert!(path.exists());
         fs::write(&path, r#"{"automemory": {"enabled": true}}"#).unwrap();
-        assert!(strip_hooks_key(&path).unwrap());
+        assert!(super::super::connect::strip_agy_hooks(&path).unwrap());
         assert!(!path.exists());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -744,17 +844,101 @@ mod tests {
         assert_eq!(read_json_or_empty(&path).unwrap(), serde_json::json!({}));
     }
 
+    fn write(p: &Path, text: &str) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, text).unwrap();
+    }
+
+    fn git_repo(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        assert!(std::process::Command::new("git").args(["init", "-q"]).current_dir(dir).status().unwrap().success());
+    }
+
     #[test]
-    fn connect_agy_registers_hooks_once() {
+    fn antigravity_connect_is_single_registration_and_keeps_user_hooks() {
         use super::super::connect::connect_agy;
-        let dir = sandbox("agy-once");
+        let dir = sandbox("agy-ws");
         let (home, ws) = (dir.join("home"), dir.join("ws"));
         fs::create_dir_all(&home).unwrap();
-        fs::create_dir_all(ws.join(".agents/plugins/automemory")).unwrap();
-        // An older install left a second copy that Antigravity would also run.
-        fs::write(ws.join(".agents/plugins/automemory/hooks.json"), "{}").unwrap();
+        git_repo(&ws);
+        write(&ws.join(".agents/hooks.json"), r#"{"mine": {"enabled": true}}"#);
+        write(&ws.join(".agents/plugins/automemory/plugin.json"), r#"{"name":"automemory"}"#);
+        write(&ws.join(".agents/plugins/automemory/hooks.json"), "{}");
         connect_agy(&home, &ws, "/bin/automemory", false).unwrap();
-        assert!(ws.join(".agents/hooks.json").exists());
-        assert!(!ws.join(".agents/plugins/automemory/hooks.json").exists());
+        connect_agy(&home, &ws, "/bin/automemory", false).unwrap(); // idempotent
+
+        let hooks: serde_json::Value = serde_json::from_str(&fs::read_to_string(ws.join(".agents/hooks.json")).unwrap()).unwrap();
+        assert!(hooks["mine"]["enabled"] == true, "user's hook kept");
+        for ev in ["PreInvocation", "PreToolUse", "PostToolUse", "Stop"] {
+            assert!(hooks["automemory"][ev].is_array(), "{ev}");
+        }
+        assert!(!ws.join(".agents/plugins/automemory").exists(), "legacy duplicate plugin removed");
+        assert!(!ws.join(".mcp.json").exists(), "Antigravity does not write Claude's file");
+        assert!(ws.join(".agents/mcp_config.json").exists() && ws.join(".agents/skills/automemory/SKILL.md").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn antigravity_global_connect_covers_cli_app_and_ide_and_prevents_duplicates() {
+        use super::super::connect::connect_agy;
+        let dir = sandbox("agy-global");
+        let (home, ws) = (dir.join("home"), dir.join("ws"));
+        fs::create_dir_all(home.join(".gemini/antigravity-cli")).unwrap(); // the CLI is installed
+        git_repo(&ws);
+        connect_agy(&home, &ws, "/bin/automemory", true).unwrap();
+        assert!(home.join(".gemini/config/hooks.json").exists());
+        assert!(home.join(".gemini/config/mcp_config.json").exists());
+        assert!(home.join(".gemini/config/skills/automemory/SKILL.md").exists(), "App and IDE skill path");
+        assert!(home.join(".gemini/antigravity-cli/skills/automemory/SKILL.md").exists(), "CLI skill path");
+
+        // A workspace connect now must not add a second copy of the hooks.
+        connect_agy(&home, &ws, "/bin/automemory", false).unwrap();
+        assert!(!ws.join(".agents/hooks.json").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn disconnect_all_leaves_no_registration_and_no_user_content_lost() {
+        use super::super::connect::{connect_agy, connect_claude, connect_codex};
+        let dir = sandbox("all");
+        let (home, ws) = (dir.join("home"), dir.join("ws"));
+        git_repo(&ws);
+        write(&ws.join("AGENTS.md"), "# my own agent notes\n");
+        write(&ws.join(".git/hooks/post-commit"), "#!/bin/sh\necho user hook\n");
+        write(&home.join(".claude/settings.json"), r#"{"model":"x","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-lint"}]}]}}"#);
+        write(&home.join(".gemini/config/hooks.json"), r#"{"mine": {"enabled": true}}"#);
+        for global in [false, true] {
+            connect_agy(&home, &ws, "/bin/automemory", global).unwrap();
+            connect_claude(&home, &ws, "/bin/automemory", global).unwrap();
+            connect_codex(&home, &ws, "/bin/automemory", global).unwrap();
+        }
+        assert!(inventory(&home, &ws).len() >= 8, "{:?}", inventory(&home, &ws));
+        let hook = fs::read_to_string(ws.join(".git/hooks/post-commit")).unwrap();
+        assert!(hook.contains("echo user hook") && hook.contains("automemory post-commit"), "user hook kept, ours added");
+
+        run(&home, &ws, "all", false, true, false).unwrap();
+
+        assert_eq!(inventory(&home, &ws), Vec::<String>::new(), "nothing of ours is left");
+        assert_eq!(fs::read_to_string(ws.join("AGENTS.md")).unwrap(), "# my own agent notes\n");
+        assert_eq!(fs::read_to_string(ws.join(".git/hooks/post-commit")).unwrap(), "#!/bin/sh\necho user hook\n");
+        let claude: serde_json::Value = serde_json::from_str(&fs::read_to_string(home.join(".claude/settings.json")).unwrap()).unwrap();
+        assert_eq!(claude["model"], "x");
+        assert_eq!(claude["hooks"]["PreToolUse"].as_array().unwrap().len(), 1, "user's Claude hook kept");
+        let agy: serde_json::Value = serde_json::from_str(&fs::read_to_string(home.join(".gemini/config/hooks.json")).unwrap()).unwrap();
+        assert!(agy.get("automemory").is_none() && agy["mine"]["enabled"] == true);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dry_run_lists_without_changing_anything() {
+        use super::super::connect::connect_agy;
+        let dir = sandbox("dry");
+        let (home, ws) = (dir.join("home"), dir.join("ws"));
+        git_repo(&ws);
+        connect_agy(&home, &ws, "/bin/automemory", false).unwrap();
+        let before = inventory(&home, &ws);
+        run(&home, &ws, "all", false, true, true).unwrap();
+        assert_eq!(inventory(&home, &ws), before);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

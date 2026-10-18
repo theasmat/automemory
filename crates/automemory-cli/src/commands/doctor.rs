@@ -150,6 +150,34 @@ pub fn execute() -> Result<()> {
         None => println!("⚠ not installed; symbol checks fall back to file hashes"),
     }
 
+    // Registrations: what AutoMemory has installed in agents, and Antigravity's three surfaces
+    {
+        let home = dirs::home_dir().unwrap_or_default();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let regs = super::disconnect::inventory(&home, &cwd);
+        println!("Registrations: {} (run `automemory disconnect all --everywhere --dry-run` to list)", regs.len());
+        let g = home.join(".gemini");
+        let surfaces: Vec<&str> = [
+            ("antigravity-cli", "CLI"),
+            ("antigravity", "App"),
+            ("antigravity-ide", "IDE"),
+        ]
+        .iter()
+        .filter(|(d, _)| g.join(d).join("conversations").is_dir())
+        .map(|(_, n)| *n)
+        .collect();
+        if !surfaces.is_empty() {
+            println!("  Antigravity surfaces with history: {}", surfaces.join(", "));
+        }
+        let has = |p: std::path::PathBuf| {
+            std::fs::read_to_string(p).is_ok_and(|t| t.contains("\"automemory\""))
+        };
+        if has(g.join("config/hooks.json")) && has(cwd.join(".agents/hooks.json")) {
+            println!("  ⚠ Antigravity hooks are registered globally AND in this workspace; each hook runs twice (AutoMemory answers once, but run `automemory connect agy` here to drop the duplicate).");
+            all_passed = false;
+        }
+    }
+
     // Lock coverage
     {
         print!("Checking lock coverage... ");

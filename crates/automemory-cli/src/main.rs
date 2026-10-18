@@ -36,13 +36,21 @@ enum Commands {
 
     /// Remove exactly what `connect` wrote for one host coding agent
     Disconnect {
-        /// Agent host to disconnect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes)
+        /// Agent host to disconnect, or `all` (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes)
         #[arg(default_value = "agy")]
         agent: String,
 
         /// Remove global configuration rather than current workspace
         #[arg(short, long)]
         global: bool,
+
+        /// Remove both the current workspace's and the global configuration
+        #[arg(long)]
+        everywhere: bool,
+
+        /// List what is registered without removing anything
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// List registered agent adapters and refresh one's hook/event mappings
@@ -955,8 +963,13 @@ async fn main() -> Result<()> {
         Commands::Connect { agent, global } => {
             commands::connect::execute(&agent, global)?;
         }
-        Commands::Disconnect { agent, global } => {
-            commands::disconnect::execute(&agent, global)?;
+        Commands::Disconnect {
+            agent,
+            global,
+            everywhere,
+            dry_run,
+        } => {
+            commands::disconnect::execute(&agent, global, everywhere, dry_run)?;
         }
         Commands::Link { project_id } => {
             commands::link::execute(project_id)?;
@@ -966,7 +979,7 @@ async fn main() -> Result<()> {
             event,
             project,
         } => {
-            commands::hook::execute(&agent, &event, &project)?;
+            commands::hook::run(&agent, &event, &project);
         }
         Commands::Doctor => {
             commands::doctor::execute()?;

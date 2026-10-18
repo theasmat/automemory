@@ -51,6 +51,10 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 3. `automemory rule passwd`, then approve a proposal in the UI: a password prompt appears once, a wrong password is rejected, the right one works.
 4. In a normal browser tab on any other site, run `fetch('http://127.0.0.1:4545/api/proposals/decide_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"approved":true}'})` in the console. Expected: blocked (403 / CORS error).
 
+## Clean slate
+
+`automemory disconnect all --everywhere --dry-run` lists every AutoMemory registration (workspace and global, all agents); `automemory disconnect all --everywhere` removes them. Run the dry run again: it must say 0. Your own hooks, rules and git hooks stay.
+
 ## Before a live run
 
 * Use the installed binary, not a shell alias to `target/debug` (`which -a automemory`); hooks always run `~/.cargo/bin/automemory`.

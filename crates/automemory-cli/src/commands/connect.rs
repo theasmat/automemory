@@ -98,6 +98,77 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
 }
 
 // ── Antigravity / Gemini ────────────────────────────────────────────────────
+/// The hooks Antigravity (CLI, App and IDE share one schema) runs for AutoMemory:
+/// PreInvocation carries notes and boot context, PreToolUse gates, PostToolUse records, Stop
+/// answers. Registered under one key, `automemory`, in a hooks.json that may hold others.
+pub(crate) fn agy_hooks_value(exe_path: &str) -> serde_json::Value {
+    let exe = shell_quote_exe(exe_path);
+    let cmd = |event: &str| format!("{exe} hook --agent agy --event {event} --project auto");
+    serde_json::json!({
+        "enabled": true,
+        "PreInvocation": [{ "type": "command", "command": cmd("boot"), "timeout": 5 }],
+        "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": cmd("pre-tool"), "timeout": 5 }] }],
+        "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": cmd("post-tool"), "timeout": 5 }] }],
+        "Stop": [{ "type": "command", "command": cmd("stop"), "timeout": 5 }]
+    })
+}
+
+fn hooks_file_has_automemory(path: &Path) -> bool {
+    read_json_or_empty(path)
+        .ok()
+        .is_some_and(|v| v.get("automemory").is_some())
+}
+
+/// Sets only our `automemory` key; other hooks in the file are untouched.
+fn merge_agy_hooks(path: &Path, exe_path: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut root = read_json_or_empty(path)?;
+    if !root.is_object() {
+        anyhow::bail!("refusing to modify {}: top-level JSON is not an object", path.display());
+    }
+    root["automemory"] = agy_hooks_value(exe_path);
+    write_atomic(path, &serde_json::to_string_pretty(&root)?)
+}
+
+/// Removes our `automemory` key, deleting the file only if nothing else is left.
+pub(crate) fn strip_agy_hooks(path: &Path) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path)?) else {
+        return Ok(false);
+    };
+    let Some(obj) = root.as_object_mut() else { return Ok(false) };
+    if obj.remove("automemory").is_none() {
+        return Ok(false);
+    }
+    if obj.is_empty() {
+        fs::remove_file(path)?;
+    } else {
+        write_atomic(path, &serde_json::to_string_pretty(&root)?)?;
+    }
+    Ok(true)
+}
+
+/// Older versions wrote a plugin copy of the hooks and skill; Antigravity ran both. Remove it
+/// when everything in it is ours.
+pub(crate) fn remove_owned_plugin_dir(dir: &Path) -> bool {
+    let Ok(manifest) = fs::read_to_string(dir.join("plugin.json")) else { return false };
+    let ours = serde_json::from_str::<serde_json::Value>(&manifest)
+        .ok()
+        .is_some_and(|v| v["name"] == "automemory");
+    ours && fs::remove_dir_all(dir).is_ok()
+}
+
+fn write_skill(dir: &Path) -> Result<()> {
+    fs::create_dir_all(dir)?;
+    fs::write(dir.join("SKILL.md"), automemory_skill_content())?;
+    Ok(())
+}
+
+// ── Antigravity (CLI, App, IDE) ─────────────────────────────────────────────
 pub(crate) fn connect_agy(
     home: &Path,
     workspace_root: &Path,
@@ -105,149 +176,67 @@ pub(crate) fn connect_agy(
     global: bool,
 ) -> Result<()> {
     if global {
-        let gemini_config = home.join(".gemini").join("config");
-        fs::create_dir_all(&gemini_config)?;
+        let gemini = home.join(".gemini");
+        let config = gemini.join("config");
+        fs::create_dir_all(&config)?;
+        merge_mcp_config(&config.join("mcp_config.json"), exe_path)?;
+        merge_agy_hooks(&config.join("hooks.json"), exe_path)?;
+        // App and IDE read ~/.gemini/config/skills; the CLI reads its own folder.
+        write_skill(&config.join("skills").join("automemory"))?;
+        let cli = gemini.join("antigravity-cli");
+        if cli.is_dir() {
+            write_skill(&cli.join("skills").join("automemory"))?;
+        }
+        remove_owned_plugin_dir(&config.join("plugins").join("automemory"));
+        // This workspace's own copy of the hooks would now run a second time.
+        let dropped_workspace_copy = strip_agy_hooks(&workspace_root.join(".agents/hooks.json")).unwrap_or(false);
 
-        let mcp_path = gemini_config.join("mcp_config.json");
-        merge_mcp_config(&mcp_path, exe_path)?;
-
-        let global_skill_dir = gemini_config.join("skills").join("automemory");
-        let _ = fs::create_dir_all(&global_skill_dir);
-        let _ = fs::write(
-            global_skill_dir.join("SKILL.md"),
-            automemory_skill_content(),
-        );
-
-        let plugin_skill_dir = gemini_config
-            .join("plugins")
-            .join("automemory")
-            .join("skills")
-            .join("automemory");
-        let _ = fs::create_dir_all(&plugin_skill_dir);
-        let _ = fs::write(
-            plugin_skill_dir.join("SKILL.md"),
-            automemory_skill_content(),
-        );
-
-        println!(
-            "✓ [GLOBAL] Connected to Antigravity / Gemini at {}",
-            mcp_path.display()
-        );
-        println!(
-            "  🧠 Installed global skill: {}",
-            global_skill_dir.join("SKILL.md").display()
-        );
+        println!("✓ [GLOBAL] Connected Antigravity (CLI, App, IDE) at {}", config.display());
+        println!("  🪝 Hooks:  {}", config.join("hooks.json").display());
+        println!("  🔌 MCP:    {}", config.join("mcp_config.json").display());
+        println!("  🧠 Skill:  {}", config.join("skills/automemory/SKILL.md").display());
+        if cli.is_dir() {
+            println!("  🧠 Skill (CLI): {}", cli.join("skills/automemory/SKILL.md").display());
+        }
+        if dropped_workspace_copy {
+            println!("  ♻️  Removed this workspace's duplicate .agents/hooks.json entry (global hooks cover it)");
+        }
     } else {
         let agents_dir = workspace_root.join(".agents");
         fs::create_dir_all(&agents_dir)?;
+        merge_mcp_config(&agents_dir.join("mcp_config.json"), exe_path)?;
 
-        // 1. .agents/mcp_config.json
-        let mcp_config_path = agents_dir.join("mcp_config.json");
-        merge_mcp_config(&mcp_config_path, exe_path)?;
+        // Antigravity runs every hooks.json it finds, so a hook in both the global and the
+        // workspace file would run twice. Keep one.
+        let global_hooks = home.join(".gemini/config/hooks.json");
+        let hooks_note = if hooks_file_has_automemory(&global_hooks) {
+            let _ = strip_agy_hooks(&agents_dir.join("hooks.json"));
+            "global hooks already registered; none added here"
+        } else {
+            merge_agy_hooks(&agents_dir.join("hooks.json"), exe_path)?;
+            "registered in .agents/hooks.json"
+        };
 
-        // 2. Root .mcp.json
-        let root_mcp_path = workspace_root.join(".mcp.json");
-        merge_mcp_config(&root_mcp_path, exe_path)?;
-
-        // 3. .agents/hooks.json
-        let hooks_path = agents_dir.join("hooks.json");
-        let hooks_val = serde_json::json!({
-            "automemory": {
-                "enabled": true,
-                "PreInvocation": [
-                    {
-                        "type": "command",
-                        "command": format!("{} hook --agent agy --event boot --project auto", exe_path),
-                        "timeout": 5
-                    }
-                ],
-                "PreToolUse": [
-                    {
-                        "matcher": "*",
-                        "hooks": [
-                            {
-                                "type": "command",
-                                "command": format!("{} hook --agent agy --event pre-tool --project auto", exe_path),
-                                "timeout": 5
-                            }
-                        ]
-                    }
-                ],
-                "PostToolUse": [
-                    {
-                        "matcher": "*",
-                        "hooks": [
-                            {
-                                "type": "command",
-                                "command": format!("{} hook --agent agy --event post-tool --project auto", exe_path),
-                                "timeout": 5
-                            }
-                        ]
-                    }
-                ],
-                "Stop": [
-                    {
-                        "type": "command",
-                        "command": format!("{} hook --agent agy --event stop --project auto", exe_path),
-                        "timeout": 5
-                    }
-                ]
-            }
-        });
-        fs::write(&hooks_path, serde_json::to_string_pretty(&hooks_val)?)?;
-
-        // 4. Plugin manifest
-        let plugin_dir = agents_dir.join("plugins").join("automemory");
-        fs::create_dir_all(&plugin_dir)?;
-        fs::write(
-            plugin_dir.join("plugin.json"),
-            serde_json::to_string_pretty(&serde_json::json!({"name": "automemory"}))?,
-        )?;
-        merge_mcp_config(&plugin_dir.join("mcp_config.json"), exe_path)?;
-        // Antigravity loads hooks from .agents/hooks.json AND from plugin folders; registering
-        // both ran every hook twice. Keep the workspace file only (and drop an older copy).
-        let _ = fs::remove_file(plugin_dir.join("hooks.json"));
-
-        // 5. Skills (Workspace & Plugin)
-        let ws_skill_dir = agents_dir.join("skills").join("automemory");
-        fs::create_dir_all(&ws_skill_dir)?;
-        fs::write(ws_skill_dir.join("SKILL.md"), automemory_skill_content())?;
-
-        let plugin_skill_dir = plugin_dir.join("skills").join("automemory");
-        fs::create_dir_all(&plugin_skill_dir)?;
-        fs::write(
-            plugin_skill_dir.join("SKILL.md"),
-            automemory_skill_content(),
-        )?;
-
-        // 6. Rules & Guidelines (AGENTS.md, GEMINI.md, .agents/rules/automemory.md)
+        write_skill(&agents_dir.join("skills").join("automemory"))?;
         let rules_dir = agents_dir.join("rules");
         fs::create_dir_all(&rules_dir)?;
         fs::write(rules_dir.join("automemory.md"), automemory_rules_content())?;
-
-        let agents_md = workspace_root.join("AGENTS.md");
-        if !agents_md.exists() {
-            let _ = fs::write(&agents_md, automemory_rules_content());
+        for name in ["AGENTS.md", "GEMINI.md"] {
+            let f = workspace_root.join(name);
+            if !f.exists() {
+                let _ = fs::write(&f, automemory_rules_content());
+            }
         }
-        let gemini_md = workspace_root.join("GEMINI.md");
-        if !gemini_md.exists() {
-            let _ = fs::write(&gemini_md, automemory_rules_content());
-        }
-
-        // 7. Git post-commit hook
+        remove_owned_plugin_dir(&agents_dir.join("plugins").join("automemory"));
         let _ = install_git_post_commit_hook(workspace_root, exe_path);
 
-        println!(
-            "✓ [WORKSPACE] Connected to Antigravity at {}",
-            workspace_root.display()
-        );
-        println!("  🪝 Registered hooks in: .agents/hooks.json");
-        println!("  📦 Created plugin in:   .agents/plugins/automemory/");
-        println!("  🧠 Installed skill in:   .agents/skills/automemory/SKILL.md");
-        println!("  📜 Generated rules in:   AGENTS.md, GEMINI.md, .agents/rules/");
+        println!("✓ [WORKSPACE] Connected Antigravity (CLI, App, IDE) at {}", workspace_root.display());
+        println!("  🪝 Hooks:  {hooks_note}");
+        println!("  🔌 MCP:    .agents/mcp_config.json");
+        println!("  🧠 Skill:  .agents/skills/automemory/SKILL.md");
+        println!("  📜 Rules:  .agents/rules/automemory.md (AGENTS.md, GEMINI.md if absent)");
         println!("  ⚓ Git post-commit hook: active");
     }
-
     Ok(())
 }
 
@@ -1250,39 +1239,73 @@ This workspace is integrated with **AutoMemory**.
 "#
 }
 
+const GIT_HOOK_BEGIN: &str = "# >>> automemory post-commit >>>";
+const GIT_HOOK_END: &str = "# <<< automemory post-commit <<<";
+
+fn git_hooks_dir(workspace_root: &Path) -> Option<PathBuf> {
+    let git_dir = automemory_core::sync::GitSync::resolve_git_canonical_root(workspace_root)
+        .map(|r| r.join(".git"))
+        .unwrap_or_else(|| workspace_root.join(".git"));
+    git_dir.exists().then(|| git_dir.join("hooks"))
+}
+
+/// Adds our block to `.git/hooks/post-commit`. An existing hook of the user's is kept; our block
+/// is appended (or replaced in place), never overwriting what is there.
 pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let git_dir = if let Some(canonical) =
-        automemory_core::sync::GitSync::resolve_git_canonical_root(workspace_root)
-    {
-        canonical.join(".git")
-    } else {
-        workspace_root.join(".git")
-    };
-
-    if !git_dir.exists() {
-        return Ok(());
-    }
-
-    let hooks_dir = git_dir.join("hooks");
-    let _ = fs::create_dir_all(&hooks_dir);
-    let post_commit_path = hooks_dir.join("post-commit");
-
-    let script = format!(
-        r#"#!/bin/sh
-# AutoMemory Git Post-Commit Hook (auto-updates memory on commit)
-AUTOMEMORY_EXE="{}"
-if [ -x "$AUTOMEMORY_EXE" ]; then
-    "$AUTOMEMORY_EXE" hook --agent git --event post-commit --project auto >/dev/null 2>&1 || true
-fi
-"#,
-        exe_path
+    let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(()) };
+    fs::create_dir_all(&hooks_dir)?;
+    let path = hooks_dir.join("post-commit");
+    let block = format!(
+        "{GIT_HOOK_BEGIN}\nAUTOMEMORY_EXE=\"{exe_path}\"\nif [ -x \"$AUTOMEMORY_EXE\" ]; then\n    \"$AUTOMEMORY_EXE\" hook --agent git --event post-commit --project auto >/dev/null 2>&1 || true\nfi\n{GIT_HOOK_END}\n"
     );
-
-    fs::write(&post_commit_path, script)?;
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let base = strip_git_block(&existing);
+    let mut out = if base.trim().is_empty() { "#!/bin/sh\n".to_string() } else { base };
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&block);
+    fs::write(&path, out)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&post_commit_path, fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
     }
     Ok(())
+}
+
+/// The hook text without our block, and without the whole-file hook older versions wrote.
+fn strip_git_block(text: &str) -> String {
+    if text.contains("# AutoMemory Git Post-Commit Hook") && !text.contains(GIT_HOOK_BEGIN) {
+        return String::new(); // older versions overwrote the file with only our script
+    }
+    let mut out = Vec::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        if line.trim() == GIT_HOOK_BEGIN {
+            skipping = true;
+        } else if line.trim() == GIT_HOOK_END {
+            skipping = false;
+        } else if !skipping {
+            out.push(line);
+        }
+    }
+    if out.is_empty() { String::new() } else { out.join("\n") + "\n" }
+}
+
+/// Removes our block; deletes the file if nothing else (but the shebang) remains.
+pub(crate) fn remove_git_post_commit_hook(workspace_root: &Path) -> Result<bool> {
+    let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(false) };
+    let path = hooks_dir.join("post-commit");
+    let Ok(text) = fs::read_to_string(&path) else { return Ok(false) };
+    if !text.contains(GIT_HOOK_BEGIN) && !text.contains("# AutoMemory Git Post-Commit Hook") {
+        return Ok(false);
+    }
+    let rest = strip_git_block(&text);
+    if rest.lines().all(|l| l.trim().is_empty() || l.starts_with("#!")) {
+        fs::remove_file(&path)?;
+    } else {
+        fs::write(&path, rest)?;
+    }
+    Ok(true)
 }

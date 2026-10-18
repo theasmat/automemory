@@ -44,6 +44,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Antigravity hook output follows its documented schema (found by a live run: PostToolUse `note` was rejected); notes delivered on PreInvocation
 - [x] `mode set` / `skill` used the folder name as the project while hooks used the registered project (live run: Strict was set on `automemory`, hooks ran under `auto`, so nothing was denied); both now use `project_slug_for_dir`
 - [x] `connect agy` registered hooks twice (workspace + plugin copy), so every agy event ran and was recorded twice; plugin copy removed
+- [x] Antigravity: single hook registration (global or workspace), safe merge into an existing hooks.json, CLI + App + IDE skill paths, no stale plugin copies; hooks always answer in schema and fail open; duplicate registrations replay one reply; `disconnect all [--everywhere] [--dry-run]` removes every AutoMemory registration; `connect` no longer overwrites a user's git post-commit hook
 - [ ] Verify in a live Antigravity session that the PreInvocation message reaches the model and Strict-mode deny blocks the call
 - [ ] Re-run `automemory connect claude -g` (and codex) so the new SessionEnd hook is installed; leases still expire after 10 idle minutes without it
 - [ ] After a week of real use: read `automemory locks --coverage`; if below 80%, look at which `reconciled`/`unattributed` writes dominate
@@ -53,7 +54,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 180 Rust tests at last check)
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 187 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

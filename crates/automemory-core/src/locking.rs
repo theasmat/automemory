@@ -18,6 +18,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
+/// Identity of one hook invocation, for [`Database::replay_or_claim_hook`].
+pub fn hook_key(agent: &str, event: &str, input: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(format!("{agent}\0{event}\0{input}").as_bytes()))
+}
+
 // ── Shell write prediction ──────────────────────────────────────────────────
 
 /// Files the command writes, moves or deletes, as written in the command (relative or
@@ -260,6 +266,54 @@ impl Database {
         notes
     }
 
+    /// Atomically claim a hook invocation. `Some(output)` means an identical one (same agent,
+    /// event and payload) ran within the last moments and this is its reply: print it and stop.
+    /// `None` means this process owns the invocation and must call [`Database::finish_hook`].
+    pub fn replay_or_claim_hook(&self, key: &str) -> Option<String> {
+        const WINDOW_MS: i64 = 1500;
+        let now = Utc::now().timestamp_millis();
+        let claimed = {
+            let conn = self.conn();
+            if conn.execute_batch("BEGIN IMMEDIATE").is_err() {
+                return None;
+            }
+            let prior: Option<i64> = conn
+                .query_row("SELECT ts FROM hook_claims WHERE key = ?1", params![key], |r| r.get(0))
+                .ok();
+            let fresh = prior.is_none_or(|ts| now - ts > WINDOW_MS);
+            if fresh {
+                let _ = conn.execute(
+                    "INSERT INTO hook_claims (key, ts, output) VALUES (?1, ?2, NULL)
+                     ON CONFLICT(key) DO UPDATE SET ts = ?2, output = NULL",
+                    params![key, now],
+                );
+                let _ = conn.execute("DELETE FROM hook_claims WHERE ts < ?1", params![now - 60_000]);
+            }
+            let _ = conn.execute_batch("COMMIT");
+            fresh
+        };
+        if claimed {
+            return None;
+        }
+        // A twin is (or was just) running: wait briefly for its reply.
+        for _ in 0..150 {
+            let out: Option<String> = self
+                .conn()
+                .query_row("SELECT output FROM hook_claims WHERE key = ?1", params![key], |r| r.get(0))
+                .ok()
+                .flatten();
+            if out.is_some() {
+                return out;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        None
+    }
+
+    pub fn finish_hook(&self, key: &str, output: &str) {
+        let _ = self.conn().execute("UPDATE hook_claims SET output = ?2 WHERE key = ?1", params![key, output]);
+    }
+
     pub fn record_alert(&self, project_id: Option<&str>, path: &str, agent: &str, session: &str, message: &str) {
         let _ = self.conn().execute(
             "INSERT INTO lock_alerts (ts, project_id, path, holder_agent, holder_session, message) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -459,5 +513,37 @@ mod tests {
         for p in ["src/targets.rs", "src/lib.rs", "docs/build-notes.md"] {
             assert!(!s.is_ignored(p), "{p}");
         }
+    }
+}
+
+#[cfg(test)]
+mod dedupe_tests {
+    use super::*;
+
+    #[test]
+    fn an_identical_hook_call_replays_the_first_reply_once() {
+        let db = Database::open_in_memory().unwrap();
+        let key = hook_key("agy", "pre-tool", r#"{"conversationId":"c","stepIdx":3}"#);
+        assert_eq!(db.replay_or_claim_hook(&key), None, "first call owns the invocation");
+        db.finish_hook(&key, r#"{"decision":"allow"}"#);
+        assert_eq!(db.replay_or_claim_hook(&key).as_deref(), Some(r#"{"decision":"allow"}"#), "twin gets the reply");
+        // A different payload, event or agent is independent.
+        for other in [
+            hook_key("agy", "pre-tool", r#"{"conversationId":"c","stepIdx":4}"#),
+            hook_key("agy", "post-tool", r#"{"conversationId":"c","stepIdx":3}"#),
+            hook_key("claude", "pre-tool", r#"{"conversationId":"c","stepIdx":3}"#),
+        ] {
+            assert_eq!(db.replay_or_claim_hook(&other), None);
+        }
+    }
+
+    #[test]
+    fn a_stale_claim_is_taken_over() {
+        let db = Database::open_in_memory().unwrap();
+        let key = hook_key("a", "e", "{}");
+        db.replay_or_claim_hook(&key);
+        db.finish_hook(&key, "old");
+        db.conn().execute("UPDATE hook_claims SET ts = ts - 5000", []).unwrap();
+        assert_eq!(db.replay_or_claim_hook(&key), None, "outside the window the call is new");
     }
 }
