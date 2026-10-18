@@ -16,7 +16,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | # | Test | Status | Date |
 |---|---|---|---|
 | T0 | Baseline: clean machine, local-only registration | PASS | 2026-10-19 |
-| T1 | Claude Code: hooks fire and events are recorded | PARTIAL (rerun) | 2026-10-19 |
+| T1 | Claude Code: hooks fire and events are recorded | PASS | 2026-10-19 |
 | T2 | Antigravity: hooks fire, no hook errors | PENDING | |
 | T3 | Shared knowledge: a decision made in Claude is known by Antigravity | PENDING | |
 | T4 | Two agents, one file: automatic lock and collision message | PENDING | |
@@ -143,4 +143,20 @@ old text until removed and regenerated (`disconnect` then `connect`). Not fixed 
 
 Contract test updated: a second prompt in a registered project with nothing to say now returns `{}` instead of boilerplate context.
 Commit with the fixes: see git log.
+
+### 2026-10-19 T1 Claude Code hooks: PASS (rerun after fixes)
+
+Setup this time: reset data, `disconnect all`, regenerated rules, `connect claude` + `connect agy` with the installed binary,
+`mode set strict`. Verified before the run: hooks use `~/.cargo/bin/automemory`; CLAUDE.md says "Do not call `lock.acquire`";
+`project list` shows the trial folder.
+
+Result (same shipping prompt): tool counts `read 4, edit 2, write 2, command 8` and no `mcp__automemory__lock_acquire` or ToolSearch,
+so Claude no longer locks by hand. `locks --coverage`: 2 file changes, 100% leased before the write. Memories are scope "project"
+(checkpoint + distilled outcome). Hand-off: 12 tool calls, 0 failed, both files listed. Tests passed (8 runs).
+Still not reported by the tester: Claude's final message and whether the MCP trust prompt appeared.
+
+Found and fixed
+- The hand-off said "holding: tests/test_pricing.py, shop/pricing.py" although the session had ended: the hand-off was written
+  before the session's leases were released. SessionEnd now releases first. (To confirm live in T2: `automemory locks` is empty after exit.)
+- Open: "Pending event queue: 20 unprocessed events" right after the session (processed later by distillation); watch whether it drains.
 

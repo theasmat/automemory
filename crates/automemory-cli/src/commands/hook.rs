@@ -417,9 +417,10 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
 
     // The session is over: its files are free for other agents at once.
     if canonical == Some(CanonicalEvent::SessionEnd) {
+        // Release first, so the hand-off does not list files as "holding" that are already free.
+        let _ = db.release_leases(&session_id, None);
         maybe_handoff(&db, effective_project_id, &session_id, agent, &root_dir());
         spawn_background_sync(&db);
-        let _ = db.release_leases(&session_id, None);
         db.drop_snapshot(&session_id);
         emit!("{{}}");
         return Ok(());
