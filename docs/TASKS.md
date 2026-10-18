@@ -35,6 +35,13 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Sync gateway: webhook signatures verified, unsigned test payload only with the dev flag, constant-time admin secret
 - [x] `tests/` directory: contract, guardrail, collision, lifecycle, password gate, dashboard, CodeIntel, latency, eval harness, live checklist
 
+## Automatic locking v2 (design in PLAN §6)
+
+- [ ] Step 1: session-bound leases (renew on any tool event, release on SessionEnd or idle timeout, not on Stop); optional wait-for-lock; per-path hard/soft/ignored policy
+- [ ] Step 2: predict write targets of shell commands; PostToolUse `git status` reconciliation with retroactive leases
+- [ ] Step 3: watcher alerts for agents without hooks
+- [ ] Step 4: `automemory run <agent>` launcher with a worktree per session (decide: v1 or Phase 7)
+
 ## Docs hygiene
 
 - [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (59 MCP tools, 168 Rust tests at last check)
