@@ -7,8 +7,6 @@ use tokio::sync::Notify;
 use tracing::{info, warn};
 
 use crate::db::Database;
-use crate::sync::git::GitSync;
-use crate::sync::vault::VaultManager;
 
 pub struct AutoSyncDaemon {
     db: Arc<Database>,
@@ -35,27 +33,15 @@ impl AutoSyncDaemon {
         self.notifier.notify_one();
     }
 
-    /// Run immediate sync without debouncing
+    /// Run immediate sync without debouncing: pull, apply other devices' changes, write ours, push.
     pub fn sync_now(&self) -> Result<()> {
-        // Conflict-safe op-log first (applies other devices' edits, writes ours), then the
-        // readable snapshot export.
-        super::deltas::sync_cycle(&self.db, &self.vault_root)?;
-        let vault = VaultManager::new(&self.db, &self.vault_root);
-        vault.export_to_vault()?;
-
-        if GitSync::is_git_repo(&self.vault_root) {
-            let committed =
-                GitSync::commit_all(&self.vault_root, "AutoMemory: automated vault sync")?;
-            if committed {
-                info!("Committed vault updates to local git");
-                if let Err(e) = GitSync::push(&self.vault_root, None, None) {
-                    warn!(
-                        "Git push failed (might be offline or remote not configured): {}",
-                        e
-                    );
-                }
-            }
-        }
+        let remote = crate::config::GlobalConfig::load()
+            .ok()
+            .and_then(|g| g.vault.remote_url)
+            .filter(|u| !u.trim().is_empty());
+        let key = super::auto::resolve_key(remote.is_some());
+        let report = super::auto::run(&self.db, &self.vault_root, remote.as_deref(), true, true, key.as_ref())?;
+        info!("vault sync: {}", report.summary());
         Ok(())
     }
 

@@ -18,6 +18,7 @@ pub mod models;
 pub mod overlap;
 pub mod ports;
 pub mod redaction;
+pub mod resume;
 pub mod retrieval;
 pub mod sync;
 pub mod verify;

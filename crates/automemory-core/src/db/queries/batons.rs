@@ -22,6 +22,58 @@ impl Database {
         Ok(())
     }
 
+    /// Upsert used by sync apply (a baton is immutable, so this only fills a gap).
+    pub fn save_baton_direct(&self, baton: &Baton) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO batons (id, project_id, from_session, to_session, agent, packet, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                baton.id,
+                baton.project_id,
+                baton.from_session,
+                baton.to_session,
+                baton.agent,
+                baton.packet,
+                baton.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn row_to_baton(row: &rusqlite::Row) -> rusqlite::Result<Baton> {
+        let created_str: String = row.get(6)?;
+        Ok(Baton {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            from_session: row.get(2)?,
+            to_session: row.get(3)?,
+            agent: row.get(4)?,
+            packet: row.get(5)?,
+            created_at: DateTime::parse_from_rfc3339(&created_str)
+                .map(|d| d.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+        })
+    }
+
+    pub fn get_baton_by_id(&self, id: &str) -> Result<Option<Baton>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, from_session, to_session, agent, packet, created_at FROM batons WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], Self::row_to_baton)?;
+        Ok(rows.next().transpose()?)
+    }
+
+    /// Newest first.
+    pub fn list_batons(&self, limit: usize) -> Result<Vec<Baton>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, from_session, to_session, agent, packet, created_at FROM batons ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], Self::row_to_baton)?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Latest baton visible to `session_id`: addressed to it or broadcast.
     pub fn latest_baton(
         &self,

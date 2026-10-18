@@ -33,11 +33,18 @@ pub struct DeltaOp {
     pub op: String,
     pub kind: String,
     pub id: String,
+    /// Local project id: set on apply, always `None` on the wire (see `project_key`).
     pub project_id: Option<String>,
     pub updated_at: String,
     pub device_id: String,
     pub fingerprint: String,
     pub payload: serde_json::Value,
+    /// The repository the record belongs to (`sync::identity`), the same on every machine.
+    #[serde(default)]
+    pub project_key: Option<String>,
+    /// Folder-name hint used to name the project on a machine that has not seen it.
+    #[serde(default)]
+    pub project_slug: Option<String>,
 }
 
 /// Outcome of applying delta files. Conflicts keep the local copy and file
@@ -56,6 +63,16 @@ const SEEN_KEY: &str = "seen_fingerprints";
 
 /// Sync must never drop records, so listings are not capped and errors propagate.
 const ALL_ROWS: usize = i64::MAX as usize;
+
+impl Database {
+    pub fn sync_kv_get(&self, key: &str) -> Option<String> {
+        get_kv(self, key).ok().flatten()
+    }
+
+    pub fn sync_kv_set(&self, key: &str, value: &str) {
+        let _ = set_kv(self, key, value);
+    }
+}
 
 fn get_kv(db: &Database, key: &str) -> Result<Option<String>> {
     let conn = db.conn();
@@ -107,13 +124,18 @@ pub fn device_id(db: &Database) -> Result<String> {
     Ok(id)
 }
 
-/// One sync pass over a vault directory: apply what other devices wrote, then write
-/// what changed here. Safe to repeat; a second pass with no new edits writes nothing.
 pub fn sync_cycle(db: &Database, vault_root: &Path) -> Result<ApplyReport> {
+    sync_cycle_keyed(db, vault_root, None)
+}
+
+/// [`sync_cycle`] with the delta files encrypted under `key` (and `.enc` files from other
+/// devices readable). First gives every registered repository its project key.
+pub fn sync_cycle_keyed(db: &Database, vault_root: &Path, key: Option<&[u8; 32]>) -> Result<ApplyReport> {
+    db.link_project_keys();
     let device = device_id(db)?;
-    let report = apply_all_deltas(db, vault_root, &device)?;
+    let report = apply_all_deltas_keyed(db, vault_root, &device, key)?;
     let ops = collect_deltas(db, &device)?;
-    if write_delta_file(vault_root, &device, &ops)?.is_some() {
+    if write_delta_file_keyed(vault_root, &device, &ops, key)?.is_some() {
         let sent: HashMap<String, String> =
             ops.iter().map(|o| (o.id.clone(), o.fingerprint.clone())).collect();
         merge_applied(db, &sent)?;
@@ -141,93 +163,113 @@ fn fingerprint(payload: &serde_json::Value) -> String {
     format!("{:x}", Sha256::digest(raw.as_bytes()))
 }
 
-fn fingerprint_of<T: Serialize>(v: &T) -> String {
-    fingerprint(&serde_json::to_value(v).unwrap_or(serde_json::Value::Null))
+fn json_of<T: Serialize>(v: &T) -> serde_json::Value {
+    serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
+/// Resolved project references for one pass: local id or slug -> (key, slug).
+type KeyCache = HashMap<String, Option<(String, String)>>;
+
+/// The wire form of a record: the machine-local `project_id` is replaced by the project's key,
+/// so the same record has the same fingerprint on every machine. `None` means the record
+/// belongs to a project with no key (not a git repository) and stays on this machine.
+fn to_transport(
+    db: &Database,
+    cache: &mut KeyCache,
+    mut payload: serde_json::Value,
+) -> Option<(serde_json::Value, Option<String>, Option<String>)> {
+    let Some(pid) = payload.get("project_id").and_then(|v| v.as_str()).map(String::from) else {
+        return Some((payload, None, None)); // global record
+    };
+    let (key, slug) = cache
+        .entry(pid.clone())
+        .or_insert_with(|| db.key_and_slug(&pid))
+        .clone()?;
+    payload["project_id"] = serde_json::Value::Null;
+    Some((payload, Some(key), Some(slug)))
+}
+
+/// Fingerprint of a local record in wire form (what the same record would fingerprint to elsewhere).
+fn local_fp<T: Serialize>(db: &Database, cache: &mut KeyCache, v: &T) -> String {
+    let value = serde_json::to_value(v).unwrap_or(serde_json::Value::Null);
+    match to_transport(db, cache, value.clone()) {
+        Some((wire, _, _)) => fingerprint(&wire),
+        None => fingerprint(&value),
+    }
 }
 
 fn make_op(
     kind: &str,
     id: String,
-    project_id: Option<String>,
     updated_at: DateTime<Utc>,
     device_id: &str,
-    payload: serde_json::Value,
+    wire: (serde_json::Value, Option<String>, Option<String>),
 ) -> DeltaOp {
-    let fp = fingerprint(&payload);
+    let (payload, project_key, project_slug) = wire;
     DeltaOp {
         op: "upsert".to_string(),
         kind: kind.to_string(),
         id,
-        project_id,
+        project_id: None,
         updated_at: updated_at.to_rfc3339(),
         device_id: device_id.to_string(),
-        fingerprint: fp,
+        fingerprint: fingerprint(&payload),
         payload,
+        project_key,
+        project_slug,
     }
 }
 
-/// Collects every sync-worthy record whose fingerprint differs from what
-/// this device last pushed or applied. Deterministic order for stable files.
 pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
     let applied = get_applied(db)?;
+    let mut cache = KeyCache::new();
     let mut ops = Vec::new();
-    let mut consider = |kind: &str,
-                        id: String,
-                        project_id: Option<String>,
-                        updated_at: DateTime<Utc>,
-                        payload: serde_json::Value| {
-        let op = make_op(kind, id, project_id, updated_at, device_id, payload);
+    // Records of a project with no key (not a git repository) are skipped: they stay local.
+    let mut consider = |kind: &str, id: String, updated_at: DateTime<Utc>, value: serde_json::Value| {
+        let Some(wire) = to_transport(db, &mut cache, value) else { return };
+        let op = make_op(kind, id, updated_at, device_id, wire);
         if applied.get(&op.id).map(|fp| fp == &op.fingerprint) != Some(true) {
             ops.push(op);
         }
     };
 
     for m in db.list_memories(None, None, None, ALL_ROWS)? {
-        let updated = m.updated_at;
-        let pid = m.project_id.clone();
-        let id = m.id.clone();
-        let payload = serde_json::to_value(&m).unwrap_or(serde_json::Value::Null);
-        consider("memory", id, pid, updated, payload);
+        consider("memory", m.id.clone(), m.updated_at, json_of(&m));
     }
     for t in db.list_traces(None, ALL_ROWS)? {
-        let updated = t.updated_at;
-        let pid = t.project_id.clone();
-        let id = t.id.clone();
-        let payload = serde_json::to_value(&t).unwrap_or(serde_json::Value::Null);
-        consider("trace", id, pid, updated, payload);
+        consider("trace", t.id.clone(), t.updated_at, json_of(&t));
     }
     for f in db.list_failures(None, None, ALL_ROWS)? {
-        let updated = f.updated_at;
-        let pid = f.project_id.clone();
-        let id = f.id.clone();
-        let payload = serde_json::to_value(&f).unwrap_or(serde_json::Value::Null);
-        consider("failure", id, pid, updated, payload);
+        consider("failure", f.id.clone(), f.updated_at, json_of(&f));
     }
     for s in db.list_skills(None, ALL_ROWS)? {
-        let updated = s.updated_at;
-        let pid = s.project_id.clone();
-        let id = s.id.clone();
-        let payload = serde_json::to_value(&s).unwrap_or(serde_json::Value::Null);
-        consider("skill", id, pid, updated, payload);
+        consider("skill", s.id.clone(), s.updated_at, json_of(&s));
     }
     for d in db.list_decisions(None, None, ALL_ROWS)? {
-        let updated = d.updated_at;
-        let pid = d.project_id.clone();
-        let id = d.id.clone();
-        let payload = serde_json::to_value(&d).unwrap_or(serde_json::Value::Null);
-        consider("decision", id, pid, updated, payload);
+        consider("decision", d.id.clone(), d.updated_at, json_of(&d));
+    }
+    for b in db.list_batons(ALL_ROWS)? {
+        consider("baton", b.id.clone(), b.created_at, json_of(&b));
     }
 
     ops.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     Ok(ops)
 }
 
-/// Writes ops to a content-addressed delta file. Returns None when there is
-/// nothing new (caller writes nothing, commits nothing extra).
 pub fn write_delta_file(
     vault_root: &Path,
     device_id: &str,
     ops: &[DeltaOp],
+) -> Result<Option<PathBuf>> {
+    write_delta_file_keyed(vault_root, device_id, ops, None)
+}
+
+/// With a key the file is stored as an AES-256-GCM blob (`.enc`): the git host sees ciphertext only.
+pub fn write_delta_file_keyed(
+    vault_root: &Path,
+    device_id: &str,
+    ops: &[DeltaOp],
+    key: Option<&[u8; 32]>,
 ) -> Result<Option<PathBuf>> {
     if ops.is_empty() {
         return Ok(None);
@@ -236,23 +278,52 @@ pub fn write_delta_file(
     let digest = format!("{:x}", Sha256::digest(canonical.as_bytes()));
     let deltas_dir = vault_root.join("deltas");
     fs::create_dir_all(&deltas_dir)?;
-    let path = deltas_dir.join(format!("{}-{}.jsonl", &digest[..16], device_id));
+    let ext = if key.is_some() { "enc" } else { "jsonl" };
+    let path = deltas_dir.join(format!("{}-{}.{ext}", &digest[..16], device_id));
     if !path.exists() {
         let mut out = String::with_capacity(canonical.len() + ops.len() * 2);
         for op in ops {
             out.push_str(&serde_json::to_string(op)?);
             out.push('\n');
         }
-        fs::write(&path, out)?;
+        let bytes = match key {
+            Some(k) => serde_json::to_vec(&crate::crypto::BlindCrypto::encrypt(k, out.as_bytes())?)?,
+            None => out.into_bytes(),
+        };
+        // Write-then-rename so a concurrent pull or `git add` never sees half a file.
+        let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+        fs::write(&tmp, bytes)?;
+        fs::rename(&tmp, &path)?;
     }
     Ok(Some(path))
 }
 
-/// Reads one delta file tolerantly: corrupt lines are warned and skipped,
-/// never fatal (mirrors the snapshot importer's contract).
 pub fn read_delta_file(path: &Path) -> Vec<DeltaOp> {
-    let Ok(text) = fs::read_to_string(path) else {
-        return Vec::new();
+    read_delta_file_keyed(path, None)
+}
+
+/// An `.enc` file needs the key; without it the file is skipped with a warning.
+pub fn read_delta_file_keyed(path: &Path, key: Option<&[u8; 32]>) -> Vec<DeltaOp> {
+    let text = if path.extension().and_then(|e| e.to_str()) == Some("enc") {
+        let Some(key) = key else {
+            tracing::warn!(path = %path.display(), "delta file is encrypted and no key is available: skipped");
+            return Vec::new();
+        };
+        let plain = fs::read(path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<crate::crypto::EncryptedBlob>(&b).ok())
+            .and_then(|blob| crate::crypto::BlindCrypto::decrypt(key, &blob).ok())
+            .and_then(|p| String::from_utf8(p).ok());
+        let Some(plain) = plain else {
+            tracing::warn!(path = %path.display(), "delta file could not be decrypted with this key: skipped");
+            return Vec::new();
+        };
+        plain
+    } else {
+        let Ok(text) = fs::read_to_string(path) else {
+            return Vec::new();
+        };
+        text
     };
     let mut ops = Vec::new();
     for (idx, line) in text.lines().enumerate() {
@@ -279,7 +350,7 @@ pub fn list_delta_files(vault_root: &Path) -> Vec<PathBuf> {
     if let Ok(entries) = fs::read_dir(vault_root.join("deltas")) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            if matches!(path.extension().and_then(|s| s.to_str()), Some("jsonl" | "enc")) {
                 files.push(path);
             }
         }
@@ -381,137 +452,39 @@ fn merge_one(
 
 fn apply_op(
     db: &Database,
+    cache: &mut KeyCache,
     applied: &HashMap<String, String>,
     seen: &HashSet<String>,
-    op: &DeltaOp,
+    wire: &DeltaOp,
     report: &mut ApplyReport,
 ) -> Result<Option<(String, String)>> {
-    macro_rules! load {
-        ($get:ident) => {{
-            match db.$get(&op.id)? {
-                None => None,
-                Some(local) => {
-                    let fp = fingerprint_of(&local);
-                    Some((fp, local.updated_at))
-                }
-            }
+    // Swap the project key for this machine's project (created on first sight).
+    let mut op = wire.clone();
+    let mut payload = wire.payload.clone();
+    if let Some(key) = &wire.project_key {
+        let slug = wire.project_slug.clone().unwrap_or_else(|| "project".to_string());
+        let pid = db.ensure_project_for_key(key, &slug)?;
+        payload["project_id"] = serde_json::Value::String(pid.clone());
+        op.project_id = Some(pid);
+    }
+    macro_rules! apply_kind {
+        ($ty:ty, $get:ident, $save:ident, $when:ident) => {{
+            let record: $ty = serde_json::from_value(payload)?;
+            let local = db.$get(&op.id)?;
+            let (fp, updated) = match &local {
+                Some(l) => (Some(local_fp(db, cache, l)), Some(l.$when)),
+                None => (None, None),
+            };
+            merge_one(db, applied, seen, &op, fp, updated, || db.$save(&record), report)
         }};
     }
     match op.kind.as_str() {
-        "memory" => {
-            let mem: Memory = serde_json::from_value(op.payload.clone())?;
-            match load!(get_memory_by_id) {
-                None => merge_one(
-                    db,
-                    applied,
-                    seen,
-                    op,
-                    None,
-                    None,
-                    || db.save_memory_direct(&mem),
-                    report,
-                ),
-                Some((fp, updated)) => merge_one(
-                    db,
-                    applied,
-                    seen,
-                    op,
-                    Some(fp),
-                    Some(updated),
-                    || db.save_memory_direct(&mem),
-                    report,
-                ),
-            }
-        }
-        "trace" => {
-            let t: SuccessTrace = serde_json::from_value(op.payload.clone())?;
-            match db.get_trace_by_id(&op.id)? {
-                None => merge_one(db, applied, seen, op, None, None, || db.save_trace(&t), report),
-                Some(local) => {
-                    let fp = fingerprint_of(&local);
-                    let updated = local.updated_at;
-                    merge_one(
-                        db,
-                        applied,
-                        seen,
-                        op,
-                        Some(fp),
-                        Some(updated),
-                        || db.save_trace(&t),
-                        report,
-                    )
-                }
-            }
-        }
-        "failure" => {
-            let f: FailureRecord = serde_json::from_value(op.payload.clone())?;
-            match db.get_failure_by_id(&op.id)? {
-                None => merge_one(db, applied, seen, op, None, None, || db.save_failure(&f), report),
-                Some(local) => {
-                    let fp = fingerprint_of(&local);
-                    let updated = local.updated_at;
-                    merge_one(
-                        db,
-                        applied,
-                        seen,
-                        op,
-                        Some(fp),
-                        Some(updated),
-                        || db.save_failure(&f),
-                        report,
-                    )
-                }
-            }
-        }
-        "skill" => {
-            let s: ProceduralSkill = serde_json::from_value(op.payload.clone())?;
-            match db.get_skill_by_id(&op.id)? {
-                None => merge_one(db, applied, seen, op, None, None, || db.save_skill(&s), report),
-                Some(local) => {
-                    let fp = fingerprint_of(&local);
-                    let updated = local.updated_at;
-                    merge_one(
-                        db,
-                        applied,
-                        seen,
-                        op,
-                        Some(fp),
-                        Some(updated),
-                        || db.save_skill(&s),
-                        report,
-                    )
-                }
-            }
-        }
-        "decision" => {
-            let d: Decision = serde_json::from_value(op.payload.clone())?;
-            match db.get_decision_by_id(&op.id)? {
-                None => merge_one(
-                    db,
-                    applied,
-                    seen,
-                    op,
-                    None,
-                    None,
-                    || db.save_decision_direct(&d),
-                    report,
-                ),
-                Some(local) => {
-                    let fp = fingerprint_of(&local);
-                    let updated = local.updated_at;
-                    merge_one(
-                        db,
-                        applied,
-                        seen,
-                        op,
-                        Some(fp),
-                        Some(updated),
-                        || db.save_decision_direct(&d),
-                        report,
-                    )
-                }
-            }
-        }
+        "memory" => apply_kind!(Memory, get_memory_by_id, save_memory_direct, updated_at),
+        "trace" => apply_kind!(SuccessTrace, get_trace_by_id, save_trace, updated_at),
+        "failure" => apply_kind!(FailureRecord, get_failure_by_id, save_failure, updated_at),
+        "skill" => apply_kind!(ProceduralSkill, get_skill_by_id, save_skill, updated_at),
+        "decision" => apply_kind!(Decision, get_decision_by_id, save_decision_direct, updated_at),
+        "baton" => apply_kind!(Baton, get_baton_by_id, save_baton_direct, created_at),
         other => {
             tracing::warn!(kind = other, id = %op.id, "delta apply: unknown record kind skipped");
             Ok(None)
@@ -519,15 +492,23 @@ fn apply_op(
     }
 }
 
-/// Applies every delta file in a vault directory, oldest first.
-/// Idempotent: re-applying converged records is a no-op.
 pub fn apply_all_deltas(
     db: &Database,
     vault_root: &Path,
     self_device: &str,
 ) -> Result<ApplyReport> {
+    apply_all_deltas_keyed(db, vault_root, self_device, None)
+}
+
+pub fn apply_all_deltas_keyed(
+    db: &Database,
+    vault_root: &Path,
+    self_device: &str,
+    key: Option<&[u8; 32]>,
+) -> Result<ApplyReport> {
     let applied = get_applied(db)?;
     let seen = get_seen(db)?;
+    let mut cache = KeyCache::new();
     let mut report = ApplyReport::default();
     // Only records that now match the remote (applied or already converged) may be
     // marked as synced. A record that diverged (conflict) or was skipped as stale must
@@ -535,12 +516,12 @@ pub fn apply_all_deltas(
     let mut settled: Vec<(String, String)> = Vec::new();
     let mut newly_seen: Vec<String> = Vec::new();
     for path in list_delta_files(vault_root) {
-        for op in read_delta_file(&path) {
+        for op in read_delta_file_keyed(&path, key) {
             if op.device_id == self_device {
                 report.skipped_own += 1;
                 continue;
             }
-            if apply_op(db, &applied, &seen, &op, &mut report)?.is_some() {
+            if apply_op(db, &mut cache, &applied, &seen, &op, &mut report)?.is_some() {
                 settled.push((op.kind.clone(), op.id.clone()));
                 newly_seen.push(op.fingerprint.clone());
             }
@@ -550,11 +531,12 @@ pub fn apply_all_deltas(
     let mut fresh = HashMap::new();
     for (kind, id) in settled {
         let current: Option<String> = match kind.as_str() {
-            "memory" => db.get_memory_by_id(&id)?.map(|m| fingerprint_of(&m)),
-            "trace" => db.get_trace_by_id(&id)?.map(|t| fingerprint_of(&t)),
-            "failure" => db.get_failure_by_id(&id)?.map(|f| fingerprint_of(&f)),
-            "skill" => db.get_skill_by_id(&id)?.map(|s| fingerprint_of(&s)),
-            "decision" => db.get_decision_by_id(&id)?.map(|d| fingerprint_of(&d)),
+            "memory" => db.get_memory_by_id(&id)?.map(|m| local_fp(db, &mut cache, &m)),
+            "trace" => db.get_trace_by_id(&id)?.map(|t| local_fp(db, &mut cache, &t)),
+            "failure" => db.get_failure_by_id(&id)?.map(|f| local_fp(db, &mut cache, &f)),
+            "skill" => db.get_skill_by_id(&id)?.map(|s| local_fp(db, &mut cache, &s)),
+            "decision" => db.get_decision_by_id(&id)?.map(|d| local_fp(db, &mut cache, &d)),
+            "baton" => db.get_baton_by_id(&id)?.map(|b| local_fp(db, &mut cache, &b)),
             _ => None,
         };
         if let Some(fp) = current {
@@ -574,7 +556,28 @@ mod tests {
         Database::open_in_memory().expect("in-memory db")
     }
 
+    /// A project on this machine, registered under a repository key.
+    fn register_project(db: &Database, id: &str, slug: &str, key: Option<&str>) {
+        let now = Utc::now();
+        db.save_project(&Project {
+            id: id.into(),
+            slug: slug.into(),
+            display_name: slug.into(),
+            created_at: now,
+            updated_at: now,
+            capture_policy: Default::default(),
+            context_budget: Default::default(),
+            document_config: Default::default(),
+            sync_config: Default::default(),
+        })
+        .unwrap();
+        if let Some(k) = key {
+            db.set_project_key(id, k).unwrap();
+        }
+    }
+
     fn seed_memory(db: &Database, id: &str, summary: &str) {
+        register_project(db, "proj-1", "proj", Some("git:test/org/proj"));
         let mem = Memory {
             id: id.to_string(),
             scope: crate::models::MemoryScope::Project,
@@ -767,6 +770,123 @@ mod tests {
         let r = sync_cycle(&b, &dir).unwrap();
         assert_eq!(r.conflicts, 1);
         assert_eq!(b.get_memory_by_id("m-1").unwrap().unwrap().summary, "b again");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn memory_in(project: Option<&str>, id: &str, summary: &str) -> Memory {
+        Memory {
+            id: id.to_string(),
+            scope: if project.is_some() { crate::models::MemoryScope::Project } else { crate::models::MemoryScope::Global },
+            project_id: project.map(String::from),
+            memory_type: crate::models::MemoryType::Decision,
+            content: format!("content {summary}"),
+            summary: summary.to_string(),
+            confidence: 0.9,
+            importance: 0.5,
+            freshness: 1.0,
+            status: crate::models::MemoryStatus::Active,
+            source_kind: crate::models::MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn machines_with_different_local_project_ids_share_one_project() {
+        let dir = test_vault("project-keys");
+        let (a, b) = (test_db(), test_db());
+        register_project(&a, "id-on-a", "shop", Some("git:github.com/me/shop"));
+        a.save_memory_direct(&memory_in(Some("id-on-a"), "m-1", "use stripe webhooks")).unwrap();
+        a.save_memory_direct(&memory_in(None, "m-global", "prefer tabs")).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+
+        // B has never seen the repository: the project is created from the key.
+        let r = sync_cycle(&b, &dir).unwrap();
+        assert_eq!(r.applied, 2);
+        let local = b.get_memory_by_id("m-1").unwrap().unwrap();
+        let pid = local.project_id.clone().expect("attached to a project on B");
+        assert_ne!(pid, "id-on-a", "B uses its own project id");
+        assert_eq!(b.project_key_of(&pid).as_deref(), Some("git:github.com/me/shop"));
+        assert_eq!(b.get_project_by_id(&pid).unwrap().unwrap().slug, "shop");
+        assert!(b.get_memory_by_id("m-global").unwrap().unwrap().project_id.is_none());
+
+        // Round trips are quiet: the record has the same fingerprint on both machines.
+        let r = sync_cycle(&a, &dir).unwrap();
+        assert_eq!((r.applied, r.conflicts), (0, 0));
+        let before = list_delta_files(&dir).len();
+        sync_cycle(&b, &dir).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        assert_eq!(list_delta_files(&dir).len(), before, "nothing new to write");
+
+        // An edit on B reaches A's own project id.
+        let mut m = b.get_memory_by_id("m-1").unwrap().unwrap();
+        m.summary = "use stripe webhooks v2".into();
+        m.updated_at = Utc::now();
+        b.save_memory_direct(&m).unwrap();
+        sync_cycle(&b, &dir).unwrap();
+        let r = sync_cycle(&a, &dir).unwrap();
+        assert_eq!((r.applied, r.conflicts), (1, 0));
+        let on_a = a.get_memory_by_id("m-1").unwrap().unwrap();
+        assert_eq!(on_a.summary, "use stripe webhooks v2");
+        assert_eq!(on_a.project_id.as_deref(), Some("id-on-a"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn records_of_projects_without_a_key_stay_on_the_machine() {
+        let dir = test_vault("unkeyed");
+        let a = test_db();
+        register_project(&a, "local-only", "scratch", None); // not a git repository
+        a.save_memory_direct(&memory_in(Some("local-only"), "m-private", "scratch note")).unwrap();
+        a.save_memory_direct(&memory_in(Some("dangling-project"), "m-dangling", "x")).unwrap();
+        assert!(collect_deltas(&a, "dev-a").unwrap().is_empty());
+        sync_cycle(&a, &dir).unwrap();
+        assert!(list_delta_files(&dir).is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn encrypted_deltas_are_ciphertext_on_disk_and_need_the_key() {
+        let dir = test_vault("encrypted");
+        let (a, b, stranger) = (test_db(), test_db(), test_db());
+        let key = [7u8; 32];
+        register_project(&a, "pa", "shop", Some("git:github.com/me/shop"));
+        a.save_memory_direct(&memory_in(Some("pa"), "m-1", "secret architecture decision")).unwrap();
+        sync_cycle_keyed(&a, &dir, Some(&key)).unwrap();
+
+        let files = list_delta_files(&dir);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].extension().unwrap(), "enc");
+        let raw = fs::read_to_string(&files[0]).unwrap();
+        assert!(!raw.contains("secret architecture decision") && !raw.contains("github.com/me/shop"));
+
+        // Without the key, or with another key, nothing is applied and nothing breaks.
+        assert_eq!(sync_cycle(&stranger, &dir).unwrap().applied, 0);
+        assert_eq!(sync_cycle_keyed(&stranger, &dir, Some(&[9u8; 32])).unwrap().applied, 0);
+        assert!(stranger.get_memory_by_id("m-1").unwrap().is_none());
+
+        // The paired machine reads it.
+        assert_eq!(sync_cycle_keyed(&b, &dir, Some(&key)).unwrap().applied, 1);
+        assert!(b.get_memory_by_id("m-1").unwrap().is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn batons_travel_with_their_project() {
+        let dir = test_vault("batons");
+        let (a, b) = (test_db(), test_db());
+        register_project(&a, "pa", "shop", Some("git:github.com/me/shop"));
+        crate::baton::pass_baton(&a, Some("pa"), "sess-a", None, "claude", Some("finish checkout")).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        assert_eq!(sync_cycle(&b, &dir).unwrap().applied, 1);
+        let pid = b.project_id_for_key("git:github.com/me/shop").unwrap();
+        let baton = b.latest_baton(Some(&pid), None).unwrap().expect("baton on B");
+        assert!(baton.packet.contains("finish checkout"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

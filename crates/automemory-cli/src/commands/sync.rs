@@ -1343,3 +1343,56 @@ pub async fn watch(project_opt: Option<String>, interval_secs: u64) -> Result<()
         }
     }
 }
+
+/// `sync auto`: one pass through the git remote (what hooks start in the background).
+pub fn auto(pull: bool, push: bool) -> Result<()> {
+    let db = Database::open(&Config::default_config().db_path)?;
+    let (root, remote) = automemory_core::sync::auto::vault_settings();
+    let key = automemory_core::sync::auto::resolve_key(remote.is_some());
+    let both = !pull && !push;
+    let report = automemory_core::sync::auto::run(&db, &root, remote.as_deref(), pull || both, push || both, key.as_ref())?;
+    println!("sync: {}", report.summary());
+    Ok(())
+}
+
+/// `sync remote <url>`: the private git repository that carries memory between machines.
+pub fn remote(url: &str) -> Result<()> {
+    let mut cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    cfg.vault.remote_url = Some(url.to_string());
+    cfg.save()?;
+    let (root, _) = automemory_core::sync::auto::vault_settings();
+    std::fs::create_dir_all(&root)?;
+    if !root.join(".git").exists() {
+        automemory_core::sync::GitSync::init_repo(&root)?;
+    }
+    automemory_core::sync::GitSync::set_remote(&root, "origin", url)?;
+    println!("✓ Memory will sync through {url}");
+    println!("  Vault folder: {}", root.display());
+    println!("  Everything is encrypted on this machine before it is pushed.");
+    if std::env::var("AUTOMEMORY_KEY").is_err() && automemory_core::keychain::get_master_key().is_none() {
+        println!("  A key is created on the first sync. Run `automemory sync pair` afterwards to see");
+        println!("  the recovery phrase, and use it on your other machines.");
+    }
+    println!("  Other machines: `automemory sync bootstrap --remote {url} --phrase \"<recovery phrase>\"`");
+    Ok(())
+}
+
+/// `sync bootstrap`: set up a new machine from an existing vault in one command.
+pub fn bootstrap(remote_url: &str, phrase: Option<String>, connect_agents: bool) -> Result<()> {
+    remote(remote_url)?;
+    if let Some(words) = phrase {
+        let key = automemory_core::bip39::mnemonic_to_master_key(&words)?;
+        automemory_core::keychain::set_master_key(&key)?;
+        println!("✓ Recovery phrase accepted; key stored for this machine.");
+    } else if std::env::var("AUTOMEMORY_KEY").is_err() && automemory_core::keychain::get_master_key().is_none() {
+        anyhow::bail!("No key: pass --phrase \"<12 or 24 words>\" (shown by `automemory sync pair` on your first machine).");
+    }
+    auto(true, true)?;
+    if connect_agents {
+        for agent in ["agy", "claude", "codex"] {
+            super::connect::execute(agent, true)?;
+        }
+    }
+    println!("\nDone. In a project folder, `automemory resume` shows where you left off; `automemory doctor` checks the setup.");
+    Ok(())
+}

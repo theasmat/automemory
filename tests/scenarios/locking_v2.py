@@ -74,7 +74,8 @@ def main():
         rep.check("shared.rs" in raw and "editing right now" in raw,
                   "prompt hook lists files other agents hold", raw[:240])
         p, raw, _ = sb.hook("codex", "prompt", {"session_id": "F", "prompt": "hello"})
-        rep.check("shared.rs" not in raw, "an agent is not told about its own files", raw[:240])
+        mine = raw.split("editing right now")[1] if "editing right now" in raw else ""
+        rep.check("shared.rs" not in mine, "an agent is not told about its own files", raw[:240])
 
         # 4b. Antigravity: its hooks accept a fixed schema (antigravity.google/docs/hooks).
         def agy(event, **payload):

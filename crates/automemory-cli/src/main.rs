@@ -113,6 +113,16 @@ enum Commands {
         command: MemoryCommands,
     },
 
+    /// Show where the last session left off (hand-off, checkpoint, decisions, repository state)
+    Resume,
+
+    /// Write a hand-off for the next session or machine and sync it
+    Handoff {
+        /// What the next session should do first
+        #[arg(short, long)]
+        note: Option<String>,
+    },
+
     /// Manage text-first vault sync
     Sync {
         #[command(subcommand)]
@@ -813,6 +823,38 @@ enum MemoryCommands {
 
 #[derive(Subcommand)]
 enum SyncCommands {
+    /// One sync pass through the git remote: pull, apply, write, push (hooks start this in the background)
+    Auto {
+        /// Only pull
+        #[arg(long)]
+        pull: bool,
+
+        /// Only push
+        #[arg(long)]
+        push: bool,
+    },
+
+    /// Set the private git repository that carries your memory between machines
+    Remote {
+        /// Git URL (any private repository you can push to; a bare repo path also works)
+        url: String,
+    },
+
+    /// Set up this machine from an existing vault: remote, recovery phrase, first sync, agents
+    Bootstrap {
+        /// The git remote used on your other machines
+        #[arg(long)]
+        remote: String,
+
+        /// Recovery phrase from `automemory sync pair` on your first machine
+        #[arg(long)]
+        phrase: Option<String>,
+
+        /// Do not connect Antigravity, Claude Code and Codex
+        #[arg(long)]
+        no_connect: bool,
+    },
+
     /// Initialize cloud delta sync configuration (.automemory/config.json)
     Init {
         /// Project ID or slug (defaults to folder name or config)
@@ -1059,6 +1101,11 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Sync { command } => match command {
+            SyncCommands::Auto { pull, push } => commands::sync::auto(pull, push)?,
+            SyncCommands::Remote { url } => commands::sync::remote(&url)?,
+            SyncCommands::Bootstrap { remote, phrase, no_connect } => {
+                commands::sync::bootstrap(&remote, phrase, !no_connect)?
+            }
             SyncCommands::Init {
                 project,
                 endpoint,
@@ -1195,6 +1242,8 @@ async fn main() -> Result<()> {
                 commands::proposal::reject_all(proposal_type, project)?;
             }
         },
+        Commands::Resume => commands::continuity::resume()?,
+        Commands::Handoff { note } => commands::continuity::handoff(note).await?,
         Commands::Locks { project, coverage: true, days } => {
             let _ = project;
             commands::lock::coverage(days)?

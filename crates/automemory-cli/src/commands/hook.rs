@@ -115,7 +115,14 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     };
 
     // Project resolution & autopilot mode lookup
-    let project_ref = resolve_project(&db, project_arg, &raw_payload);
+    let early_canonical = CanonicalEvent::from_cli(event);
+    // On a fresh machine the first prompt or session start is where a repository this machine has
+    // not seen is matched to the project synced from another one (by git remote), once.
+    let attach = matches!(
+        early_canonical,
+        Some(CanonicalEvent::SessionStart | CanonicalEvent::UserPromptSubmit)
+    );
+    let project_ref = resolve_project(&db, project_arg, &raw_payload, attach);
     let current_project = project_ref
         .id
         .as_deref()
@@ -139,6 +146,31 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         .as_ref()
         .map(|p| p.id.as_str())
         .or(project_id_owned.as_deref());
+
+    // A registered project learns its repository key once (a git call only while it has none).
+    if let (Some(pid), true) = (
+        effective_project_id,
+        matches!(
+            early_canonical,
+            Some(
+                CanonicalEvent::SessionStart
+                    | CanonicalEvent::UserPromptSubmit
+                    | CanonicalEvent::Stop
+                    | CanonicalEvent::SessionEnd
+            )
+        ),
+    ) {
+        if db.project_key_of(pid).is_none() {
+            let dir = if project_ref.root_path.is_empty() {
+                std::env::current_dir().unwrap_or_default()
+            } else {
+                PathBuf::from(&project_ref.root_path)
+            };
+            if let Some(key) = automemory_core::sync::identity::project_key_for_dir(&dir) {
+                let _ = db.set_project_key(pid, &key);
+            }
+        }
+    }
 
     // ── Boot / Pre-Invocation Context Injection ────────────────────────────────
     // Gated off by default: PRD pull-principle (§5) reserves context for
@@ -175,10 +207,14 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         // Antigravity's PreInvocation runs before every model step and takes `injectSteps`
         // (its other output fields are rejected), so it carries waiting notes, the files
         // other agents hold, and the boot context on the first step only.
+        spawn_background_sync(&db);
         if agy_style(agent) {
             let mut parts = db.drain_notes(&session_id);
             parts.extend(others_leases_note(&db, effective_project_id, &session_id));
             let first_step = raw_payload.get("invocationNum").and_then(|v| v.as_i64()) == Some(0);
+            if first_step {
+                parts.extend(resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)));
+            }
             if boot_on && first_step {
                 let ctx = automemory_core::retrieval::RetrievalEngine::new(&db)
                     .assemble_context(effective_project_id, None, 2000)
@@ -219,7 +255,9 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
 
     // ── Pending-work nudge: only speaks when something is assigned ─────────
     if canonical == Some(CanonicalEvent::UserPromptSubmit) {
+        spawn_background_sync(&db);
         let parts: Vec<String> = [
+            resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)),
             pending_work_nudge(&db, effective_project_id, &session_id),
             others_leases_note(&db, effective_project_id, &session_id),
         ]
@@ -379,6 +417,8 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
 
     // The session is over: its files are free for other agents at once.
     if canonical == Some(CanonicalEvent::SessionEnd) {
+        maybe_handoff(&db, effective_project_id, &session_id, agent, &root_dir());
+        spawn_background_sync(&db);
         let _ = db.release_leases(&session_id, None);
         db.drop_snapshot(&session_id);
         emit!("{{}}");
@@ -440,6 +480,8 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         // Antigravity has no SessionEnd. A Stop with nothing left running means the agent has
         // finished, so its files are free; the next edit takes them again.
         if agy_style(agent) && raw_payload.get("fullyIdle").and_then(|v| v.as_bool()) == Some(true) {
+            maybe_handoff(&db, effective_project_id, &session_id, agent, &root_dir());
+            spawn_background_sync(&db);
             let _ = db.release_leases(&session_id, None);
         }
     }
@@ -475,6 +517,65 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         }
     }
     Ok(())
+}
+
+fn dir_of(root: &str) -> PathBuf {
+    if root.is_empty() {
+        std::env::current_dir().unwrap_or_default()
+    } else {
+        PathBuf::from(root)
+    }
+}
+
+/// Start `automemory sync auto` detached (a hook never waits for the network). Throttled, and
+/// only when a git remote is configured.
+fn spawn_background_sync(db: &Database) {
+    if !automemory_core::sync::auto::should_spawn(db) {
+        return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = Command::new(exe)
+            .args(["sync", "auto", "--pull", "--push"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+}
+
+/// The resume pack, once per session.
+fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &Path) -> Option<String> {
+    if session_id == "unknown-session" {
+        return None;
+    }
+    let key = format!("resume_shown:{session_id}");
+    if db.sync_kv_get(&key).is_some() {
+        return None;
+    }
+    db.sync_kv_set(&key, "1");
+    automemory_core::resume::build_resume(db, project_id, session_id, cwd)
+}
+
+/// A session that changed files leaves a hand-off for whoever continues (on any machine).
+fn maybe_handoff(db: &Database, project_id: Option<&str>, session_id: &str, agent: &str, cwd: &Path) {
+    if session_id == "unknown-session" {
+        return;
+    }
+    let key = format!("handoff_at:{session_id}");
+    let now = chrono::Utc::now().timestamp();
+    let recent = db
+        .sync_kv_get(&key)
+        .and_then(|v| v.parse::<i64>().ok())
+        .is_some_and(|t| now - t < 600);
+    if recent {
+        return;
+    }
+    let edited = automemory_core::extraction::TimeSpanDigestEngine::new(db)
+        .generate_session_digest(session_id)
+        .is_ok_and(|d| d.metrics.edits_count > 0);
+    if edited && automemory_core::resume::build_handoff(db, project_id, session_id, agent, cwd, None).is_ok() {
+        db.sync_kv_set(&key, &now.to_string());
+    }
 }
 
 /// What the agent is told when a command changed files that another session holds.
@@ -592,11 +693,13 @@ fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str)
             items.push(format!("claimed task: {}", t.title));
         }
     }
+    // Only a baton addressed to this very session is owed work. Broadcast hand-offs (what a
+    // session end writes automatically) are for the resume pack, not for blocking a Stop.
     if db
         .latest_baton(project_id, Some(session_id))
         .ok()
         .flatten()
-        .is_some()
+        .is_some_and(|b| b.to_session.as_deref() == Some(session_id))
     {
         items.push("a handoff baton awaits pickup (baton.pickup)".to_string());
     }
@@ -714,6 +817,11 @@ fn save_session_checkpoint(db: &Database, session_id: &str) {
     if let Ok(mut mem) = engine.synthesize_milestone_memory(&digest, Some("Session checkpoint")) {
         let short: String = session_id.chars().take(8).collect();
         mem.summary = format!("Session checkpoint {short}");
+        // Where it happened, so another machine's resume pack can say so.
+        mem.metadata = json!({
+            "session": session_id,
+            "device": automemory_core::resume::device_label(db),
+        });
         let _ = db.save_memory(&mem);
     }
 }
@@ -789,7 +897,7 @@ fn auto_rescan_doc_if_applicable(
 
 /// Resolves the project reference based on CLI flags, environment variables,
 /// payload workspace paths, git top-level, or working directory fallback.
-fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> ProjectRef {
+fn resolve_project(db: &Database, project_arg: &str, payload: &Value, attach: bool) -> ProjectRef {
     if project_arg != "auto" {
         if let Ok(Some(p)) = db.get_project_by_slug(project_arg) {
             return ProjectRef {
@@ -851,6 +959,29 @@ fn resolve_project(db: &Database, project_arg: &str, payload: &Value) -> Project
                 root_path: current_dir,
                 source_git_remote: None,
             };
+        }
+    }
+
+    // 5. Same repository as a project synced from another machine: adopt it and remember this path.
+    if attach {
+        let dir = std::path::Path::new(&current_dir);
+        if let Some(key) = automemory_core::sync::identity::project_key_for_dir(dir) {
+            if let Some(project) = db
+                .project_id_for_key(&key)
+                .and_then(|pid| db.get_project_by_id(&pid).ok().flatten())
+            {
+                let root = canonical_root
+                    .as_ref()
+                    .map(|r| r.to_string_lossy().to_string())
+                    .unwrap_or_else(|| current_dir.clone());
+                let _ = db.add_project_path(&project.id, &root, false);
+                return ProjectRef {
+                    id: Some(project.id),
+                    slug: Some(project.slug),
+                    root_path: current_dir,
+                    source_git_remote: None,
+                };
+            }
         }
     }
 

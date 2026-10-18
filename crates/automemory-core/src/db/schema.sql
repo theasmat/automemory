@@ -469,6 +469,12 @@ CREATE TABLE IF NOT EXISTS hook_claims (
     output TEXT
 );
 
+-- Stable project identity across machines (see sync::identity)
+CREATE TABLE IF NOT EXISTS project_keys (
+    project_id TEXT PRIMARY KEY,
+    project_key TEXT NOT NULL UNIQUE
+);
+
 -- Sync watermarks + applied delta files (incremental op-log sync)
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,

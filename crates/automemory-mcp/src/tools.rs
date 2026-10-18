@@ -702,6 +702,17 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "memory.resume".to_string(),
+                description: "Where the last session left off, on this or another machine: latest hand-off, last session checkpoint, decisions in force and the repository state. Call it first when starting or continuing work".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": { "type": "string", "description": "Optional project ID or slug (default: the project of the server's working folder)" },
+                        "session_id": { "type": "string", "description": "Your session ID, so your own hand-off is not repeated" }
+                    }
+                }),
+            },
+            ToolDefinition {
                 name: "baton.pass".to_string(),
                 description: "Hand off work to another agent session: builds a sub-400-token packet from ledger facts (tool calls, files, leases, decisions, blockers) and stores it for pickup".to_string(),
                 input_schema: json!({
@@ -863,7 +874,21 @@ impl ToolRegistry {
         ]
     }
 
+    /// Agents pass `project_id` as an id or a slug; tables key on the id, so a slug is resolved
+    /// first (otherwise the same project has two spellings and queries miss half the rows).
     pub fn call_tool(&self, name: &str, arguments: &Value) -> ToolCallResult {
+        let mut args = arguments.clone();
+        if let Some(p) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
+            if self.db.get_project_by_id(&p).ok().flatten().is_none() {
+                if let Ok(Some(project)) = self.db.get_project_by_slug(&p) {
+                    args["project_id"] = Value::String(project.id);
+                }
+            }
+        }
+        self.call_tool_resolved(name, &args)
+    }
+
+    fn call_tool_resolved(&self, name: &str, arguments: &Value) -> ToolCallResult {
         match name {
             // ==========================================
             // Read Tools
@@ -2106,6 +2131,42 @@ impl ToolRegistry {
                     }
                     Err(e) => ToolCallResult::error(format!("Failed to pass baton: {}", e)),
                 }
+            }
+
+            "memory.resume" => {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let project_id = arguments
+                    .get("project_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|p| {
+                        self.db
+                            .get_project_by_id(p)
+                            .ok()
+                            .flatten()
+                            .or_else(|| self.db.get_project_by_slug(p).ok().flatten())
+                            .map(|p| p.id)
+                    })
+                    .or_else(|| {
+                        self.db
+                            .find_project_by_path(&cwd.to_string_lossy())
+                            .ok()
+                            .flatten()
+                            .map(|p| p.id)
+                    })
+                    .or_else(|| {
+                        automemory_core::sync::identity::project_key_for_dir(&cwd)
+                            .and_then(|k| self.db.project_id_for_key(&k))
+                    });
+                let session = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+                let pack = automemory_core::resume::build_resume(&self.db, project_id.as_deref(), session, &cwd);
+                ToolCallResult::json(&json!({
+                    "resume": pack,
+                    "next_action": if pack.is_some() {
+                        "Continue from the hand-off's next step; use memory.ask for anything the pack names."
+                    } else {
+                        "Nothing recorded yet for this project: start the task and save decisions with decision.record."
+                    }
+                }))
             }
 
             "baton.pickup" => {

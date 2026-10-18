@@ -148,6 +148,12 @@ impl Database {
         local_path: &str,
         is_primary: bool,
     ) -> Result<()> {
+        // Hooks report the resolved path (macOS: /private/var/..., symlinks resolved), so a
+        // registered path must be stored the same way or the project is never found again.
+        let canonical = std::fs::canonicalize(local_path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| local_path.to_string());
+        let local_path = canonical.as_str();
         let conn = self.conn();
         conn.execute(
             r#"
@@ -204,6 +210,19 @@ impl Database {
     }
 
     pub fn find_project_by_path(&self, path: &str) -> Result<Option<Project>> {
+        // Match the resolved form too: callers pass whatever the agent reported.
+        if let Ok(canon) = std::fs::canonicalize(path) {
+            let canon = canon.to_string_lossy().to_string();
+            if canon != path {
+                if let Some(p) = self.find_project_by_path_exact(&canon)? {
+                    return Ok(Some(p));
+                }
+            }
+        }
+        self.find_project_by_path_exact(path)
+    }
+
+    fn find_project_by_path_exact(&self, path: &str) -> Result<Option<Project>> {
         let found = {
             let conn = self.conn();
             // Exact match first, or path starts with registered root
