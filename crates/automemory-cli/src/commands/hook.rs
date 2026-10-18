@@ -553,6 +553,8 @@ fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &
         return None;
     }
     db.sync_kv_set(&key, "1");
+    // Keep instruction files that already carry our block current (never creates new ones).
+    super::rules_export::refresh_existing(db, project_id, cwd);
     automemory_core::resume::build_resume(db, project_id, session_id, cwd)
 }
 

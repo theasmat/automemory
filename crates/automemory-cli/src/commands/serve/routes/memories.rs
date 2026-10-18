@@ -215,6 +215,53 @@ pub async fn api_memory_archive(
 }
 
 #[derive(Deserialize)]
+pub struct AddMemoryPayload {
+    pub summary: String,
+    pub content: Option<String>,
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub project_id: Option<String>,
+}
+
+/// A person adds knowledge from the dashboard: trusted (user source) and active at once.
+pub async fn api_memory_add(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(p): Json<AddMemoryPayload>,
+) -> impl IntoResponse {
+    use automemory_core::models::*;
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "add memory") {
+        return denied.into_response();
+    }
+    let summary = p.summary.trim();
+    if summary.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "summary is required" }))).into_response();
+    }
+    let Ok(kind) = p.kind.as_deref().unwrap_or("fact").parse::<MemoryType>() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "unknown type" }))).into_response();
+    };
+    let now = Utc::now();
+    let mem = Memory {
+        id: uuid::Uuid::now_v7().to_string(),
+        scope: if p.project_id.is_some() { MemoryScope::Project } else { MemoryScope::Global },
+        project_id: p.project_id,
+        memory_type: kind,
+        content: p.content.filter(|c| !c.trim().is_empty()).unwrap_or_else(|| summary.to_string()),
+        summary: summary.to_string(), confidence: 1.0, importance: 0.8, freshness: 1.0,
+        status: MemoryStatus::Active, source_kind: MemorySourceKind::User, version: Some(1),
+        created_at: now, updated_at: now, last_recalled_at: None, tags: vec![], entities: vec![],
+        metadata: json!({ "via": "dashboard" }),
+    };
+    match state.db.save_memory(&mem) {
+        Ok(()) => {
+            let _ = state.broadcast_tx.send(json!({ "type": "memory_added", "id": mem.id, "timestamp": now.to_rfc3339() }).to_string());
+            (StatusCode::OK, Json(json!({ "success": true, "memory": mem }))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
 pub struct UpdateMemoryPayload {
     pub summary: Option<String>,
     pub content: Option<String>,

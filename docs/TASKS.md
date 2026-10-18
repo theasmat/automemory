@@ -73,9 +73,18 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Providers: `ngram`, `ollama`, `openai`-compatible, `exec` (any command); `automemory embeddings status|test|reindex|use|off|eval`; `tests/scenarios/embeddings_modes.py`
 - [ ] `onnx` provider (optional cargo feature); sync of vectors between machines (each machine re-embeds today)
 
+## Shared knowledge across agents and IDEs (plan: PLAN §9)
+
+- [x] `build_rules_view`, `export-rules`, session-start refresh, `disconnect` removes the block; `tests/scenarios/rules_export.py`
+- [x] `automemory note`, dashboard **+ Add memory** (`POST /api/memories`)
+- [ ] Hook adapters per agent (Gemini CLI, Cursor, Copilot, Cline, Kiro, OpenCode, Windsurf): read each vendor's hook docs first; replace the `matches!` helpers in `hook.rs` with a per-agent schema
+- [ ] `rules_target()`/`disconnect()` on the adapter trait (connect and disconnect are still two parallel per-agent lists)
+- [ ] Dashboard "Project brain" page (plain-language Decisions / Conventions / In flight; which agent saw what)
+- [ ] Skills install for agents with a skills folder; refresh from MCP `decision.record` (today: next session start or `export-rules`)
+
 ## Docs hygiene
 
-- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 204 Rust tests at last check)
+- [ ] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 207 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

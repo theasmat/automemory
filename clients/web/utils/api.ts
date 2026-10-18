@@ -205,6 +205,19 @@ export const api = {
     }
   },
 
+  async addMemory(payload: { summary: string; content?: string; type?: string }): Promise<boolean> {
+    try {
+      const res = await humanFetch('/api/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string }): Promise<boolean> {
     try {
       const res = await fetch(`/api/memories/${encodeURIComponent(id)}/update`, {

@@ -42,6 +42,8 @@ enum Removal {
     OwnedFile(PathBuf, String),
     /// Remove our block from `.git/hooks/post-commit`.
     GitHook(PathBuf),
+    /// Remove our marked block from an agent instruction file (the rest of the file stays).
+    RulesBlock(PathBuf, &'static str),
     /// Strip `[mcp_servers.automemory]` tables from a Codex `config.toml`.
     CodexToml(PathBuf),
 }
@@ -467,6 +469,10 @@ fn apply(op: &Removal) -> Result<bool> {
             Err(_) => Ok(false),
         },
         Removal::GitHook(root) => super::connect::remove_git_post_commit_hook(root),
+        Removal::RulesBlock(root, path) => {
+            let t = super::rules_export::TARGETS.iter().find(|t| t.path == *path).expect("known target");
+            super::rules_export::remove_one(root, t)
+        }
         Removal::CodexToml(p) => super::connect::strip_codex_toml(p),
     }
 }
@@ -484,6 +490,7 @@ fn describe(op: &Removal) -> String {
         Removal::OwnedDir(p) => format!("folder {}", p.display()),
         Removal::OwnedFile(p, _) => format!("generated file {}", p.display()),
         Removal::GitHook(p) => format!("git post-commit block in {}", p.display()),
+        Removal::RulesBlock(root, path) => format!("AutoMemory block in {}", root.join(path).display()),
         Removal::CodexToml(p) => format!("Codex MCP table in {}", p.display()),
     }
 }
@@ -524,6 +531,7 @@ fn present(op: &Removal) -> bool {
         Removal::OwnedDir(p) => p.is_dir(),
         Removal::CursorRules(p) => p.is_file(),
         Removal::OwnedFile(p, expected) => fs::read_to_string(p).is_ok_and(|t| &t == expected),
+        Removal::RulesBlock(root, path) => fs::read_to_string(root.join(path)).is_ok_and(|t| t.contains("<!-- automemory:begin")),
         Removal::GitHook(root) => {
             let git = automemory_core::sync::GitSync::resolve_git_canonical_root(root).unwrap_or(root.clone());
             fs::read_to_string(git.join(".git/hooks/post-commit")).is_ok_and(|t| t.contains("AutoMemory") || t.contains("automemory post-commit"))
@@ -583,6 +591,13 @@ fn run(home: &Path, cwd: &Path, agent: &str, global: bool, everywhere: bool, dry
         }
         if all && !is_global {
             ops.push(Removal::GitHook(cwd.to_path_buf()));
+        }
+        if !is_global {
+            for t in super::rules_export::TARGETS {
+                if all || ids.iter().any(|i| i == t.agent) {
+                    ops.push(Removal::RulesBlock(super::rules_export::repo_root(cwd), t.path));
+                }
+            }
         }
         for op in ops {
             if dry_run {

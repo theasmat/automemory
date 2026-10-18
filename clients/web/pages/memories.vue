@@ -20,6 +20,14 @@
         </p>
       </div>
 
+      <button
+        @click="showAdd = true"
+        class="px-3 py-1.5 text-xs font-mono bg-gold-500 text-dark-950 font-bold hover:bg-gold-400"
+        title="Tell every agent something about this project"
+      >
+        + Add memory
+      </button>
+
       <!-- Scope Filter Switcher -->
       <div class="flex items-center bg-dark-900 border border-dark-700 p-1">
         <button
@@ -168,6 +176,31 @@
             </button>
             <span class="text-gray-600 group-hover:text-gold-400 transition-colors ml-1">Details →</span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Memory Modal -->
+    <div
+      v-if="showAdd"
+      class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono"
+      @click.self="showAdd = false"
+    >
+      <div class="bg-dark-900 border border-gold-500/50 max-w-lg w-full p-6 space-y-4">
+        <div class="text-sm text-white font-bold">Add something every agent should know</div>
+        <p class="text-[11px] text-gray-500">Plain words are fine. It is trusted at once and appears in each agent's context, and in AGENTS.md style files after <code>automemory export-rules</code>.</p>
+        <input v-model="addSummary" placeholder="One line, e.g. We use pnpm, never npm" class="w-full bg-dark-950 border border-dark-700 text-xs text-white p-2" />
+        <textarea v-model="addContent" rows="4" placeholder="Details (optional)" class="w-full bg-dark-950 border border-dark-700 text-xs text-white p-2"></textarea>
+        <select v-model="addType" class="bg-dark-950 border border-dark-700 text-xs text-white p-2">
+          <option value="fact">Fact</option>
+          <option value="preference">Preference</option>
+          <option value="lesson">Lesson</option>
+          <option value="warning">Warning</option>
+          <option value="pattern">Pattern</option>
+        </select>
+        <div class="flex justify-end gap-2">
+          <button @click="showAdd = false" class="px-3 py-1.5 text-xs text-gray-400">Cancel</button>
+          <button @click="saveAdd" :disabled="!addSummary.trim()" class="px-3 py-1.5 text-xs bg-gold-500 text-dark-950 font-bold disabled:opacity-40">Save</button>
         </div>
       </div>
     </div>
@@ -337,6 +370,19 @@ const totalDisplayedTokens = computed(() => {
 const openMemoryDetail = (m: Memory) => {
   isEditing.value = false;
   selectedMemory.value = m;
+};
+
+const showAdd = ref(false);
+const addSummary = ref('');
+const addContent = ref('');
+const addType = ref('fact');
+
+const saveAdd = async () => {
+  if (await store.addMemory({ summary: addSummary.value.trim(), content: addContent.value.trim() || undefined, type: addType.value })) {
+    showAdd.value = false;
+    addSummary.value = '';
+    addContent.value = '';
+  }
 };
 
 const isEditing = ref(false);

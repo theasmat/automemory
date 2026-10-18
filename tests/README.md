@@ -17,6 +17,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 
 | Layer | Command | What it proves |
 |---|---|---|
+| Shared instruction files | `python3 tests/scenarios/rules_export.py` | export-rules into AGENTS/CLAUDE/GEMINI/Cursor files, user text kept, idempotent, refresh on session start, unverified memories excluded, disconnect restores |
 | Embeddings modes | `python3 tests/scenarios/embeddings_modes.py` | keyword default, provider switch, remote refusal, reindex, hybrid recall, fallback, hooks never wait |
 | Rust unit + integration | `cargo test --workspace` | Domain logic: guardrails, leases (incl. a multi-connection race), migrations, retrieval, sync deltas, overlap check, CodeIntel with a fake engine, dashboard origin guard, hook output formats |
 | Agent hook contract | `python3 tests/contract/run.py [agent]` | Recorded Claude Code, Codex and Antigravity payloads produce the right hook output (deny / warn / silent) |

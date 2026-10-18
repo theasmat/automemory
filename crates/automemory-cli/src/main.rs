@@ -113,6 +113,27 @@ enum Commands {
         command: MemoryCommands,
     },
 
+    /// Tell every agent something about this project, in plain words
+    Note {
+        text: String,
+        /// fact (default), lesson, pattern, warning or preference
+        #[arg(short = 't', long = "type", default_value = "fact")]
+        kind: String,
+    },
+
+    /// Write verified project knowledge into the files agents read (AGENTS.md, .cursor/rules, ...)
+    ExportRules {
+        /// One agent (claude, codex, cursor, gemini-cli, copilot, windsurf, cline, roo, kiro)
+        #[arg(long)]
+        agent: Option<String>,
+        /// Every known instruction file, not just those the repository already uses
+        #[arg(long)]
+        all: bool,
+        /// Only report files that are out of date (non-zero exit)
+        #[arg(long)]
+        check: bool,
+    },
+
     /// Recall mode and embedding provider (keyword or hybrid)
     Embeddings {
         #[command(subcommand)]
@@ -1249,6 +1270,8 @@ async fn main() -> Result<()> {
                 commands::proposal::reject_all(proposal_type, project)?;
             }
         },
+        Commands::Note { text, kind } => commands::continuity::note(&text, &kind)?,
+        Commands::ExportRules { agent, all, check } => commands::rules_export::execute(agent, all, check)?,
         Commands::Embeddings { command } => match command {
             EmbeddingsCommands::Status => commands::embeddings::status()?,
             EmbeddingsCommands::Test => commands::embeddings::test()?,

@@ -277,6 +277,15 @@ export const useAutoMemoryStore = defineStore('automemory', {
       return ok;
     },
 
+    async addMemory(payload: { summary: string; content?: string; type?: string }) {
+      const ok = await api.addMemory(payload);
+      if (ok) {
+        await this.fetchMemories();
+        this.showLiveToast('Added. Every agent on this project will see it.', 'success');
+      }
+      return ok;
+    },
+
     async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string }) {
       const ok = await api.updateMemory(id, payload);
       if (ok) {

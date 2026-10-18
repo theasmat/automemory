@@ -193,3 +193,9 @@ status; no duplicates after two round trips; an edit on both machines becomes on
 Decisions needed: sync transport beyond a git remote (folder like Dropbox, or the Cloudflare gateway, later); whether hybrid stays
 opt-in per project; which free model to recommend by default after `embeddings eval`.
 
+
+## 9. One project brain for every agent and IDE
+
+Three delivery tiers, one source of truth: (A) hooks where the vendor documents them (Claude, Codex, Antigravity done); (B) a managed block in the instruction file every agent already reads (built: `export-rules`); (C) MCP plus a skill (MCP everywhere; skills partly). Research (Oct 2026, vendor and community sources): AGENTS.md is read by 20+ tools but is static; MCP standardizes transport, not memory format; nothing verifies or merges what different agents write. Our differentiators: trust tiers, conflict-safe sync across machines, locks.
+
+**Status:** tier B and human input (`note`, dashboard add) built and tested. Not built: tier A hook adapters beyond the first three, a "Project brain" dashboard page, adapter-trait cleanup (see TASKS).

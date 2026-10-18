@@ -2,6 +2,15 @@
 
 What the product does, for whom, and how far along each piece is. How it is built: [ARCHITECTURE](ARCHITECTURE.md). Order of work: [PLAN](PLAN.md). Open work: [TASKS](TASKS.md).
 
+## Shared instruction files and human input
+
+| Feature | Status | Notes |
+|---|---|---|
+| `automemory export-rules` writes a marked block (decisions in force + user-written knowledge, ≤3 KB, redacted) into AGENTS.md, CLAUDE.md, GEMINI.md, `.cursor/rules/automemory.mdc`, `.github/copilot-instructions.md`, `.windsurf/`, `.clinerules/`, `.roo/rules/`, `.kiro/steering/` | ✅ | Only files of agents the repo already uses (AGENTS.md always); `--agent`, `--all`, `--check`. Session start refreshes files that already carry the block; `disconnect` removes only the block |
+| Only verified knowledge travels | ✅ | Active decisions and memories a person wrote; agent-saved memories reach other agents through MCP recall, not these files |
+| `automemory note "…"`, dashboard **+ Add memory** | ✅ | Trusted at once; dashboard add needs the human password when one is set |
+| Hook adapters for Cursor, Gemini CLI, Copilot, Cline, Kiro, OpenCode, Windsurf | ⬜ | Their instruction file + MCP already work; hooks need each vendor's documented payload |
+
 ## 1. Product
 
 AutoMemory is a local-first daemon that gives every coding agent one shared, verified project memory plus file locks and handoffs. Agents reach it through MCP tools and optional hooks, so nobody re-explains the project each session.
@@ -34,7 +43,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 | Git-vault sync with encrypted keys | |
 | Eval harness (memory on vs off) | |
 
-Cut list: symbol-level leases, own AST/code graph (codebase-memory-mcp supplies it), auto-distill of every session, auto-generated AGENTS.md, shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
+Cut list: symbol-level leases, own AST/code graph (codebase-memory-mcp supplies it), auto-distill of every session, a full auto-generated AGENTS.md (only a small managed block is written, see Shared instruction files), shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
 
 ## 3. Feature catalog
 
@@ -99,7 +108,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 204 Rust tests + 11 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 207 Rust tests + 12 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

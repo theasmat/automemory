@@ -41,7 +41,7 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/sessions/:id/distill",
             post(traces::api_session_distill),
         )
-        .route("/api/memories", get(memories::api_memories))
+        .route("/api/memories", get(memories::api_memories).post(memories::api_memory_add))
         .route(
             "/api/memories/:id/archive",
             post(memories::api_memory_archive),

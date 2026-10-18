@@ -167,6 +167,41 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
     Some(clip(&format!("Resuming this project.\n{}", lines.join("\n")), RESUME_CHAR_BUDGET))
 }
 
+/// A short, deterministic digest of what is *verified* about a project, for writing into the
+/// instruction files agents read (AGENTS.md, .cursor/rules, ...). Only active decisions and
+/// approved memories; no hand-off (it changes every session and would churn the repository).
+pub fn build_rules_view(db: &Database, project_id: Option<&str>) -> String {
+    const MAX: usize = 3000;
+    let mut out = String::new();
+    let decisions = db.list_decisions(project_id, Some(DecisionStatus::Active), 12).unwrap_or_default();
+    if !decisions.is_empty() {
+        out.push_str("### Decisions in force\n");
+        for d in &decisions {
+            out.push_str(&format!("- **{}**: {} ({})\n", d.topic, clip(&d.decision, 160), clip(&d.reason, 100)));
+        }
+    }
+    let mut mems: Vec<_> = db
+        .list_memories(project_id, Some(MemoryStatus::Active), None, 300)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| {
+            use crate::models::{MemorySourceKind::User, MemoryType::*};
+            !m.summary.starts_with("Session checkpoint")
+                && matches!(m.memory_type, Preference | Warning | Lesson | Pattern | Fact)
+                && m.source_kind == User
+        })
+        .collect();
+    // Most important first; id breaks ties so the output is stable between runs.
+    mems.sort_by(|a, b| b.importance.total_cmp(&a.importance).then(a.id.cmp(&b.id)));
+    if !mems.is_empty() {
+        out.push_str("\n### Project knowledge\n");
+        for m in mems.iter().take(12) {
+            out.push_str(&format!("- [{}] {}\n", m.memory_type, clip(&m.summary, 180)));
+        }
+    }
+    clip(&crate::redaction::redact_text(&out), MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,6 +249,30 @@ mod tests {
         // The session that wrote it is not told about itself.
         assert!(build_resume(&db, None, "s1", &dir).is_none_or(|p| !p.contains("Last hand-off")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rules_view_lists_decisions_and_trusted_memories_only_and_is_stable() {
+        use crate::models::*;
+        let db = Database::open_in_memory().unwrap();
+        assert!(build_rules_view(&db, None).is_empty());
+        db.record_decision(DecisionRecordArgs {
+            project_id: None, topic: "auth", decision: "JWT in httpOnly cookie", reason: "XSS",
+            alternatives: &[], dissent: None, agent: "claude", symbols: &[], evidence: &[],
+        }).unwrap();
+        let now = chrono::Utc::now();
+        let mem = |id: &str, summary: &str, source, conf| Memory {
+            id: id.into(), scope: MemoryScope::Global, project_id: None, memory_type: MemoryType::Fact, content: summary.into(),
+            summary: summary.into(), confidence: conf, importance: 0.5, freshness: 1.0, status: MemoryStatus::Active,
+            source_kind: source, version: Some(1), created_at: now, updated_at: now, last_recalled_at: None,
+            tags: vec![], entities: vec![], metadata: serde_json::json!({}),
+        };
+        db.save_memory_direct(&mem("a", "tests run with cargo test", MemorySourceKind::User, 0.5)).unwrap();
+        db.save_memory_direct(&mem("b", "a guess from an agent", MemorySourceKind::Agent, 0.95)).unwrap();
+        let v = build_rules_view(&db, None);
+        assert!(v.contains("**auth**: JWT in httpOnly cookie"), "{v}");
+        assert!(v.contains("tests run with cargo test") && !v.contains("a guess from an agent"), "{v}");
+        assert_eq!(v, build_rules_view(&db, None), "deterministic");
     }
 }
 

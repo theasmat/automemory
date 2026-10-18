@@ -22,6 +22,7 @@ pub mod plugin;
 pub mod project;
 pub mod proposal;
 pub mod rule;
+pub mod rules_export;
 pub mod serve;
 pub mod skill;
 pub mod sync;
