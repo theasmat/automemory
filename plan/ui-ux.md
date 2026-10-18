@@ -439,3 +439,134 @@ border token and a card shadow; page background nudged to #f6f5f1.
 - No component references a raw colour; `grep -rn "bg-black\|text-white\|bg-dark-\|text-gold-" clients/web` is empty.
 - Toggling themes never shows unstyled flash or a mixed page (old dark classes on a light background).
 - A screenshot of each page in each theme is attached to the phase's PR.
+
+## 13. First-run learning: interactive tour in the dashboard and the CLI
+
+Status: plan, nothing built. Today a new user gets a stat page and one command (`connect agy`); nothing explains what
+AutoMemory does or lets them try it. Goal: from install to "I felt it work" in 5 minutes, by doing, without touching
+their real data, in whichever place they start (terminal or browser).
+
+### 13.1 What "learned" means (the five moments)
+1. **Connected**: an agent is registered and I know how to check it.
+2. **Remembered**: I told it something once (`note`) and a different agent knew it.
+3. **Decided**: a decision recorded by one agent is shown to the next session.
+4. **Protected**: two agents wanted the same file and one was stopped, with a clear reason.
+5. **In control**: I reviewed a suggestion and know where mode, password and sync live.
+
+Success measures (local only, no telemetry): median time to moment 2 under 5 min; tour completion rate; share of new
+users who reach all five within a day (counted in `sync_kv` `onboarding`, visible to the user on the Home card).
+
+### 13.2 Design principles
+- **Learn in a sandbox.** The tour runs real commands against a throwaway home and git repo (the same approach as
+  `tests/lib/harness.py`: temp `HOME`, temp project), so users see real output and nothing of theirs changes. The one
+  real action (connecting their agent) is separate, explicit and reversible (`disconnect`).
+- **Do, don't read.** Each step is: one-sentence why, a command to run (auto-run, or typed by the user with a hint),
+  real output, a plain-language "what just happened", and a check that the state really changed.
+- **One state, two surfaces.** CLI and dashboard share the same progress (`sync_kv` key `onboarding`) and the same
+  checklist logic, so finishing a step in the terminal ticks it in the browser live (WebSocket).
+- **Skippable, resumable, replayable.** Every step can be skipped; `tour --resume` continues; "Replay tour" is in the
+  help menu. Never blocks real work, never re-appears after being dismissed.
+- **Works without a TTY.** Non-interactive runs print the whole script as text (`--auto`), usable in docs and CI.
+
+### 13.3 CLI
+
+New commands (all in `crates/automemory-cli/src/commands/`, one new module `learn.rs`):
+
+| Command | What it does |
+|---|---|
+| `automemory tour` | Interactive 8-step guided tour in a sandbox; `--resume`, `--reset`, `--auto` (no prompts, prints a transcript), `--step N`, `--no-color` |
+| `automemory next` | Reads real state and prints the single best next command with a one-line reason ("No agent connected yet. Try: `automemory connect claude`") |
+| `automemory learn <topic>` | A 10-line explainer with copy-paste commands: `memory`, `decisions`, `locks`, `handoff`, `sync`, `modes`, `export-rules`, `embeddings`; `automemory learn` lists topics |
+| `automemory demo [--remove]` | Loads a clearly-marked sample project (a few decisions, notes, a pending suggestion) so the dashboard is not empty; removable in one command; never synced or exported |
+| `automemory doctor` (extended) | Adds a "Getting started" section using the same checklist as `next` |
+
+**Tour script** (each step ~1 minute; user can type the command or press Enter to run it):
+
+```
+Step 1  Welcome + check       automemory doctor                 "What is installed, what is missing"
+Step 2  Remember something    automemory note "We use pnpm"     then: automemory memory list
+Step 3  Record a decision     automemory decision record …      "Decisions outrank notes and are shown first"
+Step 4  What agents see       automemory export-rules           shows the AGENTS.md block that was written
+Step 5  Two agents, one file  (simulated) agent A edits a.rs → agent B tries a.rs → blocked with the reason
+Step 6  Hand-off              automemory handoff / resume       "A new session starts where the last one stopped"
+Step 7  Review and safety     approve a suggestion; show mode and password commands
+Step 8  Your turn             connect your real agent (opt-in, shows exactly what files change, how to undo)
+                              + sync preview (commands only, nothing is run) + cheat sheet
+```
+
+Step 5 uses the hook protocol with two fake agent ids so the block message is the real one. Every step ends with
+`✓ done` or a hint if the state didn't change ("I don't see the note yet. Did you run it in this terminal?").
+Typed-command steps accept near matches and explain differences (an extra flag is fine, a typo gets "Did you mean…").
+
+**Everywhere else in the CLI** (small, high value):
+- Every error ends with a `Try:` line ("No project found for this folder. Try: `automemory project register`").
+- `--help` for the top 8 commands gets an `Examples:` block; the rest stay terse.
+- First run of any command on a fresh install prints one line: "New here? Run `automemory tour` (5 min)". Shown once.
+- Shell completion install via `automemory completions <shell>` (clap_complete) mentioned in the tour's last step.
+- `automemory --help` groups commands (Daily, Setup, Advanced) instead of one flat list.
+
+### 13.4 Dashboard
+
+- **Welcome card (first visit only)** on Home: "Let's get you set up (5 min)" with three paths: *Take the interactive tour*,
+  *Try with sample data*, *Skip, I know what I'm doing*. Choice stored; Home shows the full dashboard afterwards.
+- **Coachmark tour** (6 stops, spotlight + popover, keyboard: Enter/Esc/arrows, focus-trapped, reduced-motion safe):
+  1 nav ("Six places, one for each question"), 2 Home "Needs you", 3 Project brain "+ Add note", 4 Agents & locks,
+  5 Inbox, 6 Safety/mode. Each stop has a **Try it** button that performs the action on the sample project
+  (add a sample note, open a sample collision, approve a sample suggestion) and moves on when it is detected.
+- **Getting started checklist** replaces today's guessed checklist with real detection (`GET /api/setup`):
+  agent connected (registered config found), instruction files present (managed block exists), password set, sync
+  remote configured, plus the five moments from 13.1. Each row: what it gives you, the CLI command (copy button), a
+  "Show me" link to the screen, and a live tick when it is done (WebSocket), including when done from the terminal.
+- **Sample data mode**: a banner "You're looking at sample data · Remove" with a one-click removal; sample items carry a
+  `demo` flag, show a "Sample" badge, are excluded from sync, export-rules and agent context.
+- **Contextual help**: `?` opens a help drawer with: glossary (project brain, hand-off, file lock, suggestion,
+  mode), keyboard shortcuts, "Replay the tour", links to `learn` topics, and "Copy diagnostics". Every empty state
+  says what the area is for and the one action to fill it (already specified in section 4); inline "What's this?"
+  popovers on Agents & locks and Safety.
+- **Terminal bridge**: wherever a command is shown (`CopyCommand`), a "Run it for me" button is offered only for safe,
+  reversible commands (`note`, `export-rules`, `sync now`); it calls the same REST route the page already uses.
+- **Accessibility**: tour is keyboard-operable, announced via `aria-live`, never traps the page, and can be dismissed
+  at any time; focus returns to the trigger.
+
+### 13.5 In the agents themselves
+- **One-time notice** in the first prompt of a newly connected agent: three lines ("AutoMemory is active: decisions,
+  notes and file locks are shared across your agents. See what it knows: `automemory resume`. Learn: `automemory tour`"),
+  shown once per project (`sync_kv`), through the existing `resume_once` path in `hook.rs`.
+- Agents can answer "how does AutoMemory work?" with the existing `memory.about` tool; its text is rewritten to match the
+  glossary above so the terminal, dashboard and agent all use the same words.
+
+### 13.6 Shared building blocks (one source of truth)
+- `crates/automemory-core/src/setup.rs`: `checklist(db, cwd) -> Vec<Step>` (id, title, done, why, command, link),
+  the five moments, and `next_step()`. Used by `automemory next`, `doctor`, `tour`, `GET /api/setup`.
+- `crates/automemory-core/src/onboarding.rs`: progress in `sync_kv` (`onboarding`: completed ids, dismissed flags,
+  demo loaded), plus demo-project seeding and removal (rows tagged `metadata.demo = true`).
+- Routes: `GET /api/setup`, `GET/POST /api/onboarding`, `POST /api/demo`, `DELETE /api/demo` (writes human-gated).
+- Copy deck in one place (`docs`-style TypeScript/Rust constants) so CLI and UI wording cannot drift.
+
+### 13.7 Phases
+
+| Phase | Scope | Done when |
+|---|---|---|
+| **L1 Shared core** (1-2 days) | `setup.rs`, `onboarding.rs`, `GET /api/setup`; `automemory next`; `doctor` Getting started; fix the dashboard checklist to use it | Checklist reflects reality (a removed remote un-ticks sync); `next` output tested in `tests/scenarios/tour.py` |
+| **L2 CLI tour** (2-3 days) | `tour` (interactive + `--auto`), sandbox runner, step checks, `learn` topics, `Try:` lines, first-run hint, command grouping | `tour --auto` passes in CI; a first-time tester reaches moment 2 in under 5 min unaided |
+| **L3 Dashboard onboarding** (3 days) | Welcome card, coachmarks, Getting started checklist with live ticks, demo mode, help drawer | Finishing a step in the terminal ticks it in the open browser within 2 s; demo removal leaves no trace |
+| **L4 Agent notice + polish** (1 day) | One-time agent message, `memory.about` rewrite, completions, `--help` examples | Notice appears once per project; a11y check on the tour |
+
+### 13.8 Tests and checks
+- `tests/scenarios/tour.py`: runs `tour --auto` with a temp `HOME`; asserts each step's state change (note exists, decision
+  recorded, block written, collision blocked with the documented reason, hand-off created), that the real `~/.automemory`
+  of the user is untouched, and that `--reset`/`--resume` work.
+- `tests/scenarios/onboarding.py`: `next` after each setup action; demo load/remove leaves zero rows; demo data absent from
+  `export-rules`, `sync auto` and recall.
+- Extend `tests/manual/UI_CHECKLIST.md`: first visit, skip, replay, keyboard-only tour, screen reader announcements,
+  terminal-to-browser live tick, both themes, 360 px.
+- Usability test with two people who have never seen the product: record where they stall; each stall becomes a copy or
+  step fix before release.
+
+### 13.9 Risks and decisions
+- **Sandbox fidelity**: simulating two agents with fake hook payloads must stay in sync with real hook formats; the
+  tour reuses the contract-test payloads (`tests/contract/`) so a format change breaks the test, not the tour.
+- **Windows and non-TTY**: the tour must degrade to `--auto` text; sandbox creation uses the temp dir API, no shell.
+- **Annoyance**: nothing auto-opens after the first dismissal; the first-run hint prints once; no telemetry leaves the machine.
+- **Scope**: L1 alone (real checklist + `next`) delivers about half the value; do it before the dashboard tour.
+- **Open**: should `connect` offer to start the tour right after a successful connection (proposed: yes, one line, once)?
