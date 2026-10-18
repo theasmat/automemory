@@ -154,3 +154,11 @@
     forced-color-adjust: auto;
   }
 }
+
+/* Horizontal strips (tabs) scroll without a visible scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

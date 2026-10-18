@@ -1,8 +1,8 @@
 <template>
   <span
-    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-pill text-[11px] font-medium border"
+    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-pill text-xs font-medium"
     :class="[
-      isHuman ? 'bg-accent/10 text-accent border-accent/25 font-semibold' : 'bg-surface-2 text-text-muted border-border'
+      isHuman ? 'bg-accent/10 text-accent font-semibold' : 'bg-surface-2 text-text-muted'
     ]"
   >
     <svg v-if="isHuman" class="w-3 h-3 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -30,6 +30,7 @@ const isHuman = computed(() => {
 
 const formattedSource = computed(() => {
   if (isHuman.value) return 'You';
+  if (/task_reflection|tool_event|distill/i.test(props.source || '')) return 'Auto-captured';
   const raw = props.agent || props.source || 'Agent';
   if (/claude/i.test(raw)) return 'Claude Code';
   if (/cursor/i.test(raw)) return 'Cursor';

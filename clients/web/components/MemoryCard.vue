@@ -74,25 +74,34 @@
 
       <!-- Main Summary & Content -->
       <div>
-        <h4 class="text-sm sm:text-base font-semibold text-text leading-snug">
+        <h4 class="text-[15px] sm:text-base font-semibold text-text leading-snug" :class="expanded ? '' : 'line-clamp-2'">
           {{ memory.summary }}
         </h4>
-        <p v-if="memory.content && memory.content !== memory.summary" class="text-xs sm:text-sm text-text-muted mt-1.5 whitespace-pre-wrap leading-relaxed">
-          {{ memory.content }}
+        <p
+          v-if="preview"
+          class="text-sm text-text-muted mt-1.5 leading-relaxed whitespace-pre-line"
+          :class="expanded ? '' : 'line-clamp-3'"
+        >
+          {{ expanded ? plainContent : preview }}
         </p>
+        <button
+          v-if="isLong"
+          type="button"
+          class="mt-1.5 text-sm text-accent hover:underline"
+          @click="expanded = !expanded"
+        >
+          {{ expanded ? 'Show less' : 'Show more' }}
+        </button>
       </div>
 
       <!-- Tags & Scope Footer -->
-      <div v-if="memory.tags?.length || memory.scope" class="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
-        <span v-if="memory.scope" class="text-text-muted text-[11px] font-mono mr-1">
-          {{ memory.scope }}
-        </span>
+      <div v-if="memory.tags?.length" class="flex items-center gap-1.5 flex-wrap pt-1">
         <span
-          v-for="tag in memory.tags"
+          v-for="tag in memory.tags.slice(0, 4)"
           :key="tag"
-          class="text-[11px] font-mono px-1.5 py-0.2 rounded bg-surface-2 text-text-muted border border-border"
+          class="text-xs px-2 py-0.5 rounded-pill bg-surface-2 text-text-muted"
         >
-          #{{ tag }}
+          {{ tag }}
         </span>
       </div>
     </div>
@@ -144,6 +153,7 @@ const emit = defineEmits<{
 }>();
 
 const isEditing = ref(false);
+const expanded = ref(false);
 const isSaving = ref(false);
 const editSummary = ref('');
 const editContent = ref('');
@@ -188,6 +198,19 @@ function formatRelativeTime(dateStr?: string): string {
   if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
   return date.toLocaleDateString();
 }
+
+/** Notes written by tools are markdown; show them as calm plain text. */
+const plainContent = computed(() =>
+  (props.memory.content || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+);
+const preview = computed(() => (plainContent.value && plainContent.value !== props.memory.summary ? plainContent.value : ''));
+const isLong = computed(() => preview.value.length > 220 || preview.value.split('\n').length > 3);
 
 function startEdit() {
   editSummary.value = props.memory.summary;

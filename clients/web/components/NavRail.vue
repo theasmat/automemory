@@ -48,7 +48,7 @@
           class="ml-auto text-xs font-mono font-bold px-1.5 py-0.2 rounded-pill bg-accent-solid text-accent-fg"
           :class="isExpanded ? '' : 'absolute top-1 right-1 text-[10px] px-1 py-0'"
         >
-          {{ item.badge }}
+          {{ item.badge > 99 ? '99+' : item.badge }}
         </span>
       </NuxtLink>
 
@@ -99,7 +99,7 @@
         v-if="item.badge && item.badge > 0"
         class="absolute top-1 right-3 text-[10px] font-mono font-bold px-1 py-0 rounded-pill bg-accent-solid text-accent-fg"
       >
-        {{ item.badge }}
+        {{ item.badge > 99 ? '99+' : item.badge }}
       </span>
     </NuxtLink>
 

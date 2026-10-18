@@ -30,7 +30,7 @@
     />
 
     <!-- Filter & Search Toolbar -->
-    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+    <div class="flex flex-col gap-4">
       <Tabs
         v-model="activeTab"
         :tabs="tabs"
@@ -43,7 +43,11 @@
     </div>
 
     <!-- Notes List -->
-    <div v-if="filteredNotes.length === 0" class="py-4">
+    <div v-if="store.isLoading && store.memories.length === 0" class="space-y-3" aria-busy="true">
+      <Skeleton v-for="n in 3" :key="n" height="h-28" />
+    </div>
+
+    <div v-else-if="filteredNotes.length === 0" class="py-4">
       <EmptyState
         title="Nothing here yet"
         description="Add the first thing every agent should know, for example architectural decisions or how to run tests."
@@ -170,7 +174,11 @@ import type { Memory } from '~/types';
 const store = useAutoMemoryStore();
 const { success } = useToast();
 
-const activeTab = ref('all');
+const activeTab = ref('curated');
+
+/** Notes a tool wrote on its own (session summaries). Useful, but not what a person curates. */
+const isAuto = (m: any) =>
+  ['task_reflection', 'tool_event', 'document'].includes(m.source_kind) || m.tags?.includes('distilled-session');
 const searchQuery = ref('');
 const isAddModalOpen = ref(false);
 const previewDrawerOpen = ref(false);
@@ -189,17 +197,22 @@ const typeOptions = [
 ];
 
 const tabs = computed(() => [
-  { id: 'all', label: 'All', count: store.memories.length },
+  { id: 'curated', label: 'Curated', count: store.memories.filter((m) => !isAuto(m)).length },
   { id: 'decision', label: 'Decisions', count: store.memories.filter((m) => m.type?.toLowerCase() === 'decision').length },
   { id: 'convention', label: 'Conventions', count: store.memories.filter((m) => m.type?.toLowerCase() === 'preference' || m.type?.toLowerCase() === 'convention').length },
   { id: 'gotcha', label: 'Gotchas', count: store.memories.filter((m) => m.type?.toLowerCase() === 'gotcha' || m.type?.toLowerCase() === 'lesson').length },
-  { id: 'pending', label: 'In flight', count: store.proposals.length },
+  { id: 'auto', label: 'Auto-captured', count: store.memories.filter(isAuto).length },
+  { id: 'all', label: 'All', count: store.memories.length },
 ]);
 
 const filteredNotes = computed(() => {
   let list = store.memories;
 
-  if (activeTab.value === 'decision') {
+  if (activeTab.value === 'curated') {
+    list = list.filter((m) => !isAuto(m));
+  } else if (activeTab.value === 'auto') {
+    list = list.filter(isAuto);
+  } else if (activeTab.value === 'decision') {
     list = list.filter((m) => m.type?.toLowerCase() === 'decision');
   } else if (activeTab.value === 'convention') {
     list = list.filter((m) => m.type?.toLowerCase() === 'preference' || m.type?.toLowerCase() === 'convention');

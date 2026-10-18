@@ -38,6 +38,22 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    // `pnpm dev` serves the UI on :3000 while the daemon (API + WebSocket) listens on :4545.
+    // Without this the page calls :3000/api, gets the HTML shell back, and shows "isn't running".
+    // The daemon only accepts its own origin, so the proxy presents itself as that origin.
+    devProxy: {
+      '/api': {
+        target: 'http://127.0.0.1:4545/api',
+        changeOrigin: true,
+        headers: { Origin: 'http://127.0.0.1:4545' },
+      },
+      '/ws': {
+        target: 'ws://127.0.0.1:4545/ws',
+        ws: true,
+        changeOrigin: true,
+        headers: { Origin: 'http://127.0.0.1:4545' },
+      },
+    },
     output: {
       publicDir: 'dist',
     },
