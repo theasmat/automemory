@@ -317,3 +317,28 @@ Terminal-only paths return 404); a manual checklist item per new card.
 
 Decisions to confirm: (a) notes and decisions stay Protected (the password is asked every time, as you chose); (b) the kill switch stays Protected so an agent cannot call it; (c) local
 indexing needs no password.
+
+## 12. Next: proof, quality, reach
+
+Order matters. N1 first (it says whether anything else helps), N8 before N5, N2 after N1 so its effect can be measured.
+
+### 12.1 Phases
+| Phase | Scope | Done when |
+|---|---|---|
+| N1 Proof | Extend `tests/eval/` to run the same tasks with and without AutoMemory (2+ agents, 3 runs each); metrics: task success, repeated mistakes, collisions, tokens, time. `eval report` writes a table; CI runs a small deterministic subset | Numbers are in FEATURES.md with the date and agent versions; a drop below the stored baseline fails the gate |
+| N2 LLM profile | `[llm.profiles.<name>]` mirroring embeddings profiles (OpenAI-compatible and local Ollama first), key in the keychain, `allow_network`, daily token cap, cost estimate, redaction before send. Jobs: `contradiction-check` (before promote), `merge-suggest` (cluster near-duplicates), `distill-session` (events to decision/gotcha/convention candidates), `staleness` (memory vs files). Output is only candidate-tier proposals with sources, shown in the Inbox | Off by default; with no profile nothing changes; a hallucinated proposal can be rejected and never reaches trusted recall; calls are audited; N1 shows the effect |
+| N3 Hygiene | Brain shows confidence, last used, times recalled; filter "never recalled" and "stale"; bulk archive (Protected, undoable) | A 500-memory demo set can be pruned in under a minute |
+| N4 Agents | Cursor, Windsurf, Gemini CLI, Copilot: export-rules targets, MCP registration, hook where the agent has one, contract fixtures per agent | Each passes `connect`, `disconnect --dry-run` empty, and a contract fixture |
+| N5 Team sync | Shared git remote with per-person identity, trust tiers by person, conflict view | Two people, two machines: a human-approved memory reaches the other; an unapproved one stays a proposal |
+| N6 Perf gate | `cargo bench` thresholds in `run_all.sh --full`: hook p95, recall p95, binary size | Regression fails the run |
+| N7 Packaging | Homebrew formula, signed and notarised macOS build, Linux tarball, `automemory update` (checks hash, never silent) | Fresh machine installs and runs `init` with no Rust toolchain |
+| N8 Hardening | Review `serve/` and the hook path: Safe endpoints an agent could abuse, path traversal, subprocess arguments, SSRF in key/test routes, audit coverage | Findings fixed or recorded; tests added for each fix |
+
+### 12.2 The "no LLM in the daemon" rule
+The rule becomes: the daemon makes no LLM call unless the user configures an LLM profile, and an LLM never writes trusted memory, runs a lock, or decides a guardrail.
+Update `CLAUDE.md`, ARCHITECTURE and FEATURES when N2 starts, not before.
+
+### 12.3 Risks
+- N2 adds cost and a prompt-injection path (memory text is untrusted input to the model): treat output as data, no tool use, strict JSON, length caps, proposals only.
+- N1 results depend on agent versions and variance: report medians and the spread, not one run.
+- N5 widens the attack surface: N8 first.

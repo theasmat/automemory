@@ -98,10 +98,22 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 ## Control everything safe from the dashboard (plan: PLAN §11)
 
 - [x] U1 `policy.rs` tiers + route audit test, job runner (`/api/jobs`, Jobs tray), indexing on it, local indexing without password
-- [x] U2 `ops/` extraction (doctor, export-rules, hand-off, sync, docs rescan, graph index, eval, backup) and Settings > Tools / Health
-- [x] U2 command logic reused through subprocess (`run_self`) and library calls rather than a shared `ops/` module; Tools page covers doctor, export-rules, hand-off, sync pull, docs rescan, graph index, eval, backup
+- [x] U2 Settings > Tools / Health (doctor, export-rules, hand-off, sync pull, docs rescan, graph index, eval, backup); logic reused via subprocess (`run_self`) and library calls, no separate `ops/` module
+- [x] U3 Agents > Set up an agent (preview, connect, disconnect)
 - [x] U4 Decisions view; restore, pin, veto, revoke in Project brain
 - [x] U5 Settings > Locks and Data; activity log view
+
+## Next: quality, proof, reach (plan: PLAN §12)
+
+- [ ] N1 Proof: eval harness with/without AutoMemory, published numbers, CI gate
+- [ ] N2 Optional LLM profile: contradiction check, merge/dedupe, session distill, staleness (proposals only)
+- [ ] N3 Memory hygiene UI: confidence, last used, never recalled, bulk archive
+- [ ] N4 More agents: Cursor, Windsurf, Gemini CLI, Copilot (export-rules + MCP, contract fixtures)
+- [ ] N5 Team sync: shared remote, per-person trust
+- [ ] N6 Performance gate in CI (hook latency, recall, binary size)
+- [ ] N7 Packaging: Homebrew, signed installer, `automemory update`
+- [ ] N8 Hardening audit of `serve/` and the hook path (localhost threat model); run before N5
+- [ ] Small leftovers: T10 trial, lock icons from `/api/policy`, richer "recently blocked" view, decision-card wording
 
 ## Docs hygiene
 
