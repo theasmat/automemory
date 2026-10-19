@@ -78,6 +78,15 @@ def main():
         code, _ = http(port, "/api/proposals/decide_all", "POST",
                        {"X-AutoMemory-Password": "correct horse"}, {"approved": False})
         rep.check(code == 200, "decide_all with the password works", str(code))
+
+        # Guessing is throttled: five wrong passwords lock the gate, even for the right one, for a minute.
+        for _ in range(5):
+            code, _ = http(port, "/api/proposals/decide_all", "POST",
+                           {"X-AutoMemory-Password": "wrong guess"}, {"approved": False})
+            rep.check(code == 403, "a wrong password is refused", str(code))
+        code, _ = http(port, "/api/proposals/decide_all", "POST",
+                       {"X-AutoMemory-Password": "correct horse"}, {"approved": False})
+        rep.check(code == 429, "after five wrong guesses even the right password waits", str(code))
     finally:
         server.terminate()
         server.wait(timeout=5)

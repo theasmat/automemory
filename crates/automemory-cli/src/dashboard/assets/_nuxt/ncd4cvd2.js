@@ -1,1 +1,0 @@
-import{j as e,T as t,c as a,o as s}from"./B8g86YBY.js";const o={class:"p-8 text-center text-text-muted text-sm"},i=e({__name:"guardrails",setup(r){return t("/safety",{replace:!0}),(c,n)=>(s(),a("div",o,"Redirecting to Safety..."))}});export{i as default};

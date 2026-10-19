@@ -377,3 +377,13 @@ Found and fixed (installed)
 3. The two stray projects in the trial database (slug = the project id, and `default`, both with no memories, decisions or events) were removed.
    The real project's mode is currently **review** (it was changed from the dashboard); set it back with `automemory mode set strict`.
 
+### 2026-10-19 Password gate hardened (requested): every protected action asks, nothing is stored
+
+- Dashboard: the password is **never remembered** (no sessionStorage, no timer): every protected action (mode, rule add/delete/toggle, approve/reject,
+  sample data, add memory) opens the dialog again. It is used for that one request and the field is emptied on submit and on close; the
+  browser is told not to offer to save it. A wrong password stays in the dialog (three tries) instead of failing silently.
+- Server: five wrong passwords in a minute lock the gate (HTTP 429, "Wait a minute") even for the right password, so a script cannot
+  guess against the local API. Covered by `tests/scenarios/dashboard.py`.
+- Unchanged: agents cannot pass the gate (CLI asks on the terminal, MCP decide is refused, REST needs the header).
+- Retest T9 dashboard half: every click on Balanced / Strict / rule delete must ask; two actions in a row ask twice.
+

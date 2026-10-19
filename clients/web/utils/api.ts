@@ -71,57 +71,34 @@ export async function request<T>(endpoint: string, options?: RequestInit): Promi
 export const apiGet = request;
 
 /**
- * fetch for safety-gated writes. When a human password is set the server answers 403;
- * prompts using the masked PasswordModal, remembers for this tab (sessionStorage) and retries.
+ * fetch for safety-gated writes. When a human password is set the server answers 403 and the masked
+ * dialog asks for it. The password is used for that one request and then dropped: it is never stored,
+ * so every protected change asks again. Three wrong tries, then the caller gets the last response.
  */
-let remembered: { value: string; at: number } | null = null;
-const REMEMBER_MS = 2 * 60 * 1000;
-const remember = (value: string) => {
-  remembered = { value, at: Date.now() };
-};
-const forgetPassword = () => {
-  remembered = null;
-};
-function rememberedPassword(): string | null {
-  if (remembered && Date.now() - remembered.at < REMEMBER_MS) return remembered.value;
-  remembered = null;
-  return null;
-}
-
 export async function humanFetch(
   endpoint: string,
   actionName: string = 'this action',
   options: RequestInit = {}
 ): Promise<Response> {
-  const withPassword = (password: string | null): RequestInit => ({
+  const withPassword = (password: string): RequestInit => ({
     ...options,
-    headers: {
-      ...(options.headers as Record<string, string>),
-      ...(password ? { 'X-AutoMemory-Password': password } : {}),
-    },
+    headers: { ...(options.headers as Record<string, string>), 'X-AutoMemory-Password': password },
   });
-
-  // The password is kept in memory only, for two minutes, so every change after that asks again.
-  let password: string | null = rememberedPassword();
-
-  let res = await fetch(endpoint, withPassword(password));
   const needsPassword = async (r: Response) =>
     r.status === 403 && /password/i.test(await r.clone().text().catch(() => ''));
 
-  if (await needsPassword(res)) {
-    const { promptPassword, setError } = usePasswordModal();
-    const entered = await promptPassword(actionName);
-    if (entered) {
-      res = await fetch(endpoint, withPassword(entered));
-      if (await needsPassword(res)) {
-        forgetPassword();
-        setError('Wrong password. Please try again.');
-      } else {
-        remember(entered);
-      }
-    }
-  }
+  let res = await fetch(endpoint, options);
+  if (!(await needsPassword(res))) return res;
 
+  const { promptPassword } = usePasswordModal();
+  let problem = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const entered = await promptPassword(actionName, problem);
+    if (!entered) return res; // cancelled
+    res = await fetch(endpoint, withPassword(entered));
+    if (!(await needsPassword(res))) return res; // allowed, or locked out (429) with its own message
+    problem = 'Wrong password. Try again.';
+  }
   return res;
 }
 

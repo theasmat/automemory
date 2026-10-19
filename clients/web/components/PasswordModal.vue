@@ -14,7 +14,7 @@
           <span class="font-semibold text-text">Protected action:</span>
           <span class="text-text-muted ml-1">{{ activeRequest?.actionName || 'Safety-gated write' }}</span>
           <p class="text-xs text-text-muted mt-1">
-            This action modifies agent safety rules or project knowledge. Enter your memorized human password.
+            This action modifies agent safety rules or project knowledge. Enter your human password. It is used for this one action and is never stored.
           </p>
         </div>
       </div>
@@ -30,7 +30,7 @@
           type="password"
           class="w-full bg-surface border border-border-strong rounded-card px-3 py-2 text-sm text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-bg"
           placeholder="••••••••••••"
-          autocomplete="current-password"
+          autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false"
           @keydown.enter="handleSubmit"
         />
         <p v-if="activeRequest?.errorMessage" class="text-xs text-bad mt-1.5">
@@ -69,6 +69,13 @@ watch(isOpen, (open) => {
 
 function handleSubmit() {
   if (!password.value) return;
-  submit(password.value);
+  const entered = password.value;
+  password.value = ''; // the field never keeps it
+  submit(entered);
 }
+
+// Closing the dialog in any way also empties the field.
+watch(isOpen, (open) => {
+  if (!open) password.value = '';
+});
 </script>

@@ -12,6 +12,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::str::FromStr;
 
+/// Wrong-password guesses: 5 in a minute lock the gate for the rest of that minute (a script with
+/// shell access could otherwise try passwords against the local API).
+static GUESSES: std::sync::Mutex<(u32, Option<std::time::Instant>)> = std::sync::Mutex::new((0, None));
+const MAX_GUESSES: u32 = 5;
+const GUESS_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// Human gate for dashboard safety writes. The browser dashboard prompts for
 /// the password and sends it as `X-AutoMemory-Password`; scripts use the same
 /// header. Unset password warns once and allows (fresh installs stay usable).
@@ -27,12 +33,28 @@ pub(crate) fn require_human_header(
         );
         return Ok(());
     };
-    match headers
-        .get("x-automemory-password")
-        .and_then(|v| v.to_str().ok())
-    {
-        Some(pw) if automemory_core::auth::verify_password(pw, &hash) => Ok(()),
-        _ => Err(deny(format!(
+    let given = headers.get("x-automemory-password").and_then(|v| v.to_str().ok());
+    let mut guesses = GUESSES.lock().unwrap_or_else(|e| e.into_inner());
+    if guesses.1.is_some_and(|t| t.elapsed() > GUESS_WINDOW) {
+        *guesses = (0, None);
+    }
+    if guesses.0 >= MAX_GUESSES {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({ "error": "Too many wrong passwords. Wait a minute before trying again." })),
+        ));
+    }
+    match given {
+        Some(pw) if automemory_core::auth::verify_password(pw, &hash) => {
+            *guesses = (0, None);
+            Ok(())
+        }
+        Some(_) => {
+            guesses.0 += 1;
+            guesses.1.get_or_insert_with(std::time::Instant::now);
+            Err(deny(format!("Wrong password; '{action}' refused.")))
+        }
+        None => Err(deny(format!(
             "Safety change '{action}' needs the human password in the X-AutoMemory-Password header."
         ))),
     }
