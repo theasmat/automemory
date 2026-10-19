@@ -199,3 +199,61 @@ opt-in per project; which free model to recommend by default after `embeddings e
 Three delivery tiers, one source of truth: (A) hooks where the vendor documents them (Claude, Codex, Antigravity done); (B) a managed block in the instruction file every agent already reads (built: `export-rules`); (C) MCP plus a skill (MCP everywhere; skills partly). Research (Oct 2026, vendor and community sources): AGENTS.md is read by 20+ tools but is static; MCP standardizes transport, not memory format; nothing verifies or merges what different agents write. Our differentiators: trust tiers, conflict-safe sync across machines, locks.
 
 **Status:** tier B and human input (`note`, dashboard add) built and tested. Not built: tier A hook adapters beyond the first three, a "Project brain" dashboard page, adapter-trait cleanup (see TASKS).
+
+## 10. Configurable embeddings and secure key storage
+
+Today: one provider is set through flat `[embeddings]` fields (`automemory embeddings use ...`), the API key can only come from an
+environment variable (`api_key_env`), and the dashboard's **Recall settings** page saves to the browser's `localStorage` only (it changes
+nothing in the daemon). Goal: choose and add models freely, keep cloud keys in the OS keychain, and see indexing happen.
+
+### 10.1 Provider profiles and a model catalog
+- `[embeddings] active = "<profile>"` and `[embeddings.profiles.<name>]` with `provider`, `model`, `endpoint`, `dimensions`, `key` (a reference such as
+  `keychain:openai`, never the secret), `allow_network`, `batch_size`, `timeout_secs`. The old flat fields migrate into a profile named `default`.
+- Several profiles can exist (for example `local` = Ollama and `cloud` = OpenAI); switching is one setting. Vectors are already stored per model id, so switching
+  never mixes vector spaces.
+- A built-in **preset catalog** (static table, with a "verify before release" note because vendor catalogs change): Ollama `nomic-embed-text` (768),
+  `mxbai-embed-large` (1024), `bge-m3` (1024), `all-minilm` (384); OpenAI `text-embedding-3-small` (1536) and `-large` (3072, shortenable);
+  Gemini (OpenAI-compatible endpoint), Mistral, Jina, Together, LM Studio, vLLM, LiteLLM through the same OpenAI-compatible adapter; any command (`exec`).
+  Free-text model ids are always allowed. `automemory embeddings models` lists presets plus what a local Ollama has installed (`/api/tags`).
+- Later adapters for providers whose request shape differs (Cohere, Voyage, Gemini native). ONNX stays a cargo feature (section 7).
+
+### 10.2 Secrets in the OS keychain
+- New `automemory-core/src/secrets.rs`: `get(name)`, `set(name, value)`, `delete(name)`, `status(name)` (where it comes from: env, keychain or none).
+  Lookup order: the profile's env var, then the keychain, then nothing. Service `dev.automemory.secret`, account = secret name.
+- Backends through the `keyring` crate (macOS Keychain, Windows Credential Manager, Linux Secret Service): one API, and the secret never appears on a command line.
+  Where no keychain exists (headless Linux), an encrypted file `~/.automemory/secrets.enc` (mode 0600, sealed with the existing master key) with a visible warning.
+- The existing master key code shells out to `security add-generic-password -w <key>`, which exposes the key in the process list for a moment; move it to the same backend.
+- The secret is never written to `config.toml`, the database, the audit log, logs, `doctor` output, hand-offs, instruction files or the sync vault (each machine sets its own),
+  and error messages are redacted. Hooks never read it (they are keyword only). Redaction is covered by a test that greps all outputs for a planted key.
+- CLI: `automemory embeddings key set <profile>` (hidden prompt, or `--stdin`, or `--from-env`), `key status`, `key remove`. Dashboard: a write-only field (the key is never
+  shown back), set/remove behind the human password (section on the password gate), and a "Saved in Keychain" state.
+
+### 10.3 Recall settings page becomes real
+- `GET/PUT /api/recall` read and write `[retrieval]` and the profiles (writes behind the human password); the `localStorage` save is removed.
+- Layout as steps: 1 Keyword or Hybrid. 2 Where: this computer (Ollama, free), a cloud service, your own endpoint, or a command. 3 Model: dropdown from the catalog
+  plus "other", with dimensions. 4 API key (cloud only) stored in the keychain. 5 **Test** (embeds one sentence, shows dimensions, latency, whether text leaves the
+  machine) and **Index**.
+- A privacy line states exactly what is sent (redacted summary and the first 1500 characters of content) and needs `allow_network` for any non-local endpoint.
+  Optional per-project switch: `private` projects never use a cloud profile.
+
+### 10.4 Indexing you can see and control
+- A background worker in `serve` (queue, batch 16 to 64, rate-limit and retry with backoff, resume after restart, cancel) fills missing vectors; progress over the
+  WebSocket: "412 of 1,300 memories embedded". `embeddings status --watch` shows the same in the terminal.
+- Guards for paid services: an estimate before a large first index (tokens times a stored price table, labelled "estimate"), a daily token cap, and a confirmation above a set size.
+- Dimension or model mismatches fail with a clear message; "Remove unused vectors" deletes vectors of models that are no longer active.
+- A one-click "Compare keyword and hybrid on my notes" check (queries built from note titles) next to the existing `embeddings eval` file mode.
+
+### 10.5 Phases and acceptance
+| Phase | Scope | Done when |
+|---|---|---|
+| E1 | `secrets.rs` + keychain/encrypted-file backends, `embeddings key set|status|remove`, master key off the command line | A planted key never appears in any output, file or log; works with a fake backend in tests (`AUTOMEMORY_SECRETS_BACKEND=file`) |
+| E2 | Profiles, presets, `embeddings profile add|list|use|remove`, `embeddings models`, migration of the flat fields | Two profiles can be switched and tested from the CLI; old configs still work |
+| E3 | `/api/recall`, real Recall page with the five steps, key field, Test button | The page changes the daemon's behaviour and survives a restart; a wrong key shows a clear error |
+| E4 | Indexing worker, progress, cost guard, unused-vector cleanup | A 1,000-memory index runs in the background with progress and can be cancelled and resumed |
+| E5 | Native adapters (Cohere, Voyage, Gemini), ONNX feature | Optional |
+
+Tests: mock embedding server (exists) with an `Authorization` check, key redaction grep, keychain fake, scenario `tests/scenarios/embeddings_modes.py` extended for profiles
+and keys, dashboard scenario for `/api/recall` (human gate, key never returned).
+
+Decisions to confirm: the `keyring` dependency versus small per-OS shims (recommended: `keyring`); which clouds first (recommended: OpenAI-compatible, which covers most);
+whether provider choices (not keys) should sync between machines (recommended: no for now).

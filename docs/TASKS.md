@@ -87,6 +87,14 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] First-run tour (CLI + dashboard): brief for an implementing agent in [plan/onboarding-tour-brief.md](../plan/onboarding-tour-brief.md) (L1 shared core, L2 CLI tour, L3 dashboard, L4 agent notice)
 - [ ] P1 foundation + Home, P2 Project brain, P3 Agents & locks + Inbox, P4 Sync wizard + Safety, P5 polish
 
+## Configurable embeddings and secure keys (plan: PLAN §10)
+
+- [ ] E1 `secrets.rs` (keychain, encrypted-file fallback), `embeddings key set|status|remove`, master key off the command line
+- [ ] E2 profiles + preset catalog, `embeddings profile ...`, `embeddings models`, config migration
+- [ ] E3 `/api/recall` and a real Recall settings page (today it only saves to the browser)
+- [ ] E4 background indexing worker with progress, cost guard, unused-vector cleanup
+- [ ] E5 native Cohere/Voyage/Gemini adapters, ONNX feature
+
 ## Docs hygiene
 
 - [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 210 Rust tests at last check)
