@@ -320,6 +320,8 @@ indexing needs no password.
 
 ## 12. Next: proof, quality, reach
 
+**Status: N1–N8 built to the extent listed in `docs/TASKS.md`.** Open edges: live A/B numbers (N1 needs real agent runs), staleness check (N2), recorded hook payloads for Cursor/Windsurf/Gemini/Copilot (N4), per-person trust tiers (N5), Apple notarisation and the Homebrew tap (N7).
+
 Order matters. N1 first (it says whether anything else helps), N8 before N5, N2 after N1 so its effect can be measured.
 
 ### 12.1 Phases

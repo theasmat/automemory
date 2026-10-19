@@ -8,6 +8,7 @@ pub mod doc;
 pub mod doctor;
 pub mod embeddings;
 pub mod llm;
+pub mod update;
 pub mod eval;
 pub mod governance;
 pub mod guardrail;

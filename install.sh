@@ -109,6 +109,19 @@ if [ "${INSTALLED}" = false ]; then
 
     log_info "Attempting to download pre-built release from GitHub (${REPO})..."
     if curl -fsSL -o "${TEMP_DIR}/automemory.tar.gz" "${RELEASE_URL}" 2>/dev/null; then
+        # Verify the download against the release's .sha256 file; refuse to install an unchecked binary.
+        if curl -fsSL -o "${TEMP_DIR}/automemory.sha256" "${RELEASE_URL}.sha256" 2>/dev/null; then
+            WANT="$(awk '{print $1}' "${TEMP_DIR}/automemory.sha256")"
+            if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "${TEMP_DIR}/automemory.tar.gz" | awk '{print $1}')"; else GOT="$(shasum -a 256 "${TEMP_DIR}/automemory.tar.gz" | awk '{print $1}')"; fi
+            if [ -z "${WANT}" ] || [ "${WANT}" != "${GOT}" ]; then
+                log_error "Checksum mismatch for the downloaded archive; nothing was installed."
+                exit 1
+            fi
+            log_success "Checksum verified"
+        elif [ "${AUTOMEMORY_SKIP_CHECKSUM:-}" != "1" ]; then
+            log_error "No .sha256 file next to the release archive; refusing an unchecked download (set AUTOMEMORY_SKIP_CHECKSUM=1 to override)."
+            exit 1
+        fi
         tar -xzf "${TEMP_DIR}/automemory.tar.gz" -C "${TEMP_DIR}"
         if [ -f "${TEMP_DIR}/${BINARY_NAME}" ]; then
             chmod +x "${TEMP_DIR}/${BINARY_NAME}"

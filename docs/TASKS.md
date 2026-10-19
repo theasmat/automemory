@@ -109,15 +109,15 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] N2 Optional LLM helper: conflicts, duplicates, session distill (proposals only; one profile; staleness check not built)
 - [x] N3 Memory hygiene UI: confidence, last used, never recalled, bulk archive
 - [x] N4 Agent matrix test: 13 agents connect, get their instruction file and disconnect cleanly. Hooks/contract fixtures for Cursor, Windsurf, Gemini CLI, Copilot still need recorded real payloads (they stay experimental, MCP + rules only)
-- [ ] N5 Team sync: shared remote, per-person trust
+- [x] N5 Team sync (first step): records carry their author, notes from a teammate show "from <name>", approved notes arrive active and unapproved ones stay candidates (tested with two people on a keyed vault). Not built: per-person trust tiers (a receiver-side overlay is needed; clamping the record itself makes fingerprints diverge and creates false conflicts), person setting UI
 - [x] N6 Performance gate in CI (hook latency, recall, binary size)
-- [ ] N7 Packaging: Homebrew, signed installer, `automemory update`
+- [x] N7 `automemory update` (asks first, verifies .sha256, refuses unchecked downloads; scenario with a mock release server), installers verify checksums, `scripts/make_formula.sh` prints a Homebrew formula. Not done: Apple signing/notarisation (needs a developer account), publishing the tap
 - [x] N8 Hardening audit of `serve/`, sync and export-rules. Fixed: plaintext sync deltas accepted by a keyed vault (forged trusted memories), `is_loopback` substring bypass (`localhost.evil.com` skipped consent and redaction), export-rules following symlinks out of the repo, unbounded backups, agent name as CLI flag. Not covered: fuzzing the hook JSON parsers
 - [ ] Small leftovers: T10 trial, lock icons from `/api/policy`, richer "recently blocked" view, decision-card wording
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 214 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 226 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

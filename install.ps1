@@ -64,6 +64,19 @@ if (-not $installed) {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 30
+        # Verify the download against the release's .sha256 file; refuse to install an unchecked binary.
+        try {
+            $sumLine = (Invoke-WebRequest -Uri "$zipUrl.sha256" -UseBasicParsing -TimeoutSec 30).Content.ToString().Trim()
+        } catch {
+            if ($env:AUTOMEMORY_SKIP_CHECKSUM -ne "1") { throw "No .sha256 file next to the release archive; refusing an unchecked download (set AUTOMEMORY_SKIP_CHECKSUM=1 to override)." }
+            $sumLine = $null
+        }
+        if ($sumLine) {
+            $want = ($sumLine -split '\s+')[0].ToLower()
+            $got = (Get-FileHash -Path $tempZip -Algorithm SHA256).Hash.ToLower()
+            if ($want -ne $got) { throw "Checksum mismatch for the downloaded archive; nothing was installed." }
+            Write-Host "✓ Checksum verified" -ForegroundColor Green
+        }
         Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
         if (Test-Path "$tempExtract\$binaryName") {
             Copy-Item "$tempExtract\$binaryName" "$installDir\$binaryName" -Force

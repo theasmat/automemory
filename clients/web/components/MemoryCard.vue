@@ -15,6 +15,7 @@
             Sample
           </Badge>
           <SourceBadge :source="memory.source_kind" :agent="memory.metadata?.agent" />
+          <span v-if="memory.metadata?.shared_by" class="text-xs text-text-muted">from {{ memory.metadata.shared_by }}</span>
           <span v-if="memory.status === 'pinned'" class="text-xs font-semibold text-accent flex items-center gap-1">
             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
               <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />

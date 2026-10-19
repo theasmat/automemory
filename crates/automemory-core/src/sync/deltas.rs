@@ -45,6 +45,9 @@ pub struct DeltaOp {
     /// Folder-name hint used to name the project on a machine that has not seen it.
     #[serde(default)]
     pub project_slug: Option<String>,
+    /// Who wrote it (see [`person`]); records from another person never arrive pinned.
+    #[serde(default)]
+    pub author: Option<String>,
 }
 
 /// Outcome of applying delta files. Conflicts keep the local copy and file
@@ -122,6 +125,24 @@ pub fn device_id(db: &Database) -> Result<String> {
     let id = format!("dev-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
     set_kv(db, "device_id", &id)?;
     Ok(id)
+}
+
+/// Who is writing on this machine: the saved name, else `AUTOMEMORY_PERSON`, else `git config user.name`.
+/// Sent with each record so a teammate's machine can show where a note came from.
+pub fn person(db: &Database) -> String {
+    get_kv(db, "person").ok().flatten().filter(|p| !p.is_empty())
+        .or_else(|| std::env::var("AUTOMEMORY_PERSON").ok().filter(|p| !p.is_empty()))
+        .or_else(|| {
+            let out = std::process::Command::new("git").args(["config", "user.name"]).output().ok()?;
+            let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            (!name.is_empty()).then_some(name)
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// The teammate who wrote a note that arrived through sync (`None` for your own notes).
+pub fn shared_by(db: &Database, memory_id: &str) -> Option<String> {
+    get_kv(db, &format!("author:{memory_id}")).ok().flatten()
 }
 
 pub fn sync_cycle(db: &Database, vault_root: &Path) -> Result<ApplyReport> {
@@ -217,6 +238,7 @@ fn make_op(
         payload,
         project_key,
         project_slug,
+        author: None,
     }
 }
 
@@ -224,6 +246,7 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
     let applied = get_applied(db)?;
     let mut cache = KeyCache::new();
     let mut ops = Vec::new();
+    let me = person(db);
     // Records of a project with no key (not a git repository) are skipped: they stay local.
     // Demo records (tagged metadata.demo = true or project_id = 'demo') are also excluded.
     let mut consider = |kind: &str, id: String, updated_at: DateTime<Utc>, value: serde_json::Value| {
@@ -233,7 +256,8 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
             return;
         }
         let Some(wire) = to_transport(db, &mut cache, value) else { return };
-        let op = make_op(kind, id, updated_at, device_id, wire);
+        let mut op = make_op(kind, id, updated_at, device_id, wire);
+        op.author = Some(me.clone()); // in the envelope, not the payload: fingerprints stay equal on every machine
         if applied.get(&op.id).map(|fp| fp == &op.fingerprint) != Some(true) {
             ops.push(op);
         }
@@ -491,7 +515,15 @@ fn apply_op(
         }};
     }
     match op.kind.as_str() {
-        "memory" => apply_kind!(Memory, get_memory_by_id, save_memory_direct, updated_at),
+        "memory" => {
+            let applied_now = apply_kind!(Memory, get_memory_by_id, save_memory_direct, updated_at)?;
+            if let (Some(_), Some(author)) = (&applied_now, wire.author.as_ref()) {
+                if *author != person(db) {
+                    set_kv(db, &format!("author:{}", op.id), author)?;
+                }
+            }
+            Ok(applied_now)
+        }
         "trace" => apply_kind!(SuccessTrace, get_trace_by_id, save_trace, updated_at),
         "failure" => apply_kind!(FailureRecord, get_failure_by_id, save_failure, updated_at),
         "skill" => apply_kind!(ProceduralSkill, get_skill_by_id, save_skill, updated_at),
@@ -902,6 +934,33 @@ mod tests {
         let key = [7u8; 32];
         assert_eq!(sync_cycle_keyed(&victim, &dir, Some(&key)).unwrap().applied, 0);
         assert!(victim.get_memory_by_id("m-evil").unwrap().is_none(), "a forged memory never arrives");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_people_share_approved_notes_and_unapproved_ones_stay_candidates() {
+        let dir = test_vault("team");
+        let (alice, bob) = (test_db(), test_db());
+        set_kv(&alice, "person", "Alice").unwrap();
+        set_kv(&bob, "person", "Bob").unwrap();
+        register_project(&alice, "pa", "shop", Some("git:github.com/team/shop"));
+        alice.save_memory_direct(&memory_in(Some("pa"), "m-ok", "Checkout totals are computed in cents")).unwrap();
+        let mut draft = memory_in(Some("pa"), "m-draft", "Maybe switch the cart to GraphQL");
+        draft.status = MemoryStatus::Candidate;
+        alice.save_memory_direct(&draft).unwrap();
+
+        let key = [3u8; 32];
+        sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap();
+        assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().applied, 2);
+
+        assert!(bob.get_memory_by_id("m-ok").unwrap().unwrap().status == MemoryStatus::Active);
+        assert!(bob.get_memory_by_id("m-draft").unwrap().unwrap().status == MemoryStatus::Candidate, "an unapproved note stays a candidate on the other machine");
+        assert_eq!(shared_by(&bob, "m-ok").as_deref(), Some("Alice"));
+        assert_eq!(shared_by(&alice, "m-ok"), None, "your own notes are not 'from' anyone");
+
+        // Bob's next cycle does not send Alice's notes back as if they were his edits, and nothing conflicts.
+        assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().conflicts, 0);
+        assert_eq!(sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap().conflicts, 0);
         let _ = fs::remove_dir_all(&dir);
     }
 

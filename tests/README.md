@@ -27,11 +27,15 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Session lifecycle | `python3 tests/scenarios/session_lifecycle.py` | Stop leaves a checkpoint memory for sessions that edited files |
 | Registration + hook robustness | `python3 tests/scenarios/registration.py` | `connect` for Antigravity/Claude/Codex then `disconnect all --everywhere` leaves nothing and keeps the user's files; a hook registered twice answers once; hooks never fail (corrupt database, empty or garbage input) |
 | Human password gate | `python3 tests/scenarios/human_gate.py` | With a password set, agents cannot decide proposals or change rules (MCP and CLI) |
+| Optional LLM helper | `python3 tests/scenarios/llm_helper.py` | Off by default; cloud refused without consent; suggestions land as pending proposals only; reruns skip judged pairs; injection replies create nothing |
+| Agent matrix | `python3 tests/scenarios/agents_matrix.py` | 13 agents connect, get their instruction file and disconnect cleanly |
+| Self-update | `python3 tests/scenarios/update.py` | `update` asks first, verifies the checksum, refuses tampered or unchecked downloads, replaces atomically |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
 | Guided tour and demo | `python3 tests/scenarios/tour.py` | `automemory tour --auto` 8 sandbox steps, collision prevention, learn topics, demo seed and remove |
 | CodeIntel (real engine) | `python3 tests/codeintel/smoke.py` | `memory.about` returns real callers from codebase-memory-mcp; `doctor` reports its version |
 | Hook latency | `python3 tests/perf/hook_p95.py [runs] [budget_ms]` | End-to-end wall time per hook call, process start included |
+| Size and recall gates | `python3 tests/perf/gates.py [notes]` | Binary within 16 MB, recall p95 within 150 ms on 300 notes |
 | Sync gateway | `cd workers/sync-gateway && npx vitest run` | Webhook signature checks (Stripe, LemonSqueezy) |
 | Eval harness | `python3 tests/eval/run_eval.py selftest` | Scoring and report maths (the real A/B runs are manual, see below) |
 

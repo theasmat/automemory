@@ -245,6 +245,17 @@ enum Commands {
         command: LlmCommands,
     },
 
+    /// Install the latest release (checksum-verified; asks first, `--check` only reports)
+    #[command(next_help_heading = "Advanced")]
+    Update {
+        /// Only say whether a newer version exists
+        #[arg(long)]
+        check: bool,
+        /// Do not ask for confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
     /// Show where the last session left off (hand-off, checkpoint, decisions, repository state)
     #[command(next_help_heading = "Daily")]
     Resume,
@@ -1482,6 +1493,7 @@ async fn main() -> Result<()> {
             LlmCommands::KeyRemove => commands::llm::key_remove()?,
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Update { check, yes } => commands::update::run(check, yes)?,
         Commands::Resume => commands::continuity::resume()?,
         Commands::Handoff { note, message } => commands::continuity::handoff(note.or(message)).await?,
         Commands::Locks { project, coverage: true, days } => {

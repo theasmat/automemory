@@ -43,7 +43,18 @@ pub async fn api_memories(
         }
     }
 
-    Json(memories)
+    // Notes that came from a teammate say so (`metadata.shared_by`), added to the response only.
+    let out: Vec<serde_json::Value> = memories
+        .iter()
+        .map(|m| {
+            let mut v = serde_json::to_value(m).unwrap_or_default();
+            if let (Some(by), Some(meta)) = (automemory_core::sync::deltas::shared_by(&state.db, &m.id), v.get_mut("metadata").and_then(|x| x.as_object_mut())) {
+                meta.insert("shared_by".into(), by.into());
+            }
+            v
+        })
+        .collect();
+    Json(out)
 }
 
 pub async fn api_skills(
