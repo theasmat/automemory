@@ -103,6 +103,47 @@ def main():
                        {"X-AutoMemory-Password": "correct horse"}, {"approved": False})
         rep.check(code == 200, "decide_all with the password works", str(code))
 
+        # Tiers: Safe works without the password, Protected needs it, Terminal-only has no route.
+        code, body = http(port, "/api/tools/backup", "POST", {}, {})
+        rep.check(code == 200 and json.loads(body).get("started"), "Safe: backup starts without a password", f"{code} {body[:100]}")
+        for _ in range(40):
+            code, body = http(port, "/api/jobs")
+            if any(j["kind"] == "backup" and j["state"] != "running" for j in json.loads(body)):
+                break
+            time.sleep(0.25)
+        rep.check(any(j["kind"] == "backup" and j["state"] == "done" for j in json.loads(body)), "the job finishes and keeps its result", body[:200])
+        code, body = http(port, "/api/policy")
+        tiers = {r["path"]: r["tier"] for r in json.loads(body)}
+        rep.check(tiers.get("/api/decisions") == "protected" and tiers.get("/api/tools/backup") == "safe", "GET /api/policy lists the tiers")
+        code, _ = http(port, "/api/decisions", "POST", {}, {"topic": "t", "decision": "d"})
+        rep.check(code == 403, "Protected: a decision is refused without the password", str(code))
+        code, body = http(port, "/api/decisions", "POST", {"X-AutoMemory-Password": "correct horse"}, {"topic": "storage", "decision": "SQLite", "reason": "simple"})
+        rep.check(code == 200, "Protected: a decision is recorded with the password", f"{code} {body[:100]}")
+        code, body = http(port, "/api/decisions")
+        rep.check(code == 200 and "storage" in body, "decisions can be listed", body[:100])
+        mems = json.loads(http(port, "/api/memories")[1])
+        if mems:
+            mid = mems[0]["id"]
+            for path in ("pin", "archive"):
+                code, _ = http(port, f"/api/memories/{mid}/{path}", "POST", {}, {})
+                rep.check(code == 403, f"Protected: {path} is refused without the password", str(code))
+            code, _ = http(port, f"/api/memories/{mid}/update", "POST", {}, {"summary": "x"})
+            rep.check(code == 403, "Protected: editing a memory is refused without the password", str(code))
+        code, body = http(port, "/api/memories/hygiene")
+        rep.check(code == 200 and "items" in body, "GET /api/memories/hygiene answers", f"{code} {body[:80]}")
+        code, _ = http(port, "/api/memories/archive_many", "POST", {}, {"ids": ["x"]})
+        rep.check(code == 403, "Protected: bulk archive is refused without the password", str(code))
+        code, _ = http(port, "/api/locks/stop", "POST", {}, {})
+        rep.check(code == 403, "Protected: the kill switch is refused without the password", str(code))
+        code, _ = http(port, "/api/agents/connect", "POST", {}, {"agent": "claude"})
+        rep.check(code == 403, "Protected: connecting an agent is refused without the password", str(code))
+        code, body = http(port, "/api/agents/disconnect", "POST", {}, {"agent": "--everywhere", "dry_run": True})
+        rep.check(code == 400, "an agent name that is really a flag is refused (no argument injection)", f"{code} {body[:80]}")
+        code, body = http(port, "/api/agents/connect", "POST", {"X-AutoMemory-Password": "correct horse"}, {"agent": "--global"})
+        rep.check(code == 400, "connect refuses a flag as the agent name even with the password", f"{code} {body[:80]}")
+        code, body = http(port, "/api/password", "POST", {"X-AutoMemory-Password": "correct horse"}, {"password": "x"})
+        rep.check(code in (404, 405) or "<html" in body.lower(), "Terminal-only: there is no route to change the password (only the page shell answers)", f"{code} {body[:60]}")
+
         # Guessing is throttled: five wrong passwords lock the gate, even for the right one, for a minute.
         for _ in range(5):
             code, _ = http(port, "/api/proposals/decide_all", "POST",

@@ -173,6 +173,10 @@ pub async fn api_tool_backup(State(state): State<AppState>) -> Response {
         std::fs::create_dir_all(&dir)?;
         let dest = dir.join(format!("automemory-{}.db", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
         db.backup_to(&dest)?;
+        // Safe to repeat, so cap the disk it can use: keep the newest 10.
+        let mut old: Vec<_> = std::fs::read_dir(&dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "db")).collect();
+        old.sort();
+        for p in old.iter().rev().skip(10) { let _ = std::fs::remove_file(p); }
         Ok(format!("Saved {}", dest.display()))
     }))
 }
@@ -315,4 +319,41 @@ pub async fn api_activity(State(state): State<AppState>) -> Response {
         .map(|it| it.flatten().collect())
         .unwrap_or_default();
     Json(rows).into_response()
+}
+
+// ── Memory hygiene ──────────────────────────────────────────────────────────────────
+#[derive(Deserialize, Default)]
+pub struct HygieneQuery { pub project_id: Option<String> }
+
+/// GET /api/memories/hygiene: every active memory with a reason to look at it (never recalled, unused for 30 days, low confidence).
+pub async fn api_memory_hygiene(State(state): State<AppState>, axum::extract::Query(q): axum::extract::Query<HygieneQuery>) -> Response {
+    let now = chrono::Utc::now();
+    let days = |s: &str| chrono::DateTime::parse_from_rfc3339(s).map(|t| (now - t.with_timezone(&chrono::Utc)).num_days()).unwrap_or(0);
+    let rows = match state.db.hygiene_rows(q.project_id.as_deref()) { Ok(r) => r, Err(e) => return bad(e.to_string()) };
+    let items: Vec<_> = rows.into_iter().filter_map(|(id, summary, kind, confidence, created, recalled)| {
+        let age = days(&created);
+        let mut flags = Vec::new();
+        match recalled.as_deref() {
+            None if age >= 7 => flags.push("never_recalled"),
+            Some(r) if days(r) >= 30 => flags.push("unused_30d"),
+            _ => {}
+        }
+        if confidence < 0.4 { flags.push("low_confidence"); }
+        (!flags.is_empty()).then(|| json!({ "id": id, "summary": summary, "type": kind, "confidence": confidence, "age_days": age, "last_recalled_at": recalled, "flags": flags }))
+    }).collect();
+    Json(json!({ "count": items.len(), "items": items })).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct IdsPayload { pub ids: Vec<String> }
+
+/// POST /api/memories/archive_many: archives several memories at once (each can be restored).
+pub async fn api_memory_archive_many(State(state): State<AppState>, headers: HeaderMap, Json(p): Json<IdsPayload>) -> Response {
+    if let Some(r) = protected(&state, &headers, &format!("archive {} memories", p.ids.len())) { return r; }
+    if p.ids.len() > 500 { return bad("at most 500 at a time"); }
+    let mut done = Vec::new();
+    for id in &p.ids {
+        if matches!(state.db.archive_memory(id), Ok(true)) { done.push(id.clone()); }
+    }
+    Json(json!({ "archived": done })).into_response()
 }

@@ -339,6 +339,26 @@ impl Database {
         Ok(rows > 0)
     }
 
+    /// Records that these memories were handed to an agent (feeds the hygiene view). Does not touch `updated_at`.
+    pub fn mark_recalled(&self, ids: &[String]) {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn();
+        for id in ids {
+            let _ = conn.execute("UPDATE memories SET last_recalled_at = ?1 WHERE id = ?2", rusqlite::params![now, id]);
+        }
+    }
+
+    /// Active memories with what hygiene needs: age, last recall and confidence.
+    pub fn hygiene_rows(&self, project_id: Option<&str>) -> Result<Vec<(String, String, String, f64, String, Option<String>)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, summary, memory_type, confidence, created_at, last_recalled_at FROM memories
+             WHERE status = 'active' AND (?1 IS NULL OR project_id = ?1 OR project_id IS NULL) ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([project_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+        Ok(rows.flatten().collect())
+    }
+
     pub fn restore_memory(&self, id: &str) -> Result<bool> {
         let conn = self.conn();
         let rows = conn.execute(

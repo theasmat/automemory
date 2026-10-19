@@ -11,6 +11,10 @@ The agent runs are done by you (or a runner later); this tool makes them compara
       agent's claim. Appends a row to results/results.csv.
   run_eval.py report
       Per-arm success rate, tokens, time, and paired per-task comparison against `off`.
+  run_eval.py auto <task.toml> --cmd 'claude -p {prompt}' [--cmd-on ...] [--arms off,on] [--runs 3]
+      prepare + run the agent + score, for every arm and run.
+  run_eval.py gate [--save]
+      Fails when memory-on is worse than off, or under the stored baseline (baseline.json).
   run_eval.py selftest
       Checks the scoring and report maths on fake data (no agent, no network).
 
@@ -137,11 +141,78 @@ def summarize(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def report(_args):
+def report(args):
     path = RESULTS / "results.csv"
     if not path.exists():
         sys.exit("no results yet: run `score` first")
-    print(summarize(read_rows(path)))
+    rows = read_rows(path)
+    print(summarize(rows))
+    if args.md:
+        out = ["| arm | runs | success | tokens median (min-max) | seconds median (min-max) | corrections |", "|---|---|---|---|---|---|"]
+        for arm in ARMS:
+            rs = [r for r in rows if r["arm"] == arm]
+            if rs:
+                out.append(f"| {arm} | {len(rs)} | {statistics.mean(r['success'] for r in rs):.0%} | "
+                           f"{spread([r['tokens'] for r in rs])} | {spread([r['seconds'] for r in rs])} | "
+                           f"{statistics.mean(r['corrections'] for r in rs):.1f} |")
+        print("\n" + "\n".join(out))
+
+
+def auto(args):
+    """Runs the agent for you: prepare, run `--cmd-<arm>` in the worktree, score. One row per run.
+    Command templates take {prompt}; tokens are read from a `tokens=N` line the command prints (optional)."""
+    import re
+    import shlex
+    task = load_task(Path(args.task))
+    for arm in args.arms.split(","):
+        template = getattr(args, f"cmd_{arm}") or args.cmd
+        if not template:
+            sys.exit(f"no command for arm {arm}: pass --cmd or --cmd-{arm}")
+        for run in range(1, args.runs + 1):
+            ns = argparse.Namespace(task=args.task, arm=arm, run=run)
+            with open("/dev/null", "w") as null:
+                real, sys.stdout = sys.stdout, null
+                try:
+                    prepare(ns)
+                finally:
+                    sys.stdout = real
+            work = run_dir(task, arm, run) / "work"
+            t = time.perf_counter()
+            r = subprocess.run(template.replace("{prompt}", shlex.quote(task["prompt"])), shell=True, cwd=work,
+                               capture_output=True, text=True, timeout=args.timeout)
+            secs = time.perf_counter() - t
+            (work.parent / "agent.log").write_text(r.stdout + r.stderr)
+            m = re.search(r"tokens=(\d+)", r.stdout + r.stderr)
+            score(argparse.Namespace(task=args.task, arm=arm, run=run, tokens=int(m.group(1)) if m else 0,
+                                     seconds=round(secs, 1), corrections=0))
+
+
+def spread(values):
+    return f"{statistics.median(values):.0f} ({min(values):.0f}-{max(values):.0f})"
+
+
+def gate(args):
+    """Fails when memory-on is worse than off, or below the stored baseline (tests/eval/baseline.json)."""
+    import json
+    path = RESULTS / "results.csv"
+    if not path.exists():
+        sys.exit("no results yet")
+    rows = read_rows(path)
+    rate = lambda arm: statistics.mean(r["success"] for r in rows if r["arm"] == arm) if any(r["arm"] == arm for r in rows) else None
+    off, on = rate("off"), rate("on")
+    base_path = HERE / "baseline.json"
+    problems = []
+    if off is not None and on is not None and on < off:
+        problems.append(f"memory-on success {on:.0%} is below off {off:.0%}")
+    if base_path.exists() and on is not None:
+        floor = json.loads(base_path.read_text())["on_success"] - args.tolerance
+        if on < floor:
+            problems.append(f"memory-on success {on:.0%} is below baseline floor {floor:.0%}")
+    if args.save and on is not None:
+        base_path.write_text(json.dumps({"on_success": on, "off_success": off, "runs": len(rows)}, indent=2))
+        print(f"baseline saved: on {on:.0%}")
+    print("GATE FAILED: " + "; ".join(problems) if problems else "gate ok")
+    sys.exit(1 if problems else 0)
 
 
 def selftest(_args):
@@ -158,6 +229,21 @@ def selftest(_args):
         text = summarize(read_rows(csv_path))
     assert "on vs off over 2 paired tasks: mean success delta +50%" in text, text
     assert "better on 1, worse on 0, same on 1" in text, text
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "t.toml"
+        task.write_text('id = "auto-self"\nrepo = "%s"\nbase_commit = "HEAD"\nprompt = "make DONE.txt"\nverify = "test -f DONE.txt"\n' % HERE.parents[1])
+        global RESULTS
+        keep, RESULTS = RESULTS, Path(d) / "res"
+        try:
+            auto(argparse.Namespace(task=str(task), arms="off,on", runs=1, cmd="echo {prompt} > /dev/null; touch DONE.txt; echo tokens=42",
+                                    cmd_off=None, cmd_on=None, cmd_verify=None, timeout=60))
+            rows = read_rows(RESULTS / "results.csv")
+            assert len(rows) == 2 and all(r["success"] == 1 and r["tokens"] == 42 for r in rows), rows
+            subprocess.run(["git", "-C", str(HERE.parents[1]), "worktree", "prune"], check=False)
+        finally:
+            for w in (RESULTS / "auto-self").glob("*/work"):
+                subprocess.run(["git", "-C", str(HERE.parents[1]), "worktree", "remove", "--force", str(w)], capture_output=True)
+            RESULTS = keep
     print("selftest OK")
 
 
@@ -174,7 +260,22 @@ def main():
             p.add_argument("--seconds", type=float, default=0)
             p.add_argument("--corrections", type=int, default=0, help="times you had to repeat or correct context")
         p.set_defaults(fn=fn)
-    sub.add_parser("report").set_defaults(fn=report)
+    p = sub.add_parser("auto")
+    p.add_argument("task")
+    p.add_argument("--arms", default="off,on")
+    p.add_argument("--runs", type=int, default=3)
+    p.add_argument("--cmd", help="agent command, {prompt} is replaced; e.g. 'claude -p {prompt} --permission-mode acceptEdits'")
+    for a in ARMS:
+        p.add_argument(f"--cmd-{a}", help=f"override the command for arm {a} (e.g. a different HOME or MCP config)")
+    p.add_argument("--timeout", type=int, default=1800)
+    p.set_defaults(fn=auto)
+    p = sub.add_parser("report")
+    p.add_argument("--md", action="store_true", help="also print a markdown table with median and spread")
+    p.set_defaults(fn=report)
+    p = sub.add_parser("gate")
+    p.add_argument("--save", action="store_true", help="store the current memory-on success as the baseline")
+    p.add_argument("--tolerance", type=float, default=0.1)
+    p.set_defaults(fn=gate)
     sub.add_parser("selftest").set_defaults(fn=selftest)
     a = ap.parse_args()
     a.fn(a)

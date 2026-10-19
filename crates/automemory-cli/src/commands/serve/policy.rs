@@ -34,6 +34,7 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/demo", Tier::Protected, "load or remove sample data"),
     ("/api/mode", Tier::Protected, "safety mode"),
     ("/api/memories", Tier::Protected, "add a memory"),
+    ("/api/memories/archive_many", Tier::Protected, "archive several memories"),
     ("/api/memories/:id/archive", Tier::Protected, "archive a memory"),
     ("/api/memories/:id/update", Tier::Protected, "edit a memory"),
     ("/api/memories/:id/pin", Tier::Protected, "pin a memory as an invariant"),

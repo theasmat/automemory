@@ -38,6 +38,7 @@ run "eval harness maths"              python3 tests/eval/run_eval.py selftest
 if [ "$QUICK" = 0 ]; then
   run "CodeIntel smoke (real engine)" python3 tests/codeintel/smoke.py
   run "hook latency"                  python3 tests/perf/hook_p95.py 200 50
+  run "size and recall gates"         python3 tests/perf/gates.py
 fi
 if [ -d workers/sync-gateway/node_modules ]; then
   run "sync-gateway webhook tests"    bash -c 'cd workers/sync-gateway && npx vitest run test/webhook.test.ts'

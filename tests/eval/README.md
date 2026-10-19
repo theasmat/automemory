@@ -45,3 +45,14 @@ Per-arm success rate, tokens, seconds and corrections, then for each of `on` and
 per-task success delta against `off` and how many tasks got better, worse or stayed the same.
 Read it against the gate above; a small win on `non_inferable` tasks with no loss on `inferable`
 ones is the expected shape of a real result.
+
+## Automated runs, spread and the gate
+
+```bash
+python3 tests/eval/run_eval.py auto tests/eval/tasks/my-task.toml --arms off,on --runs 3 \
+  --cmd-off 'claude -p {prompt} --permission-mode acceptEdits' \
+  --cmd-on  'AUTOMEMORY_PASSWORD= claude -p {prompt} --permission-mode acceptEdits'   # connect the worktree first if your setup needs it
+python3 tests/eval/run_eval.py report --md      # median and min-max per arm
+python3 tests/eval/run_eval.py gate --save      # store the baseline; later `gate` fails on a regression
+```
+A command may print `tokens=N` to record tokens. Report medians and spread in FEATURES.md, with the date and agent versions.

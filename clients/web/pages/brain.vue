@@ -44,6 +44,33 @@
       />
     </div>
 
+    <!-- Tidy up: memories nobody uses -->
+    <Card title="Tidy up">
+      <template #actions>
+        <Button size="sm" variant="secondary" :loading="tidyLoading" @click="loadTidy">
+          {{ tidy === null ? 'Find unused notes' : 'Refresh' }}
+        </Button>
+      </template>
+      <p v-if="tidy === null" class="text-sm text-text-muted">Finds notes no agent has been given in a month, notes never used, and low-confidence ones. Archived notes are kept, not deleted.</p>
+      <p v-else-if="tidy.length === 0" class="text-sm text-text-muted">Nothing to tidy. Every note has been used recently.</p>
+      <div v-else class="space-y-2">
+        <label v-for="t in tidy" :key="t.id" class="flex items-start gap-3 text-sm cursor-pointer">
+          <input v-model="tidyPick" type="checkbox" :value="t.id" class="mt-1" />
+          <span class="flex-1 min-w-0">
+            <span class="text-text">{{ t.summary }}</span>
+            <span class="block text-xs text-text-muted">
+              {{ t.type }} &middot; {{ t.age_days }} days old &middot;
+              {{ t.flags.map((f: string) => tidyLabels[f] || f).join(', ') }}
+            </span>
+          </span>
+        </label>
+        <div class="flex gap-2 pt-2">
+          <Button size="sm" variant="secondary" @click="tidyPick = tidy.map((t: any) => t.id)">Select all</Button>
+          <Button size="sm" variant="primary" :disabled="!tidyPick.length" @click="archiveTidy">Archive {{ tidyPick.length }} selected</Button>
+        </div>
+      </div>
+    </Card>
+
     <!-- Notes List -->
     <div v-if="store.isLoading && store.memories.length === 0" class="space-y-3" aria-busy="true">
       <Skeleton v-for="n in 3" :key="n" height="h-28" />
@@ -195,7 +222,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
-import { api, protectedCall, safeCall } from '~/utils/api';
+import { api, apiGet, protectedCall, safeCall } from '~/utils/api';
 import { useAutoMemoryStore } from '~/stores/automemory';
 import { useToast } from '~/composables/useToast';
 import type { Memory } from '~/types';
@@ -318,6 +345,37 @@ async function handleExportRules() {
     }
   } finally {
     isExporting.value = false;
+  }
+}
+
+
+const tidy = ref<any[] | null>(null);
+const tidyPick = ref<string[]>([]);
+const tidyLoading = ref(false);
+const tidyLabels: Record<string, string> = {
+  never_recalled: 'never used',
+  unused_30d: 'not used for 30 days',
+  low_confidence: 'low confidence',
+};
+
+async function loadTidy() {
+  tidyLoading.value = true;
+  try {
+    const q = store.activeProject ? `?project_id=${encodeURIComponent(store.activeProject)}` : '';
+    const r = await apiGet<any>(`/api/memories/hygiene${q}`);
+    tidy.value = r.ok ? r.data.items : [];
+    tidyPick.value = [];
+  } finally {
+    tidyLoading.value = false;
+  }
+}
+
+async function archiveTidy() {
+  const r = await protectedCall('POST', '/api/memories/archive_many', `archive ${tidyPick.value.length} notes`, { ids: tidyPick.value });
+  if (r.ok) {
+    success(`${r.data.archived.length} notes archived (kept, not deleted).`);
+    await store.fetchMemories();
+    await loadTidy();
   }
 }
 

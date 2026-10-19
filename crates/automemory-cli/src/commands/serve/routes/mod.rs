@@ -25,6 +25,8 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/memories/hygiene", get(control::api_memory_hygiene))
+        .route("/api/memories/archive_many", post(control::api_memory_archive_many))
         .route("/api/memories/:id/pin", post(control::api_memory_pin))
         .route("/api/memories/:id/veto", post(control::api_memory_veto))
         .route("/api/memories/:id/restore", post(control::api_memory_restore))

@@ -255,6 +255,7 @@ impl<'a> RetrievalEngine<'a> {
         let mut decisions_and_facts = String::new();
         let mut warnings_str = String::new();
 
+        self.db.mark_recalled(&memories.iter().map(|m| m.id.clone()).collect::<Vec<_>>());
         for m in memories {
             let eval = self.decay_scorer.evaluate(
                 m.importance,
@@ -495,6 +496,7 @@ impl<'a> RetrievalEngine<'a> {
         let vec_results = self.vector_leg(&expanded_query, project_id, limit * 2);
 
         let scored_memories = self.scorer.fuse_and_rank(fts_results, vec_results, limit);
+        self.db.mark_recalled(&scored_memories.iter().map(|c| c.memory.id.clone()).collect::<Vec<_>>());
         for candidate in scored_memories {
             results.push(SearchResult {
                 id: candidate.memory.id,
