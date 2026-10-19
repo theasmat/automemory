@@ -255,5 +255,10 @@ nothing in the daemon). Goal: choose and add models freely, keep cloud keys in t
 Tests: mock embedding server (exists) with an `Authorization` check, key redaction grep, keychain fake, scenario `tests/scenarios/embeddings_modes.py` extended for profiles
 and keys, dashboard scenario for `/api/recall` (human gate, key never returned).
 
-Decisions to confirm: the `keyring` dependency versus small per-OS shims (recommended: `keyring`); which clouds first (recommended: OpenAI-compatible, which covers most);
-whether provider choices (not keys) should sync between machines (recommended: no for now).
+**Decisions (settled Oct 2026)**
+1. Keys use the **`keyring` crate** (native Keychain / Credential Manager / Secret Service), not per-OS shell shims; the encrypted file is only the fallback where no keychain exists.
+2. First cloud support is the **OpenAI-compatible adapter** (OpenAI, Gemini's compatible endpoint, Mistral, Jina, Together, LM Studio, vLLM, LiteLLM). Native Cohere / Voyage / Gemini
+   adapters wait for E5.
+3. **Provider choices are not synced** between machines; each machine picks its own profile. **Keys are never synced.**
+4. The master key moves to the same `keyring` backend in E1, so no secret is ever passed on a command line.
+5. Cloud use is **off by default**: a non-local endpoint needs `allow_network`, and a `private` project can forbid cloud profiles.

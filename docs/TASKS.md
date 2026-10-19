@@ -89,7 +89,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Configurable embeddings and secure keys (plan: PLAN §10)
 
-- [ ] E1 `secrets.rs` (keychain, encrypted-file fallback), `embeddings key set|status|remove`, master key off the command line
+- [ ] E1 `secrets.rs` on the `keyring` crate (decided; encrypted-file fallback only without a keychain), `embeddings key set|status|remove`, master key off the command line
 - [ ] E2 profiles + preset catalog, `embeddings profile ...`, `embeddings models`, config migration
 - [ ] E3 `/api/recall` and a real Recall settings page (today it only saves to the browser)
 - [ ] E4 background indexing worker with progress, cost guard, unused-vector cleanup
