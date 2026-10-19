@@ -74,6 +74,20 @@ export const apiGet = request;
  * fetch for safety-gated writes. When a human password is set the server answers 403;
  * prompts using the masked PasswordModal, remembers for this tab (sessionStorage) and retries.
  */
+let remembered: { value: string; at: number } | null = null;
+const REMEMBER_MS = 2 * 60 * 1000;
+const remember = (value: string) => {
+  remembered = { value, at: Date.now() };
+};
+const forgetPassword = () => {
+  remembered = null;
+};
+function rememberedPassword(): string | null {
+  if (remembered && Date.now() - remembered.at < REMEMBER_MS) return remembered.value;
+  remembered = null;
+  return null;
+}
+
 export async function humanFetch(
   endpoint: string,
   actionName: string = 'this action',
@@ -87,12 +101,8 @@ export async function humanFetch(
     },
   });
 
-  let password: string | null = null;
-  try {
-    password = sessionStorage.getItem('am_human_password');
-  } catch {
-    /* storage blocked */
-  }
+  // The password is kept in memory only, for two minutes, so every change after that asks again.
+  let password: string | null = rememberedPassword();
 
   let res = await fetch(endpoint, withPassword(password));
   const needsPassword = async (r: Response) =>
@@ -102,19 +112,12 @@ export async function humanFetch(
     const { promptPassword, setError } = usePasswordModal();
     const entered = await promptPassword(actionName);
     if (entered) {
-      try {
-        sessionStorage.setItem('am_human_password', entered);
-      } catch {
-        /* storage blocked */
-      }
       res = await fetch(endpoint, withPassword(entered));
       if (await needsPassword(res)) {
-        try {
-          sessionStorage.removeItem('am_human_password');
-        } catch {
-          /* storage blocked */
-        }
+        forgetPassword();
         setError('Wrong password. Please try again.');
+      } else {
+        remember(entered);
       }
     }
   }

@@ -361,3 +361,19 @@ Audit evidence from the same output (confirms T6b for both agents): `hook.deny` 
 Not reported yet: dashboard part (masked prompt on changing the mode, wrong password rejected with a clear message, right one accepted,
 asked only once per tab) and the clarity of the error text.
 
+### 2026-10-19 T9 follow-up: tester reported "mode changed and a rule deleted without a password prompt"
+
+Checks by the maintainer (password was set, `password_hash` present in config.toml)
+- Server: `POST /api/mode` without the header returns 403 "needs the human password" on a fresh daemon; rule add/delete/toggle use the same gate.
+- Browser, fresh tab: clicking Balanced opens the "Human Approval Required" dialog with a masked field. So the gate and the dialog work.
+- Likely cause of the report: the dashboard **remembered the password for the whole tab** (sessionStorage) after one correct entry, so later
+  changes (mode, rule delete) went through silently. By design, but too lax for a safety gate.
+
+Found and fixed (installed)
+1. The password is now kept **in memory only, for 2 minutes** (not in sessionStorage); every change after that asks again, and a reload forgets it.
+2. **Bug from the T8 change**: the dashboard sent the project *id* to `POST /api/mode`, which expects a slug, so it created a stray project named
+   after the id and set the mode there; with "All projects" it created a project called `default`. The server now accepts an id or a slug, uses the
+   only real project when none is given (400 if ambiguous) and no longer invents `default`. Verified in a scratch daemon.
+3. The two stray projects in the trial database (slug = the project id, and `default`, both with no memories, decisions or events) were removed.
+   The real project's mode is currently **review** (it was changed from the dashboard); set it back with `automemory mode set strict`.
+

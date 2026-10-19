@@ -84,12 +84,26 @@ pub async fn api_set_mode(
         }
     };
 
-    let slug = payload
-        .project
-        .clone()
-        .unwrap_or_else(|| "default".to_string());
+    // `project` may be an id or a slug. With none given, use the only real project; never invent a "default" one.
+    let existing = match payload.project.as_deref() {
+        Some(p) => state
+            .db
+            .get_project_by_id(p)
+            .ok()
+            .flatten()
+            .or_else(|| state.db.get_project_by_slug(p).ok().flatten()),
+        None => {
+            let mut real = state.db.list_projects().unwrap_or_default().into_iter().filter(|p| p.id != "demo" && p.slug != "default");
+            let only = real.next().filter(|_| real.next().is_none());
+            if only.is_none() {
+                return (StatusCode::BAD_REQUEST, Json(json!({"error": "Choose a project first (more than one exists, or none)."})));
+            }
+            only
+        }
+    };
+    let slug = existing.as_ref().map(|p| p.slug.clone()).or(payload.project.clone()).unwrap_or_default();
 
-    if let Ok(Some(mut project)) = state.db.get_project_by_slug(&slug) {
+    if let Some(mut project) = existing {
         project.capture_policy.mode = mode;
         project.updated_at = Utc::now();
         let _ = state.db.save_project(&project);
