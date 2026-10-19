@@ -95,6 +95,14 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] E4 indexing with progress, retries, daily token cap and cost estimate, cancel, unused-vector cleanup (`embeddings reindex|clean`, `/api/recall/index`)
 - [ ] E5 native Cohere/Voyage/Gemini adapters, ONNX feature (not started; the OpenAI-compatible adapter covers most services)
 
+## Control everything safe from the dashboard (plan: PLAN §11)
+
+- [ ] U1 `policy.rs` tiers + route audit test, job runner (`/api/jobs`, Jobs tray), indexing on it, local indexing without password
+- [ ] U2 `ops/` extraction (doctor, export-rules, hand-off, sync, docs rescan, graph index, eval, backup) and Settings > Tools / Health
+- [ ] U3 Agents > Set up an agent (preview, connect, disconnect)
+- [ ] U4 Decisions view; restore, pin, veto, revoke in Project brain
+- [ ] U5 Settings > Locks and Data; activity log view
+
 ## Docs hygiene
 
 - [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 212 Rust tests at last check)
