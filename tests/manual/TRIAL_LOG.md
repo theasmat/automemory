@@ -24,7 +24,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T6 | Safety: a destructive command is denied | PASS | 2026-10-19 |
 | T7 | Instruction files: `export-rules` block read by another agent | PASS | 2026-10-19 |
 | T8 | Dashboard: pages show real data, tour and Settings work | PASS | 2026-10-19 |
-| T9 | Human password gate | PARTIAL (agent pass; dashboard pending) | 2026-10-19 |
+| T9 | Human password gate | PASS | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 
 ## Test cases
@@ -386,4 +386,6 @@ Found and fixed (installed)
   guess against the local API. Covered by `tests/scenarios/dashboard.py`.
 - Unchanged: agents cannot pass the gate (CLI asks on the terminal, MCP decide is refused, REST needs the header).
 - Retest T9 dashboard half: every click on Balanced / Strict / rule delete must ask; two actions in a row ask twice.
+
+### 2026-10-19 T9 Human password gate: PASS (dashboard half confirmed by the tester after the hardening: "yes it fixed")
 
