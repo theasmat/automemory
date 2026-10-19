@@ -47,8 +47,12 @@ pub(crate) fn off_runtime<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Resu
     std::thread::scope(|s| s.spawn(f).join().unwrap_or_else(|_| Err(anyhow!("embedding thread panicked"))))
 }
 
+/// True only when the URL's host is this machine. Compares the parsed host: a substring test would accept
+/// `http://localhost.evil.com` or `https://evil.com/?//localhost` and skip the consent and redaction rules.
 pub(crate) fn is_loopback(url: &str) -> bool {
-    ["//localhost", "//127.0.0.1", "//[::1]", "//0.0.0.0"].iter().any(|h| url.contains(h))
+    reqwest::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).is_some_and(|h| {
+        matches!(h.as_str(), "localhost" | "127.0.0.1" | "[::1]" | "::1" | "0.0.0.0") || h.ends_with(".localhost")
+    })
 }
 
 // ── Ollama ──────────────────────────────────────────────────────────────────────────
@@ -488,6 +492,16 @@ mod tests {
         let toml = "[retrieval]\nmode = \"hybrid\"\n[embeddings]\nprovider = \"ollama\"\nmodel = \"nomic-embed-text\"\n";
         let parsed: crate::config::GlobalConfig = toml::from_str(toml).unwrap();
         assert!(parsed.retrieval.is_hybrid() && parsed.embeddings.provider == "ollama");
+    }
+
+    #[test]
+    fn only_this_machine_counts_as_local() {
+        for ok in ["http://localhost:11434", "http://127.0.0.1:8080/v1", "http://[::1]:9/v1", "http://app.localhost/v1"] {
+            assert!(is_loopback(ok), "{ok}");
+        }
+        for bad in ["http://localhost.evil.com/v1", "https://evil.com/?//localhost", "https://evil.com/127.0.0.1", "http://127.0.0.1.evil.com", "not a url", ""] {
+            assert!(!is_loopback(bad), "{bad}");
+        }
     }
 
     #[test]

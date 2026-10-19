@@ -75,8 +75,21 @@ pub enum Outcome {
     Unchanged,
 }
 
+/// False when the file is a symlink or sits behind one that leaves the repository: a hostile repo could point
+/// `AGENTS.md` at `~/.ssh/...` to have its content copied into the repo (or `.cursor` at a system folder).
+fn stays_inside(root: &Path, path: &Path) -> bool {
+    if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return false;
+    }
+    let Ok(root) = root.canonicalize() else { return false };
+    path.ancestors().skip(1).find_map(|a| a.canonicalize().ok()).is_some_and(|a| a.starts_with(&root))
+}
+
 fn write_one(root: &Path, t: &Target, view: &str, create: bool) -> Result<Option<Outcome>> {
     let path = root.join(t.path);
+    if !stays_inside(root, &path) {
+        return Ok(None);
+    }
     let existing = fs::read_to_string(&path).ok();
     if existing.is_none() && !create {
         return Ok(None);
@@ -98,6 +111,9 @@ fn write_one(root: &Path, t: &Target, view: &str, create: bool) -> Result<Option
 /// Removes our block from one file; a file left with nothing (or only front matter we wrote) is deleted.
 pub fn remove_one(root: &Path, t: &Target) -> Result<bool> {
     let path = root.join(t.path);
+    if !stays_inside(root, &path) {
+        return Ok(false);
+    }
     let Ok(text) = fs::read_to_string(&path) else { return Ok(false) };
     if !text.contains("<!-- automemory:begin") {
         return Ok(false);
@@ -194,6 +210,26 @@ pub fn refresh_existing(db: &Database, project_id: Option<&str>, cwd: &Path) {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_instruction_file_is_never_read_or_written_through() {
+        let dir = std::env::temp_dir().join(format!("am-symlink-{}", std::process::id()));
+        let (repo, outside) = (dir.join("repo"), dir.join("outside"));
+        fs::create_dir_all(&repo).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret"), "TOP SECRET").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret"), repo.join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink(&outside, repo.join(".cursor")).unwrap();
+        let agents = TARGETS.iter().find(|t| t.agent == "agents").unwrap();
+        let cursor = TARGETS.iter().find(|t| t.agent == "cursor").unwrap();
+        assert!(write_one(&repo, agents, "- x", true).unwrap().is_none());
+        assert!(write_one(&repo, cursor, "- x", true).unwrap().is_none());
+        assert_eq!(fs::read_to_string(outside.join("secret")).unwrap(), "TOP SECRET");
+        assert!(!outside.join("rules").exists());
+        assert!(fs::symlink_metadata(repo.join("AGENTS.md")).unwrap().file_type().is_symlink(), "the link is left alone");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn splice_appends_replaces_and_strips_without_touching_user_text() {
         let user = "# My rules\n\nUse tabs.\n";
@@ -215,6 +251,7 @@ mod tests {
     fn dedicated_files_get_front_matter_and_are_deleted_on_remove() {
         let dir = std::env::temp_dir().join(format!("am-rules-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         let cursor = TARGETS.iter().find(|t| t.agent == "cursor").unwrap();
         assert_eq!(write_one(&dir, cursor, "- x", false).unwrap(), None, "refresh never creates");
         assert_eq!(write_one(&dir, cursor, "- x", true).unwrap(), Some(Outcome::Created));

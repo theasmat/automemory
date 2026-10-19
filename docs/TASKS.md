@@ -108,11 +108,11 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] N1 Proof: eval harness with/without AutoMemory, published numbers, CI gate
 - [x] N2 Optional LLM helper: conflicts, duplicates, session distill (proposals only; one profile; staleness check not built)
 - [x] N3 Memory hygiene UI: confidence, last used, never recalled, bulk archive
-- [ ] N4 More agents: Cursor, Windsurf, Gemini CLI, Copilot (export-rules + MCP, contract fixtures)
+- [x] N4 Agent matrix test: 13 agents connect, get their instruction file and disconnect cleanly. Hooks/contract fixtures for Cursor, Windsurf, Gemini CLI, Copilot still need recorded real payloads (they stay experimental, MCP + rules only)
 - [ ] N5 Team sync: shared remote, per-person trust
 - [x] N6 Performance gate in CI (hook latency, recall, binary size)
 - [ ] N7 Packaging: Homebrew, signed installer, `automemory update`
-- [ ] N8 Hardening audit of `serve/` and the hook path (localhost threat model); run before N5
+- [x] N8 Hardening audit of `serve/`, sync and export-rules. Fixed: plaintext sync deltas accepted by a keyed vault (forged trusted memories), `is_loopback` substring bypass (`localhost.evil.com` skipped consent and redaction), export-rules following symlinks out of the repo, unbounded backups, agent name as CLI flag. Not covered: fuzzing the hook JSON parsers
 - [ ] Small leftovers: T10 trial, lock icons from `/api/policy`, richer "recently blocked" view, decision-card wording
 
 ## Docs hygiene

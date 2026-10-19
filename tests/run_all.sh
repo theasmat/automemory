@@ -28,6 +28,7 @@ run "session lifecycle"               python3 tests/scenarios/session_lifecycle.
 run "two machines (git vault)"        python3 tests/scenarios/two_machines.py
 run "embeddings modes"                python3 tests/scenarios/embeddings_modes.py
 run "optional LLM helper"             python3 tests/scenarios/llm_helper.py
+run "agent matrix"                    python3 tests/scenarios/agents_matrix.py
 run "shared instruction files"        python3 tests/scenarios/rules_export.py
 run "registration + hook robustness"  python3 tests/scenarios/registration.py
 run "human password gate"             python3 tests/scenarios/human_gate.py
