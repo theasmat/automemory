@@ -103,7 +103,7 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
 /// agents invoke hooks) can never satisfy it. Returns None when no secure
 /// prompt is possible — callers must deny, never fall back to echoing.
 #[cfg(unix)]
-fn prompt_secure(prompt: &str) -> Option<String> {
+pub fn prompt_secure(prompt: &str) -> Option<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 

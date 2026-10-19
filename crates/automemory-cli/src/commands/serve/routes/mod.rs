@@ -1,5 +1,6 @@
 pub mod guardrails;
 pub mod memories;
+pub mod recall;
 pub mod setup;
 pub mod stats;
 pub mod sync;
@@ -23,6 +24,14 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/recall", get(recall::api_get).put(recall::api_put))
+        .route("/api/recall/profile", post(recall::api_profile_save))
+        .route("/api/recall/profile/:name", delete(recall::api_profile_delete))
+        .route("/api/recall/key", axum::routing::put(recall::api_key_set).delete(recall::api_key_delete))
+        .route("/api/recall/test", post(recall::api_test))
+        .route("/api/recall/index", post(recall::api_index))
+        .route("/api/recall/index/cancel", post(recall::api_index_cancel))
+        .route("/api/recall/clean", post(recall::api_clean))
         .route("/api/stats", get(stats::api_stats))
         .route("/api/coordination", get(stats::api_coordination))
         .route(

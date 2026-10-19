@@ -56,7 +56,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Candidate tier, promote on verify/human confirm | ✅ | `propose` rejected without provenance |
 | Scope-aware dedup + version history | ✅ | In-place upsert |
 | Decay, supersede chains, contradiction flag | ✅ | Contradiction = same tool, different version |
-| Vector search | ✅ keyword (default) or hybrid; providers ngram, ollama, openai-compatible, exec | `onnx` build feature |
+| Vector search | ✅ keyword (default) or hybrid; saved model profiles (ngram, Ollama, any OpenAI-compatible endpoint, a command), preset catalog, cloud API keys in the OS keychain (never in a file), real Recall settings page with test, background indexing with progress, cost estimate and daily cap | Cohere / Voyage / native Gemini adapters, `onnx` build feature |
 | Procedural skills from trajectories | ✅ | `memory.skills` |
 | Failure catalog (`failure.save/resolve`, proactive warning) | ✅ | |
 | Constitution + token-capped context | ✅ | `boot_injection` off by default |
@@ -109,7 +109,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 210 Rust tests + 14 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 212 Rust tests + 14 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

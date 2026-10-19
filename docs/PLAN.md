@@ -255,6 +255,8 @@ nothing in the daemon). Goal: choose and add models freely, keep cloud keys in t
 Tests: mock embedding server (exists) with an `Authorization` check, key redaction grep, keychain fake, scenario `tests/scenarios/embeddings_modes.py` extended for profiles
 and keys, dashboard scenario for `/api/recall` (human gate, key never returned).
 
+**Status (Oct 2026):** E1 to E4 built and tested (`secrets.rs`, profiles and presets, `/api/recall`, Recall page, indexing with progress; scenarios `embeddings_modes.py` and `dashboard.py`). E5 not started.
+
 **Decisions (settled Oct 2026)**
 1. Keys use the **`keyring` crate** (native Keychain / Credential Manager / Secret Service), not per-OS shell shims; the encrypted file is only the fallback where no keychain exists.
 2. First cloud support is the **OpenAI-compatible adapter** (OpenAI, Gemini's compatible endpoint, Mistral, Jina, Together, LM Studio, vLLM, LiteLLM). Native Cohere / Voyage / Gemini

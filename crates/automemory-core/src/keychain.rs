@@ -8,6 +8,18 @@ const KEYCHAIN_ACCOUNT: &str = "automemory";
 
 /// Retrieves the 32-byte AES-256 master key from the OS Keychain, or falls back to disk.
 pub fn get_master_key() -> Option<[u8; 32]> {
+    // 0. The keyring entry written by set_master_key
+    if std::env::var("AUTOMEMORY_SECRETS_BACKEND").map_or(true, |v| v != "file") {
+        if let Some(b64) = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).ok().and_then(|e| e.get_password().ok()) {
+            if let Ok(bytes) = BASE64.decode(b64.trim()) {
+                if bytes.len() == 32 {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&bytes);
+                    return Some(key);
+                }
+            }
+        }
+    }
     // 1. Try OS Keychain on macOS
     #[cfg(target_os = "macos")]
     {
@@ -57,21 +69,11 @@ pub fn get_master_key() -> Option<[u8; 32]> {
 pub fn set_master_key(key: &[u8; 32]) -> Result<()> {
     let b64 = BASE64.encode(key);
 
-    // 1. Save to OS Keychain on macOS
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("/usr/bin/security")
-            .args([
-                "add-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                KEYCHAIN_ACCOUNT,
-                "-w",
-                &b64,
-                "-U",
-            ])
-            .output();
+    // 1. OS keychain through the keyring crate (the key never appears on a command line)
+    if std::env::var("AUTOMEMORY_SECRETS_BACKEND").map_or(true, |v| v != "file") {
+        if let Ok(e) = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) {
+            let _ = e.set_password(&b64);
+        }
     }
 
     // 2. Save to ~/.automemory/master.key with strict permissions

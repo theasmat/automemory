@@ -1450,6 +1450,21 @@ async fn main() -> Result<()> {
                 commands::embeddings::use_provider(provider, model, endpoint, api_key_env, allow_network)?
             }
             EmbeddingsCommands::Off => commands::embeddings::off()?,
+            EmbeddingsCommands::Key { command } => match command {
+                EmbeddingsKeyCommands::Set { profile, stdin, from_env } => commands::embeddings::key_set(profile, stdin, from_env)?,
+                EmbeddingsKeyCommands::Status { profile } => commands::embeddings::key_status(profile)?,
+                EmbeddingsKeyCommands::Remove { profile } => commands::embeddings::key_remove(profile)?,
+            },
+            EmbeddingsCommands::Profile { command } => match command {
+                EmbeddingsProfileCommands::List => commands::embeddings::profile_list()?,
+                EmbeddingsProfileCommands::Add { name, preset, provider, model, endpoint, dimensions, allow_network } => {
+                    commands::embeddings::profile_add(name, preset, provider, model, endpoint, dimensions, allow_network)?
+                }
+                EmbeddingsProfileCommands::Use { name } => commands::embeddings::profile_use(name)?,
+                EmbeddingsProfileCommands::Remove { name } => commands::embeddings::profile_remove(name)?,
+            },
+            EmbeddingsCommands::Models => commands::embeddings::models()?,
+            EmbeddingsCommands::Clean => commands::embeddings::clean()?,
             EmbeddingsCommands::Eval { file } => commands::embeddings::eval(file)?,
         },
         Commands::Resume => commands::continuity::resume()?,
@@ -1595,6 +1610,20 @@ enum EmbeddingsCommands {
     },
     /// Back to keyword recall
     Off,
+    /// API key for a cloud profile, kept in the OS keychain
+    Key {
+        #[command(subcommand)]
+        command: EmbeddingsKeyCommands,
+    },
+    /// Saved provider setups (switch between local and cloud)
+    Profile {
+        #[command(subcommand)]
+        command: EmbeddingsProfileCommands,
+    },
+    /// Ready-made models, and what your local Ollama has installed
+    Models,
+    /// Remove vectors of models that are no longer in use
+    Clean,
     /// Compare keyword and hybrid on labelled queries (JSON file)
     Eval { file: std::path::PathBuf },
 }
@@ -1615,4 +1644,48 @@ fn maybe_print_tour_hint(command: &Commands) {
             eprintln!("New here? Run `automemory tour` (5 min)");
         }
     }
+}
+
+#[derive(Subcommand)]
+enum EmbeddingsKeyCommands {
+    /// Store the key (hidden prompt; or --stdin; or --from-env VAR)
+    Set {
+        /// Profile name (default: the active one)
+        profile: Option<String>,
+        #[arg(long)]
+        stdin: bool,
+        #[arg(long)]
+        from_env: Option<String>,
+    },
+    /// Where the key comes from (never prints it)
+    Status { profile: Option<String> },
+    /// Delete the stored key
+    Remove { profile: Option<String> },
+}
+
+#[derive(Subcommand)]
+enum EmbeddingsProfileCommands {
+    /// List profiles and key status
+    List,
+    /// Save a profile from a preset (`embeddings models`) and/or your own values
+    Add {
+        name: String,
+        #[arg(long)]
+        preset: Option<String>,
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        dimensions: Option<usize>,
+        /// Allow memory text to be sent to a non-local endpoint
+        #[arg(long)]
+        allow_network: bool,
+    },
+    /// Switch to a profile and turn hybrid recall on
+    Use { name: String },
+    /// Delete a profile and its stored key
+    Remove { name: String },
 }

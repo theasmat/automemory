@@ -91,7 +91,8 @@ impl EmbeddingProvider for OllamaProvider {
 pub struct OpenAiProvider {
     endpoint: String,
     model: String,
-    key_env: String,
+    /// Read from the keychain (or the environment) when the provider is built; never written anywhere.
+    key: Option<String>,
     dimensions: Option<usize>,
     timeout: Duration,
 }
@@ -108,10 +109,7 @@ impl EmbeddingProvider for OpenAiProvider {
         if let Some(d) = self.dimensions {
             body["dimensions"] = json!(d);
         }
-        let key = if self.key_env.is_empty() { None } else { std::env::var(&self.key_env).ok() };
-        if !self.key_env.is_empty() && key.is_none() {
-            bail!("environment variable {} (api_key_env) is not set", self.key_env);
-        }
+        let key = self.key.clone();
         let (url, timeout, n) = (format!("{}/embeddings", self.endpoint.trim_end_matches('/')), self.timeout, texts.len());
         off_runtime(move || {
             let client = reqwest::blocking::Client::builder().timeout(timeout).build()?;
@@ -196,7 +194,8 @@ impl EmbeddingProvider for ExecProvider {
 
 /// Builds the provider named in `[embeddings]`. Errors are explicit (missing endpoint, network not
 /// allowed, optional feature not built) so `embeddings test` can say what to fix.
-pub fn provider_from_settings(s: &EmbeddingSettings) -> Result<Box<dyn EmbeddingProvider>> {
+pub fn provider_from_settings(settings: &EmbeddingSettings) -> Result<Box<dyn EmbeddingProvider>> {
+    let s = &settings.resolved();
     let timeout = Duration::from_secs(s.timeout_secs.max(1));
     match s.provider.to_ascii_lowercase().as_str() {
         "" | "ngram" | "local" => Ok(Box::new(LocalEmbeddings::new())),
@@ -218,13 +217,17 @@ pub fn provider_from_settings(s: &EmbeddingSettings) -> Result<Box<dyn Embedding
             if !is_loopback(&endpoint) && !s.allow_network {
                 bail!("{endpoint} would receive memory text: set allow_network = true to allow it");
             }
-            if !is_loopback(&endpoint) && s.api_key_env.is_empty() {
-                bail!("[embeddings] api_key_env must name the environment variable holding the API key");
+            let key = crate::secrets::resolve(&s.secret_name(), Some(&s.api_key_env));
+            if !is_loopback(&endpoint) && key.is_none() {
+                bail!(
+                    "no API key for profile '{}': run `automemory embeddings key set {}` (stored in the OS keychain)",
+                    s.active, s.active
+                );
             }
             Ok(Box::new(OpenAiProvider {
                 endpoint,
                 model: s.model.clone(),
-                key_env: s.api_key_env.clone(),
+                key,
                 dimensions: s.dimensions,
                 timeout,
             }))
@@ -262,6 +265,124 @@ pub fn reindex_all(db: &Database, provider: &dyn EmbeddingProvider) -> Result<us
     let model = provider.model_id();
     db.conn().execute("DELETE FROM memory_vectors WHERE model = ?1", rusqlite::params![model])?;
     index_pending(db, provider, usize::MAX)
+}
+
+/// A ready-made provider setup offered in the CLI and the dashboard. Vendor catalogs change, so check the
+/// model names and sizes against the vendor's page before relying on them.
+pub struct Preset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub provider: &'static str,
+    pub model: &'static str,
+    pub dimensions: Option<usize>,
+    pub endpoint: &'static str,
+    pub local: bool,
+    pub note: &'static str,
+}
+
+pub const PRESETS: &[Preset] = &[
+    Preset { id: "ollama-nomic", label: "Ollama: nomic-embed-text", provider: "ollama", model: "nomic-embed-text", dimensions: Some(768), endpoint: "http://127.0.0.1:11434", local: true, note: "Free, runs on this computer. `ollama pull nomic-embed-text`" },
+    Preset { id: "ollama-mxbai", label: "Ollama: mxbai-embed-large", provider: "ollama", model: "mxbai-embed-large", dimensions: Some(1024), endpoint: "http://127.0.0.1:11434", local: true, note: "Free, larger and slower than nomic" },
+    Preset { id: "ollama-bge-m3", label: "Ollama: bge-m3", provider: "ollama", model: "bge-m3", dimensions: Some(1024), endpoint: "http://127.0.0.1:11434", local: true, note: "Free, strong for many languages" },
+    Preset { id: "ollama-minilm", label: "Ollama: all-minilm", provider: "ollama", model: "all-minilm", dimensions: Some(384), endpoint: "http://127.0.0.1:11434", local: true, note: "Free, smallest and fastest" },
+    Preset { id: "openai-small", label: "OpenAI: text-embedding-3-small", provider: "openai", model: "text-embedding-3-small", dimensions: Some(1536), endpoint: "https://api.openai.com/v1", local: false, note: "Cloud, low cost; sends memory text to OpenAI" },
+    Preset { id: "openai-large", label: "OpenAI: text-embedding-3-large", provider: "openai", model: "text-embedding-3-large", dimensions: Some(3072), endpoint: "https://api.openai.com/v1", local: false, note: "Cloud, best quality of the three; vector size can be shortened" },
+    Preset { id: "gemini", label: "Gemini (OpenAI-compatible)", provider: "openai", model: "text-embedding-004", dimensions: Some(768), endpoint: "https://generativelanguage.googleapis.com/v1beta/openai", local: false, note: "Cloud; use a Gemini API key" },
+    Preset { id: "mistral", label: "Mistral: mistral-embed", provider: "openai", model: "mistral-embed", dimensions: Some(1024), endpoint: "https://api.mistral.ai/v1", local: false, note: "Cloud" },
+    Preset { id: "jina", label: "Jina: jina-embeddings-v3", provider: "openai", model: "jina-embeddings-v3", dimensions: Some(1024), endpoint: "https://api.jina.ai/v1", local: false, note: "Cloud" },
+    Preset { id: "lmstudio", label: "LM Studio (local server)", provider: "openai", model: "", endpoint: "http://127.0.0.1:1234/v1", dimensions: None, local: true, note: "Any embedding model loaded in LM Studio; enter its model id" },
+    Preset { id: "custom-http", label: "Your own OpenAI-compatible endpoint", provider: "openai", model: "", dimensions: None, endpoint: "", local: false, note: "vLLM, LiteLLM, Azure and others; enter endpoint and model" },
+    Preset { id: "command", label: "A command you provide", provider: "exec", model: "", dimensions: None, endpoint: "", local: true, note: "JSON texts on stdin, JSON vectors on stdout" },
+];
+
+/// Rough US dollars per million tokens for the models we know (an estimate, shown as such).
+pub fn price_per_million_tokens(model: &str) -> Option<f64> {
+    match model {
+        "text-embedding-3-small" => Some(0.02),
+        "text-embedding-3-large" => Some(0.13),
+        "text-embedding-004" | "mistral-embed" => Some(0.0),
+        _ => None,
+    }
+}
+
+/// About four characters per token.
+pub fn estimate_tokens(text: &str) -> u64 {
+    (text.chars().count() as u64).div_ceil(4)
+}
+
+fn tokens_key() -> String {
+    format!("embed_tokens:{}", chrono::Utc::now().format("%Y%m%d"))
+}
+
+pub fn tokens_today(db: &Database) -> u64 {
+    db.sync_kv_get(&tokens_key()).and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+/// Memories still to embed for this provider's model, and the tokens that would take.
+pub fn pending_estimate(db: &Database, provider: &dyn EmbeddingProvider) -> Result<(usize, u64)> {
+    let pending = db.memories_needing_vectors(&provider.model_id(), usize::MAX)?;
+    Ok((pending.len(), pending.iter().map(|(_, t, _)| estimate_tokens(t)).sum()))
+}
+
+/// Embeds everything that is missing, in batches, with retries; reports `(done, total)` after each batch and
+/// stops when `cancel` is set or the day's token cap for a non-local provider would be passed.
+pub fn index_with_progress(
+    db: &Database,
+    provider: &dyn EmbeddingProvider,
+    daily_token_cap: u64,
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<usize> {
+    use std::sync::atomic::Ordering;
+    let model = provider.model_id();
+    let total = db.memories_needing_vectors(&model, usize::MAX)?.len();
+    let mut done = 0;
+    progress(done, total);
+    while !cancel.load(Ordering::Relaxed) {
+        let batch = db.memories_needing_vectors(&model, 32)?;
+        if batch.is_empty() {
+            break;
+        }
+        let tokens: u64 = batch.iter().map(|(_, t, _)| estimate_tokens(t)).sum();
+        if !provider.is_local() && tokens_today(db) + tokens > daily_token_cap {
+            bail!("the daily limit of {daily_token_cap} tokens for cloud embedding was reached; it continues tomorrow, or raise `max_tokens_per_day`");
+        }
+        let texts: Vec<String> = batch.iter().map(|(_, t, _)| t.clone()).collect();
+        let mut vectors = None;
+        let mut last_err = None;
+        for attempt in 0..3u32 {
+            match provider.embed_batch(&texts) {
+                Ok(v) => {
+                    vectors = Some(v);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    std::thread::sleep(Duration::from_millis(400 * (1 << attempt)));
+                }
+            }
+        }
+        let Some(vectors) = vectors else { return Err(last_err.unwrap_or_else(|| anyhow!("embedding failed"))) };
+        for ((id, _, hash), vector) in batch.iter().zip(vectors) {
+            db.upsert_memory_vector(id, &model, &vector, hash)?;
+            done += 1;
+        }
+        if !provider.is_local() {
+            db.sync_kv_set(&tokens_key(), &(tokens_today(db) + tokens).to_string());
+        }
+        progress(done, total);
+    }
+    Ok(done)
+}
+
+/// Deletes the vectors of one model (a full re-index starts from nothing).
+pub fn drop_model_vectors(db: &Database, model: &str) -> Result<usize> {
+    Ok(db.conn().execute("DELETE FROM memory_vectors WHERE model = ?1", rusqlite::params![model])?)
+}
+
+/// Deletes vectors of every model except `keep_model`. Returns how many rows went.
+pub fn remove_unused_vectors(db: &Database, keep_model: &str) -> Result<usize> {
+    Ok(db.conn().execute("DELETE FROM memory_vectors WHERE model != ?1", rusqlite::params![keep_model])?)
 }
 
 /// One memory's text as it is embedded (exposed for tests and `embeddings test`).
@@ -380,8 +501,9 @@ mod tests {
         assert!(err(mk("ollama", "m", "http://gpu-box:11434", "", false)).contains("allow_network"));
         assert!(provider_from_settings(&mk("ollama", "m", "http://127.0.0.1:11434", "", false)).is_ok());
         assert!(err(mk("openai", "text-embedding-3-small", "", "OPENAI_API_KEY", false)).contains("allow_network"));
-        assert!(err(mk("openai", "text-embedding-3-small", "", "", true)).contains("api_key_env"));
-        assert!(provider_from_settings(&mk("openai", "m", "", "OPENAI_API_KEY", true)).is_ok());
+        assert!(err(mk("openai", "text-embedding-3-small", "", "", true)).contains("embeddings key set"));
+        std::env::set_var("AM_TEST_OPENAI_KEY", "sk-x");
+        assert!(provider_from_settings(&mk("openai", "m", "", "AM_TEST_OPENAI_KEY", true)).is_ok());
         assert!(err(mk("exec", "", "", "", false)).contains("command"));
         assert!(err(mk("onnx", "", "", "", false)).contains("optional build feature"));
         assert!(err(mk("magic", "", "", "", false)).contains("unknown embedding provider"));
@@ -408,7 +530,6 @@ mod tests {
 
     #[test]
     fn openai_sends_a_key_redacts_secrets_and_orders_rows() {
-        std::env::set_var("AM_TEST_EMBED_KEY", "sk-test-123");
         let (url, rx) = mock_server(|path, _| {
             assert_eq!(path, "/v1/embeddings");
             // Rows deliberately out of order.
@@ -416,7 +537,7 @@ mod tests {
         });
         // A loopback endpoint is treated as local; force the hosted code path by checking redaction on is_local=false separately.
         let p = OpenAiProvider {
-            endpoint: format!("{url}/v1"), model: "m".into(), key_env: "AM_TEST_EMBED_KEY".into(), dimensions: Some(2),
+            endpoint: format!("{url}/v1"), model: "m".into(), key: Some("sk-test-123".into()), dimensions: Some(2),
             timeout: Duration::from_secs(5),
         };
         assert_eq!(p.model_id(), "openai:m/2");
@@ -432,7 +553,7 @@ mod tests {
     fn a_hosted_openai_endpoint_never_receives_secrets() {
         // is_local() is false for a non-loopback endpoint, which turns redaction on.
         let p = OpenAiProvider {
-            endpoint: "https://embeddings.example.com/v1".into(), model: "m".into(), key_env: String::new(),
+            endpoint: "https://embeddings.example.com/v1".into(), model: "m".into(), key: None,
             dimensions: None, timeout: Duration::from_secs(1),
         };
         assert!(!p.is_local());
@@ -497,6 +618,47 @@ mod tests {
         assert_eq!(hits[0].0.id, "m1");
         assert!(db.search_memories_vector(&q, "nonexistent:model", None, 5).unwrap().is_empty());
         assert_eq!(reindex_all(&db, &a).unwrap(), 2);
+    }
+
+    #[test]
+    fn indexing_reports_progress_honours_the_daily_cap_and_cancel() {
+        use crate::models::*;
+        use std::sync::atomic::AtomicBool;
+        let db = Database::open_in_memory().unwrap();
+        let now = chrono::Utc::now();
+        for i in 0..40 {
+            let m = Memory {
+                id: format!("m{i}"), scope: MemoryScope::Global, project_id: None, memory_type: MemoryType::Fact,
+                content: format!("note number {i} about orders"), summary: format!("note {i}"), confidence: 0.9, importance: 0.5,
+                freshness: 1.0, status: MemoryStatus::Active, source_kind: MemorySourceKind::User, version: Some(1),
+                created_at: now, updated_at: now, last_recalled_at: None, tags: vec![], entities: vec![], metadata: json!({}),
+            };
+            db.save_memory_direct(&m).unwrap();
+        }
+        struct Cloud;
+        impl EmbeddingProvider for Cloud {
+            fn embed(&self, _: &str) -> Result<Vec<f32>> { Ok(vec![1.0, 0.0]) }
+            fn model_id(&self) -> String { "cloud:test".into() }
+            fn is_local(&self) -> bool { false }
+        }
+        let cancel = AtomicBool::new(false);
+        let mut seen = Vec::new();
+        // A cap that allows only one batch of 32: the second batch is refused with a clear reason.
+        let err = index_with_progress(&db, &Cloud, 300, &cancel, &mut |d, t| seen.push((d, t))).unwrap_err().to_string();
+        assert!(err.contains("daily limit"), "{err}");
+        assert_eq!(seen.first(), Some(&(0, 40)));
+        assert_eq!(seen.last(), Some(&(32, 40)));
+        assert!(tokens_today(&db) > 0);
+
+        // A local provider has no cap, finishes the rest, and cancelling stops it early.
+        let local = LocalEmbeddings::new();
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(index_with_progress(&db, &local, 0, &cancel, &mut |_, _| {}).unwrap(), 0, "cancelled before any work");
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(index_with_progress(&db, &local, 0, &cancel, &mut |_, _| {}).unwrap(), 40);
+
+        // Vectors of other models can be removed.
+        assert_eq!(remove_unused_vectors(&db, &local.model_id()).unwrap(), 32);
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub mod ports;
 pub mod redaction;
 pub mod resume;
 pub mod retrieval;
+pub mod secrets;
 pub mod setup;
 pub mod sync;
 pub mod verify;

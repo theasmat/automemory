@@ -89,15 +89,15 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Configurable embeddings and secure keys (plan: PLAN §10)
 
-- [ ] E1 `secrets.rs` on the `keyring` crate (decided; encrypted-file fallback only without a keychain), `embeddings key set|status|remove`, master key off the command line
-- [ ] E2 profiles + preset catalog, `embeddings profile ...`, `embeddings models`, config migration
-- [ ] E3 `/api/recall` and a real Recall settings page (today it only saves to the browser)
-- [ ] E4 background indexing worker with progress, cost guard, unused-vector cleanup
-- [ ] E5 native Cohere/Voyage/Gemini adapters, ONNX feature
+- [x] E1 `secrets.rs` on the `keyring` crate (encrypted-file fallback only without a keychain); `embeddings key set|status|remove`; master key written through keyring, not the command line, `embeddings key set|status|remove`, master key off the command line
+- [x] E2 profiles + preset catalog, `embeddings profile add|list|use|remove`, `embeddings models` (lists installed Ollama models); the flat fields stay as the `default` profile
+- [x] E3 `/api/recall*` (all writes behind the human password, keys write-only) and a real Recall settings page
+- [x] E4 indexing with progress, retries, daily token cap and cost estimate, cancel, unused-vector cleanup (`embeddings reindex|clean`, `/api/recall/index`)
+- [ ] E5 native Cohere/Voyage/Gemini adapters, ONNX feature (not started; the OpenAI-compatible adapter covers most services)
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 210 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 212 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

@@ -37,6 +37,7 @@ def http(port, path, method="GET", headers=None, body=None):
 
 def main():
     sb = Sandbox("dashboard")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "dash-master"})
     rep = Report("dashboard API")
     port = free_port()
     server = subprocess.Popen([sb.bin, "serve", "--port", str(port)], cwd=sb.project, env=sb.env,
@@ -67,6 +68,29 @@ def main():
         rep.check(code == 403, "foreign Origin POST is rejected", str(code))
         code, _ = http(port, "/api/stats", headers={"Host": "evil.example"})
         rep.check(code == 403, "rebinding Host is rejected", str(code))
+
+        # Recall settings: profiles and a write-only key.
+        code, body = http(port, "/api/recall")
+        rc = json.loads(body) if code == 200 else {}
+        rep.check(code == 200 and rc.get("mode") == "keyword" and len(rc.get("presets", [])) >= 8, "GET /api/recall lists mode and presets", f"{code} {body[:120]}")
+        code, body = http(port, "/api/recall/profile", "POST", {}, {"name": "cloud", "preset": "openai-small", "allow_network": True})
+        rep.check(code == 200, "a cloud profile can be saved", f"{code} {body[:120]}")
+        planted = "sk-PLANTED-dashboard-5544"
+        code, body = http(port, "/api/recall/key", "PUT", {}, {"profile": "cloud", "key": planted})
+        rep.check(code == 200 and planted not in body, "the key is stored and not echoed", f"{code} {body[:120]}")
+        code, body = http(port, "/api/recall")
+        rc = json.loads(body)
+        cloud = next((p for p in rc["profiles"] if p["name"] == "cloud"), {})
+        rep.check(cloud.get("key", {}).get("set") is True and planted not in body, "GET /api/recall shows the key as set and never returns it", body[:200])
+        code, body = http(port, "/api/recall", "PUT", {}, {"active": "cloud", "mode": "hybrid"})
+        code, body = http(port, "/api/recall")
+        rc = json.loads(body)
+        rep.check(rc.get("active") == "cloud" and rc.get("mode") == "hybrid", "the active profile and mode can be changed", body[:160])
+        leaked = [str(f) for f in sb.home.rglob("*") if f.is_file() and planted.encode() in f.read_bytes()]
+        rep.check(not leaked, "the key is in no file under the home folder", str(leaked))
+        code, body = http(port, "/api/recall/key?profile=cloud", "DELETE", {})
+        code, body = http(port, "/api/recall")
+        rep.check(not next(p for p in json.loads(body)["profiles"] if p["name"] == "cloud")["key"]["set"], "the key can be removed")
 
         # With a human password set, deciding proposals needs it.
         import os

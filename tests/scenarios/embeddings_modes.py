@@ -80,6 +80,53 @@ def main():
         t = time.time()
         s.hook("claude", "prompt", {"session_id": "e1", "prompt": "how does login work"})
         rep.check(time.time() - t < 5, "hooks never wait on the provider", f"{time.time()-t:.1f}s")
+
+        # ── Profiles and keys: the key lives in the secret store only ──
+        import http.server, threading, os
+        seen = []
+
+        class Mock(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(n) or b"{}")
+                seen.append(self.headers.get("Authorization", ""))
+                data = [{"index": i, "embedding": [0.6, 0.8]} for i in range(len(body.get("input", [])))]
+                out = json.dumps({"data": data}).encode()
+                self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+            def log_message(self, *a): pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Mock)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        s.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "trial-master"})
+        planted = "sk-PLANTED-9f8e7d6c5b4a"
+        r = s.run("embeddings", "profile", "add", "cloud", "--preset", "openai-small", "--allow-network")
+        rep.check(r.returncode == 0, "a cloud profile is saved from a preset", r.stdout + r.stderr)
+        r = s.run("embeddings", "key", "status", "cloud")
+        rep.check("not set" in r.stdout, "it starts without a key", r.stdout)
+        r = s.run("embeddings", "profile", "add", "mock", "--provider", "openai", "--model", "m",
+                  "--endpoint", f"http://127.0.0.1:{srv.server_address[1]}/v1")
+        rep.check(r.returncode == 0, "a custom endpoint profile is saved", r.stdout + r.stderr)
+        r = s.run("embeddings", "key", "set", "mock", "--stdin", stdin=planted + "\n")
+        rep.check(r.returncode == 0 and planted not in r.stdout + r.stderr, "the key is stored and never echoed", r.stdout + r.stderr)
+        r = s.run("embeddings", "key", "status", "mock")
+        rep.check("encrypted file" in r.stdout or "keychain" in r.stdout, "key status says where it lives", r.stdout)
+        r = s.run("embeddings", "profile", "use", "mock")
+        rep.check(r.returncode == 0, "the profile becomes active", r.stdout + r.stderr)
+        r = s.run("embeddings", "test")
+        rep.check("2-dimension" in r.stdout, "the profile works against the endpoint", r.stdout + r.stderr)
+        rep.check(seen and seen[-1] == f"Bearer {planted}", "the request carried the stored key", str(seen[-1:]))
+        r = s.run("embeddings", "reindex")
+        rep.check("embedded 2 memories" in r.stdout, "indexing with the profile", r.stdout + r.stderr)
+        r = s.run("embeddings", "status")
+        rep.check("profile:     mock" in r.stdout and "2/2" in r.stdout, "status shows the profile and coverage", r.stdout)
+        leaked = [str(f) for f in s.home.rglob("*") if f.is_file() and planted.encode() in f.read_bytes()]
+        rep.check(not leaked, "the key is in no file under the home folder", str(leaked))
+        r = s.run("embeddings", "clean")
+        rep.check(r.returncode == 0 and "removed" in r.stdout, "unused vectors can be removed", r.stdout)
+        r = s.run("embeddings", "profile", "remove", "mock")
+        r2 = s.run("embeddings", "key", "status", "mock")
+        rep.check("not set" in r2.stdout, "removing a profile removes its key", r.stdout + r2.stdout)
+        srv.shutdown()
     finally:
         s.cleanup()
     return rep.finish()

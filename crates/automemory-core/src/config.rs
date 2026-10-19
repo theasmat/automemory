@@ -73,6 +73,64 @@ pub struct EmbeddingSettings {
     pub dimensions: Option<usize>,
     #[serde(default = "default_embedding_timeout")]
     pub timeout_secs: u64,
+    /// Saved alternatives (`[embeddings.profiles.<name>]`); `active` names the one in use.
+    /// With no active profile the flat fields above are the "default" profile.
+    #[serde(default)]
+    pub profiles: std::collections::BTreeMap<String, EmbeddingProfile>,
+    #[serde(default)]
+    pub active: String,
+    /// Stop indexing for the day after this many (estimated) tokens went to a non-local provider.
+    #[serde(default = "default_token_cap")]
+    pub max_tokens_per_day: u64,
+}
+
+/// One saved provider setup. The API key is never part of it: it lives in the keychain under
+/// `embeddings.<profile name>` (or in the environment variable named by `api_key_env`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingProfile {
+    #[serde(default = "default_embedding_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key_env: String,
+    #[serde(default)]
+    pub allow_network: bool,
+    #[serde(default)]
+    pub dimensions: Option<usize>,
+    #[serde(default = "default_embedding_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_token_cap() -> u64 {
+    2_000_000
+}
+
+impl EmbeddingSettings {
+    /// The profile in use, as flat settings (with `active` set to its name and no `profiles`).
+    pub fn resolved(&self) -> EmbeddingSettings {
+        let base = EmbeddingSettings { profiles: Default::default(), ..self.clone() };
+        match self.profiles.get(&self.active).filter(|_| !self.active.is_empty()) {
+            Some(p) => EmbeddingSettings {
+                provider: p.provider.clone(),
+                model: p.model.clone(),
+                endpoint: p.endpoint.clone(),
+                api_key_env: p.api_key_env.clone(),
+                allow_network: p.allow_network,
+                dimensions: p.dimensions,
+                timeout_secs: p.timeout_secs,
+                ..base
+            },
+            None => EmbeddingSettings { active: "default".to_string(), ..base },
+        }
+    }
+
+    /// Where this profile's API key is stored in the keychain.
+    pub fn secret_name(&self) -> String {
+        format!("embeddings.{}", if self.active.is_empty() { "default" } else { &self.active })
+    }
 }
 
 fn default_embedding_provider() -> String {
@@ -93,6 +151,9 @@ impl Default for EmbeddingSettings {
             allow_network: false,
             dimensions: None,
             timeout_secs: default_embedding_timeout(),
+            profiles: Default::default(),
+            active: String::new(),
+            max_tokens_per_day: default_token_cap(),
         }
     }
 }
