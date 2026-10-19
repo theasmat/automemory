@@ -142,12 +142,53 @@
         </p>
       </div>
     </Card>
+
+    <!-- Emergency stop -->
+    <Card title="Pause all agents">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-sm text-text-muted max-w-md">Releases every file lock at once, so work in progress stops being protected. Asks for your password.</p>
+        <Button size="sm" variant="danger" @click="stopAll">Release all locks</Button>
+      </div>
+    </Card>
+
+    <!-- Set up an agent -->
+    <Card title="Set up an agent">
+      <p class="text-sm text-text-muted mb-4">Register AutoMemory with a coding agent in this project{{ setup?.project ? ` (${setup.project})` : '' }}. Asks for your password.</p>
+      <p v-if="!setup?.agents?.length" class="text-sm text-text-muted">No project yet. Run <code class="font-mono">automemory connect claude</code> once in a folder.</p>
+      <ul v-else class="divide-y divide-border/60">
+        <li v-for="a in setup.agents.filter((x: any) => x.native_hooks || x.registered_here)" :key="a.id" class="py-3 first:pt-0 last:pb-0 flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-[15px] text-text">{{ agentName(a.id) }}</p>
+            <p class="text-sm text-text-muted">{{ a.native_hooks ? 'Automatic hooks and memory tools' : 'Memory tools only' }} · {{ a.registered_here ? 'Connected here' : 'Not connected' }}</p>
+          </div>
+          <div class="flex gap-2">
+            <Button v-if="!a.registered_here" size="sm" variant="primary" @click="connectAgent(a.id)">Connect</Button>
+            <template v-else>
+              <Button size="sm" variant="secondary" @click="previewRemove(a.id)">What would be removed?</Button>
+              <Button size="sm" variant="ghost" @click="disconnectAgent(a.id)">Remove</Button>
+            </template>
+          </div>
+        </li>
+      </ul>
+      <details v-if="setup?.agents?.length" class="mt-4">
+        <summary class="text-sm text-accent cursor-pointer">More agents (memory tools only)</summary>
+        <ul class="mt-3 divide-y divide-border/60">
+          <li v-for="a in setup.agents.filter((x: any) => !x.native_hooks && !x.registered_here)" :key="a.id" class="py-3 flex items-center justify-between gap-3">
+            <span class="text-[15px] text-text">{{ agentName(a.id) }}</span>
+            <Button size="sm" variant="secondary" @click="connectAgent(a.id)">Connect</Button>
+          </li>
+        </ul>
+      </details>
+      <pre v-if="agentOutput" class="mt-4 text-xs bg-surface-2 rounded-xl p-3 whitespace-pre-wrap max-h-56 overflow-auto">{{ agentOutput }}</pre>
+    </Card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAutoMemoryStore } from '~/stores/automemory';
+import { ref, onMounted } from 'vue';
+import { protectedCall, safeCall, request } from '~/utils/api';
 import { useToast } from '~/composables/useToast';
 
 const store = useAutoMemoryStore();
@@ -158,8 +199,49 @@ const activeWorkers = computed(() => {
 });
 
 async function handleReleaseLock(lease: any) {
-  // Releases lock
-  success(`Released lock on ${lease.scope}`);
-  await store.fetchCoordination();
+  const r = await protectedCall('POST', '/api/locks/release', `release the lock on ${lease.scope}`, { scope: lease.scope });
+  if (r.ok) {
+    success(`Released lock on ${lease.scope}`);
+    await store.fetchCoordination();
+  }
 }
+
+const setup = ref<any>(null);
+const agentOutput = ref('');
+const NAMES: Record<string, string> = { claude: 'Claude Code', agy: 'Antigravity', codex: 'Codex', cursor: 'Cursor', windsurf: 'Windsurf', 'gemini-cli': 'Gemini CLI', copilot: 'GitHub Copilot', cline: 'Cline', roo: 'Roo Code', zed: 'Zed', opencode: 'OpenCode', continue: 'Continue', goose: 'Goose', kilo: 'Kilo Code', aider: 'Aider', warp: 'Warp', devin: 'Devin', openclaw: 'OpenClaw', hermes: 'Hermes', 'claude-desktop': 'Claude Desktop' };
+const agentName = (id: string) => NAMES[id] || id;
+
+async function loadSetup() {
+  const res = await request<any>('/api/agents/setup');
+  if (res.ok) setup.value = res.data;
+}
+
+async function connectAgent(id: string) {
+  const r = await protectedCall('POST', '/api/agents/connect', `connect ${agentName(id)}`, { agent: id });
+  agentOutput.value = r.ok ? r.data.output : r.error || '';
+  if (r.ok) success(`${agentName(id)} connected. Restart it so its hooks load.`);
+  await loadSetup();
+}
+
+async function previewRemove(id: string) {
+  const r = await safeCall('POST', '/api/agents/disconnect', { agent: id, dry_run: true });
+  agentOutput.value = r.ok ? r.data.output : r.error || '';
+}
+
+async function disconnectAgent(id: string) {
+  const r = await protectedCall('POST', '/api/agents/disconnect', `remove ${agentName(id)}`, { agent: id });
+  agentOutput.value = r.ok ? r.data.output : r.error || '';
+  if (r.ok) success(`${agentName(id)} removed from this project.`);
+  await loadSetup();
+}
+
+async function stopAll() {
+  const r = await protectedCall('POST', '/api/locks/stop', 'release every lock');
+  if (r.ok) {
+    success(`Released ${r.data.released} lock(s).`);
+    await store.fetchCoordination();
+  }
+}
+
+onMounted(loadSetup);
 </script>

@@ -540,11 +540,7 @@ export const useAutoMemoryStore = defineStore('automemory', {
           'Archived. Agents will stop using this.',
           async () => {
             if (mem) {
-              await api.addMemory({
-                summary: mem.summary,
-                content: mem.content,
-                type: mem.type,
-              });
+              await api.restoreMemory(id);
               await this.fetchMemories();
             }
           },

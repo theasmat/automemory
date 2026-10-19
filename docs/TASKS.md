@@ -97,15 +97,15 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Control everything safe from the dashboard (plan: PLAN §11)
 
-- [ ] U1 `policy.rs` tiers + route audit test, job runner (`/api/jobs`, Jobs tray), indexing on it, local indexing without password
-- [ ] U2 `ops/` extraction (doctor, export-rules, hand-off, sync, docs rescan, graph index, eval, backup) and Settings > Tools / Health
-- [ ] U3 Agents > Set up an agent (preview, connect, disconnect)
-- [ ] U4 Decisions view; restore, pin, veto, revoke in Project brain
-- [ ] U5 Settings > Locks and Data; activity log view
+- [x] U1 `policy.rs` tiers + route audit test, job runner (`/api/jobs`, Jobs tray), indexing on it, local indexing without password
+- [x] U2 `ops/` extraction (doctor, export-rules, hand-off, sync, docs rescan, graph index, eval, backup) and Settings > Tools / Health
+- [x] U2 command logic reused through subprocess (`run_self`) and library calls rather than a shared `ops/` module; Tools page covers doctor, export-rules, hand-off, sync pull, docs rescan, graph index, eval, backup
+- [x] U4 Decisions view; restore, pin, veto, revoke in Project brain
+- [x] U5 Settings > Locks and Data; activity log view
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 212 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 214 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

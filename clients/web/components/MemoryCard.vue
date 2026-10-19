@@ -56,6 +56,15 @@
               </svg>
             </IconButton>
 
+            <button
+              v-if="memory.status === 'archived'"
+              type="button"
+              class="text-sm text-accent hover:underline px-2"
+              @click="$emit('restore', memory)"
+            >
+              Restore
+            </button>
+
             <!-- Archive Button -->
             <IconButton
               v-if="memory.status !== 'archived'"
@@ -127,6 +136,8 @@
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-2">
+        <Button size="sm" variant="ghost" class="mr-auto" @click="$emit('veto', memory); isEditing = false">Mark as wrong</Button>
+        <Button size="sm" variant="ghost" @click="$emit('revoke', memory); isEditing = false">Revoke</Button>
         <Button size="sm" variant="ghost" @click="isEditing = false">
           Cancel
         </Button>
@@ -150,6 +161,9 @@ const emit = defineEmits<{
   (e: 'update', payload: { id: string; summary: string; content: string }): void;
   (e: 'archive', memory: Memory): void;
   (e: 'toggle-pin', memory: Memory): void;
+  (e: 'restore', memory: Memory): void;
+  (e: 'veto', memory: Memory): void;
+  (e: 'revoke', memory: Memory): void;
 }>();
 
 const isEditing = ref(false);

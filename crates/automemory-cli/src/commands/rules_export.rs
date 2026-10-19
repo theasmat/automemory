@@ -132,6 +132,26 @@ pub(crate) fn repo_root(cwd: &Path) -> PathBuf {
         .unwrap_or_else(|| cwd.to_path_buf())
 }
 
+/// What `export-rules` does for this project, as data for the dashboard. `write` applies it.
+pub fn plan(db: &Database, root: &Path, project: Option<&str>, write: bool) -> serde_json::Value {
+    let view = automemory_core::resume::build_rules_view(db, project);
+    let mut files = Vec::new();
+    for t in chosen(root, None, false).unwrap_or_default() {
+        let old = fs::read_to_string(root.join(t.path)).ok();
+        let new = splice(old.as_deref().unwrap_or(""), t.front, &view);
+        let status = match &old {
+            None => "created",
+            Some(o) if *o == new => "unchanged",
+            Some(_) => "updated",
+        };
+        if write && status != "unchanged" {
+            let _ = write_one(root, t, &view, true);
+        }
+        files.push(serde_json::json!({ "path": t.path, "agent": t.agent, "status": status }));
+    }
+    serde_json::json!({ "applied": write, "files": files, "block": block(&view) })
+}
+
 pub fn execute(agent: Option<String>, all: bool, check: bool) -> Result<()> {
     let db = Database::open(&automemory_core::config::Config::default_config().db_path)?;
     let cwd = std::env::current_dir()?;

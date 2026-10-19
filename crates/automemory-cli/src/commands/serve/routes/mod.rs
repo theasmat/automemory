@@ -1,3 +1,4 @@
+pub mod control;
 pub mod guardrails;
 pub mod memories;
 pub mod recall;
@@ -24,6 +25,29 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/memories/:id/pin", post(control::api_memory_pin))
+        .route("/api/memories/:id/veto", post(control::api_memory_veto))
+        .route("/api/memories/:id/restore", post(control::api_memory_restore))
+        .route("/api/memories/:id/revoke", post(control::api_memory_revoke))
+        .route("/api/decisions", get(control::api_decisions).post(control::api_decision_record))
+        .route("/api/tools/doctor", post(control::api_tool_doctor))
+        .route("/api/tools/eval", post(control::api_tool_eval))
+        .route("/api/tools/docs-rescan", post(control::api_tool_docs_rescan))
+        .route("/api/tools/graph-index", post(control::api_tool_graph_index))
+        .route("/api/tools/backup", post(control::api_tool_backup))
+        .route("/api/tools/handoff", post(control::api_tool_handoff))
+        .route("/api/tools/export-rules", get(control::api_export_preview).post(control::api_export_apply))
+        .route("/api/sync/pull", post(control::api_sync_pull))
+        .route("/api/agents/setup", get(control::api_agents_setup))
+        .route("/api/agents/connect", post(control::api_agent_connect))
+        .route("/api/agents/disconnect", post(control::api_agent_disconnect))
+        .route("/api/locks/release", post(control::api_lock_release))
+        .route("/api/locks/stop", post(control::api_lock_stop))
+        .route("/api/settings/locks", get(control::api_settings_locks_get).put(control::api_settings_locks_put))
+        .route("/api/activity", get(control::api_activity))
+        .route("/api/policy", get(crate::commands::serve::policy::api_policy))
+        .route("/api/jobs", get(crate::commands::serve::jobs::api_list))
+        .route("/api/jobs/:id/cancel", post(crate::commands::serve::jobs::api_cancel))
         .route("/api/recall", get(recall::api_get).put(recall::api_put))
         .route("/api/recall/profile", post(recall::api_profile_save))
         .route("/api/recall/profile/:name", delete(recall::api_profile_delete))

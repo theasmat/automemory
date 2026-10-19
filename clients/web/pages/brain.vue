@@ -15,6 +15,8 @@
           + Add note
         </Button>
 
+        <Button variant="secondary" size="sm" @click="openDecision">Record a decision</Button>
+
         <Button variant="secondary" size="sm" @click="previewDrawerOpen = true">
           Preview export &rarr;
         </Button>
@@ -68,8 +70,34 @@
         @update="handleUpdate"
         @archive="handleArchive"
         @toggle-pin="handleTogglePin"
+        @restore="handleRestore"
+        @veto="handleVeto"
+        @revoke="handleRevoke"
       />
     </div>
+
+    <!-- Record a decision -->
+    <Modal :is-open="decisionOpen" title="Record a decision" max-width-class="max-w-lg" @close="decisionOpen = false">
+      <div class="space-y-4">
+        <p class="text-sm text-text-muted">A decision on a topic replaces the earlier one (the history is kept). Every agent sees it first.</p>
+        <div>
+          <label class="block text-sm text-text-muted mb-1" for="dtopic">Topic</label>
+          <input id="dtopic" v-model="decision.topic" placeholder="payments" class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text" />
+        </div>
+        <div>
+          <label class="block text-sm text-text-muted mb-1" for="ddec">Decision</label>
+          <input id="ddec" v-model="decision.decision" placeholder="Use Stripe webhooks, not polling" class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text" />
+        </div>
+        <div>
+          <label class="block text-sm text-text-muted mb-1" for="dwhy">Why</label>
+          <input id="dwhy" v-model="decision.reason" placeholder="Polling missed events during outages" class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text" />
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="ghost" size="sm" @click="decisionOpen = false">Cancel</Button>
+        <Button variant="primary" size="sm" :disabled="!decision.topic || !decision.decision" @click="saveDecision">Save</Button>
+      </template>
+    </Modal>
 
     <!-- Add Note Modal -->
     <Modal
@@ -166,7 +194,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, reactive, computed } from 'vue';
+import { api, protectedCall, safeCall } from '~/utils/api';
 import { useAutoMemoryStore } from '~/stores/automemory';
 import { useToast } from '~/composables/useToast';
 import type { Memory } from '~/types';
@@ -281,11 +310,49 @@ async function handleTogglePin(memory: Memory) {
 async function handleExportRules() {
   isExporting.value = true;
   try {
-    // In browser, export-rules writes instructions
-    success('Instruction files (AGENTS.md, CLAUDE.md) updated successfully');
-    previewDrawerOpen.value = false;
+    const r = await safeCall('POST', '/api/tools/export-rules');
+    if (r.ok) {
+      const changed = (r.data.files || []).filter((f: any) => f.status !== 'unchanged').length;
+      success(changed ? `${changed} instruction file(s) written` : 'Instruction files were already up to date');
+      previewDrawerOpen.value = false;
+    }
   } finally {
     isExporting.value = false;
+  }
+}
+
+const decisionOpen = ref(false);
+const decision = reactive({ topic: '', decision: '', reason: '' });
+
+function openDecision() {
+  Object.assign(decision, { topic: '', decision: '', reason: '' });
+  decisionOpen.value = true;
+}
+
+async function saveDecision() {
+  const r = await protectedCall('POST', '/api/decisions', 'record a decision', { ...decision, project_id: store.activeProject || undefined });
+  if (r.ok) {
+    decisionOpen.value = false;
+    success('Decision recorded. Every agent will see it.');
+    await store.fetchMemories();
+  }
+}
+
+async function handleRestore(memory: Memory) {
+  if ((await api.restoreMemory(memory.id)).ok) await store.fetchMemories();
+}
+
+async function handleVeto(memory: Memory) {
+  if ((await api.vetoMemory(memory.id)).ok) {
+    success('Marked as wrong. Agents will not use it.');
+    await store.fetchMemories();
+  }
+}
+
+async function handleRevoke(memory: Memory) {
+  if ((await api.revokeMemory(memory.id)).ok) {
+    success('Revoked and archived.');
+    await store.fetchMemories();
   }
 }
 </script>

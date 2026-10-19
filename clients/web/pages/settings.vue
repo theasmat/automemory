@@ -77,6 +77,48 @@
       </Card>
     </section>
 
+    <!-- Locks -->
+    <section aria-labelledby="locks-h" class="space-y-3">
+      <h2 id="locks-h" class="text-lg font-semibold text-text">File locks</h2>
+      <Card>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm text-text-muted mb-1" for="idle">Release a lock after this many minutes without activity</label>
+            <input id="idle" v-model.number="lockMinutes" type="number" min="1" max="1440" class="w-32 bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text" />
+          </div>
+          <div>
+            <label class="block text-sm text-text-muted mb-1" for="ign">Files that never take a lock (one pattern per line)</label>
+            <textarea id="ign" v-model="lockIgnore" rows="4" class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text font-mono" />
+          </div>
+          <label class="flex items-center gap-3 text-sm text-text">
+            <input v-model="lockReconcile" type="checkbox" />
+            <span>After each shell command, check which files it changed and report the ones nobody had locked</span>
+          </label>
+          <div class="flex items-center gap-3">
+            <Button size="sm" variant="primary" :loading="busy === 'locks'" @click="saveLocks">Save</Button>
+            <span class="text-xs text-text-muted">Asks for your password.</span>
+          </div>
+        </div>
+      </Card>
+    </section>
+
+    <!-- Activity -->
+    <section aria-labelledby="act-h" class="space-y-3">
+      <h2 id="act-h" class="text-lg font-semibold text-text">Recent activity</h2>
+      <Card>
+        <p v-if="!activity.length" class="text-sm text-text-muted">Nothing blocked or changed from the dashboard yet.</p>
+        <ul v-else class="divide-y divide-border/60">
+          <li v-for="(a, i) in activity.slice(0, 12)" :key="i" class="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-sm text-text">{{ describeActivity(a) }}</p>
+              <p v-if="a.details?.reason" class="text-xs text-text-muted truncate">{{ a.details.reason }}</p>
+            </div>
+            <span class="text-xs text-text-muted flex-shrink-0">{{ ago(a.at) }}</span>
+          </li>
+        </ul>
+      </Card>
+    </section>
+
     <!-- Help and about -->
     <section aria-labelledby="about-h" class="space-y-3">
       <h2 id="about-h" class="text-lg font-semibold text-text">Help</h2>
@@ -103,21 +145,70 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { protectedCall, request } from '~/utils/api';
 import { useRouter } from 'vue-router';
 import { useAutoMemoryStore } from '~/stores/automemory';
 import { useTheme } from '~/composables/useTheme';
+import { useToast } from '~/composables/useToast';
 
 const store = useAutoMemoryStore();
 const router = useRouter();
 const { themeMode, setTheme } = useTheme();
 const busy = ref('');
+const toast = useToast();
 
 const themes = [
   { id: 'system', label: 'System' },
   { id: 'light', label: 'Light' },
   { id: 'dark', label: 'Dark' },
 ] as const;
+
+const lockMinutes = ref(10);
+const lockIgnore = ref('');
+const lockReconcile = ref(true);
+const activity = ref<any[]>([]);
+
+onMounted(async () => {
+  const l = await request<any>('/api/settings/locks');
+  if (l.ok && l.data) {
+    lockMinutes.value = Math.round((l.data.idle_ttl_seconds || 600) / 60);
+    lockIgnore.value = (l.data.ignore || []).join('\n');
+    lockReconcile.value = l.data.reconcile !== false;
+  }
+  const a = await request<any[]>('/api/activity');
+  if (a.ok && Array.isArray(a.data)) activity.value = a.data;
+});
+
+async function saveLocks() {
+  busy.value = 'locks';
+  try {
+    const r = await protectedCall('PUT', '/api/settings/locks', 'change lock settings', {
+      idle_ttl_seconds: Math.round(lockMinutes.value * 60),
+      ignore: lockIgnore.value.split('\n'),
+      reconcile: lockReconcile.value,
+    });
+    if (r.ok) toast.success('Lock settings saved. They apply from the next agent action.');
+    else toast.error(r.error || 'Not saved');
+  } finally {
+    busy.value = '';
+  }
+}
+
+function describeActivity(a: any): string {
+  if (a.action === 'hook.deny') return `Blocked ${a.details?.agent || 'an agent'}: ${a.target}`;
+  if (a.action === 'hook.ask') return `Asked before ${a.target} (${a.details?.agent || 'agent'})`;
+  if (a.action === 'ui.action') return `Dashboard: ${a.target}`;
+  return a.action;
+}
+
+function ago(iso: string): string {
+  const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 1440) return `${Math.round(m / 60)} h ago`;
+  return `${Math.round(m / 1440)} d ago`;
+}
 
 async function startIntro() {
   await router.push('/');

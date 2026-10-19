@@ -102,6 +102,36 @@ export async function humanFetch(
   return res;
 }
 
+/** A write that needs the human password (asked every time, never stored). */
+export async function protectedCall(method: string, url: string, action: string, body?: unknown): Promise<ApiResponse<any>> {
+  try {
+    const res = await humanFetch(url, action, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data, error: res.ok ? undefined : data.error };
+  } catch (err: any) {
+    return { ok: false, data: null, error: err?.message || 'Request failed' };
+  }
+}
+
+/** A write that is Safe (no password): see serve/policy.rs. */
+export async function safeCall(method: string, url: string, body?: unknown): Promise<ApiResponse<any>> {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data, error: res.ok ? undefined : data.error };
+  } catch (err: any) {
+    return { ok: false, data: null, error: err?.message || 'Request failed' };
+  }
+}
+
 export const api = {
   async getStats(): Promise<ApiResponse<SystemStats>> {
     return request<SystemStats>('/api/stats');
@@ -136,29 +166,23 @@ export const api = {
   },
 
   async updateMemory(id: string, payload: { summary?: string; content?: string; reason?: string; pinned?: boolean }): Promise<ApiResponse<any>> {
-    try {
-      const res = await fetch(`/api/memories/${encodeURIComponent(id)}/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
-    } catch (err: any) {
-      return { ok: false, data: null, error: err.message };
-    }
+    return protectedCall('POST', `/api/memories/${encodeURIComponent(id)}/update`, 'edit a memory', payload);
   },
 
   async archiveMemory(id: string): Promise<ApiResponse<any>> {
-    try {
-      const res = await fetch(`/api/memories/${encodeURIComponent(id)}/archive`, {
-        method: 'POST',
-      });
-      const data = await res.json().catch(() => ({}));
-      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
-    } catch (err: any) {
-      return { ok: false, data: null, error: err.message };
-    }
+    return protectedCall('POST', `/api/memories/${encodeURIComponent(id)}/archive`, 'archive a memory');
+  },
+
+  async restoreMemory(id: string): Promise<ApiResponse<any>> {
+    return protectedCall('POST', `/api/memories/${encodeURIComponent(id)}/restore`, 'restore a memory');
+  },
+
+  async vetoMemory(id: string, reason?: string): Promise<ApiResponse<any>> {
+    return protectedCall('POST', `/api/memories/${encodeURIComponent(id)}/veto`, 'veto a memory', { reason });
+  },
+
+  async revokeMemory(id: string): Promise<ApiResponse<any>> {
+    return protectedCall('POST', `/api/memories/${encodeURIComponent(id)}/revoke`, 'revoke a memory');
   },
 
   async getContext(projectId?: string | null, query?: string): Promise<string> {
@@ -367,17 +391,7 @@ export const api = {
   },
 
   async resolveFailure(id: string, payload: { fix_applied: string; verification_result?: string }): Promise<ApiResponse<any>> {
-    try {
-      const res = await fetch(`/api/failures/${encodeURIComponent(id)}/resolve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      return { ok: res.ok, data, error: res.ok ? undefined : data.error };
-    } catch (err: any) {
-      return { ok: false, data: null, error: err.message };
-    }
+    return protectedCall('POST', `/api/failures/${encodeURIComponent(id)}/resolve`, 'mark a problem fixed', payload);
   },
 
   async getSessions(projectId?: string | null): Promise<ApiResponse<SessionSummary[]>> {

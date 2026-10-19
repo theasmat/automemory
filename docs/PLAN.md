@@ -267,6 +267,8 @@ and keys, dashboard scenario for `/api/recall` (human gate, key never returned).
 
 ## 11. Control everything safe from the dashboard
 
+**Status: built (U1–U5).** Tiers live in `serve/policy.rs` (`GET /api/policy`, route audit test), jobs in `serve/jobs.rs` (`/api/jobs`, Jobs tray), actions in `routes/control.rs`, pages Tools / Agents / Brain / Settings. Command logic is reused via subprocess (`run_self`) instead of a separate `ops/` module. Not built: lock icons from `/api/policy`, native Cohere/Voyage/Gemini adapters (E5).
+
 Goal: anything a person does in the terminal that is safe can be done (and watched) in the dashboard: start or stop indexing, sync, export instruction files,
 run a health check, connect an agent, record a decision. The terminal stays the way to do the few things that must not be reachable from a web page.
 

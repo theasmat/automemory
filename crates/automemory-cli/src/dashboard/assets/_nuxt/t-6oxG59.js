@@ -1,1 +1,0 @@
-import{j as e,Y as t,c as o,o as r}from"./fzhh9usL.js";const a={class:"p-8 text-center text-text-muted text-sm"},m=e({__name:"memories",setup(n){return t("/brain",{replace:!0}),(c,s)=>(r(),o("div",a,"Redirecting to Project brain..."))}});export{m as default};

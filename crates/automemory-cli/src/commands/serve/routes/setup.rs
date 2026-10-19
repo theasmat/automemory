@@ -58,7 +58,7 @@ pub async fn api_post_onboarding(
     headers: HeaderMap,
     Json(payload): Json<OnboardingPayload>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    require_human_header(&headers, "update onboarding")?;
+    let _ = &headers; // tour and welcome progress is Safe (see serve/policy.rs)
 
     if let Some(action) = payload.action.as_deref() {
         match action {

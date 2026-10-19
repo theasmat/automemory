@@ -79,9 +79,13 @@ pub struct ResolveFailurePayload {
 
 pub async fn api_failure_resolve(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Path(id): Path<String>,
     Json(payload): Json<ResolveFailurePayload>,
 ) -> impl IntoResponse {
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "mark a problem fixed") {
+        return denied;
+    }
     let verification = payload
         .verification_result
         .unwrap_or_else(|| "Verified by user via dashboard".to_string());

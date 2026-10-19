@@ -136,9 +136,9 @@ def main():
             text=True,
         )
 
-        # Attempt POST without password -> 403 Forbidden
+        # Checklist progress is a Safe-tier write (no trusted knowledge): no password needed
         code, body = http(port, "/api/onboarding", method="POST", body={"action": "mark_done", "step_id": "blocked"})
-        rep.check(code == 403, "POST /api/onboarding denied without password header", f"{code} {body[:100]}")
+        rep.check(code == 200, "POST /api/onboarding (Safe tier) works without a password", f"{code} {body[:100]}")
 
         # Attempt POST with password -> 200 OK
         code, body = http(

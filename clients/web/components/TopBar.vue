@@ -47,6 +47,8 @@
         <kbd class="font-mono text-[10px] bg-surface px-1 py-0.5 rounded border border-border">⌘K</kbd>
       </button>
 
+      <JobsTray />
+
       <!-- Connection Pill -->
       <div
         class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-pill text-xs font-medium"

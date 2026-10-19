@@ -2,6 +2,7 @@
 //! Every write needs the human password; no response ever contains a key.
 
 use crate::commands::serve::routes::guardrails::require_human_header;
+use crate::commands::serve::jobs;
 use crate::commands::serve::state::AppState;
 use automemory_core::config::{EmbeddingProfile, GlobalConfig};
 use automemory_core::embeddings::{self, PRESETS};
@@ -14,19 +15,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-
-#[derive(Default, Clone)]
-struct IndexState {
-    running: bool,
-    done: usize,
-    total: usize,
-    error: Option<String>,
-}
-
-static INDEX: Mutex<IndexState> = Mutex::new(IndexState { running: false, done: 0, total: 0, error: None });
-static CANCEL: AtomicBool = AtomicBool::new(false);
+use std::sync::Arc;
 
 fn gate(headers: &HeaderMap, action: &str) -> Option<Response> {
     require_human_header(headers, action).err().map(IntoResponse::into_response)
@@ -73,13 +62,17 @@ pub async fn api_get(State(state): State<AppState>) -> Response {
         }
         Err(err) => (Value::Null, Some(err.to_string())),
     };
-    let idx = INDEX.lock().unwrap_or_else(|x| x.into_inner()).clone();
+    let idx = jobs::latest("index");
+    let (running, done, total, error) = match &idx {
+        Some(j) => (j.state == "running", j.done, j.total, if j.state == "failed" { j.message.clone() } else { None }),
+        None => (false, 0, 0, None),
+    };
     Json(json!({
         "mode": cfg.retrieval.mode, "active": resolved.active, "profiles": profiles,
         "presets": PRESETS.iter().map(|p| json!({ "id": p.id, "label": p.label, "provider": p.provider, "model": p.model,
             "dimensions": p.dimensions, "endpoint": p.endpoint, "local": p.local, "note": p.note })).collect::<Vec<_>>(),
         "coverage": coverage, "problem": problem, "max_tokens_per_day": e.max_tokens_per_day, "tokens_today": embeddings::tokens_today(&state.db),
-        "indexing": { "running": idx.running, "done": idx.done, "total": idx.total, "error": idx.error },
+        "indexing": { "running": running, "done": done, "total": total, "error": error },
     }))
     .into_response()
 }
@@ -217,10 +210,13 @@ pub async fn api_key_delete(headers: HeaderMap, Query(q): Query<ProfileQuery>) -
 
 /// POST /api/recall/test: embeds one sentence with the active profile (this may send text to a cloud service).
 pub async fn api_test(headers: HeaderMap) -> Response {
-    if let Some(r) = gate(&headers, "test the embedding provider") {
-        return r;
-    }
     let cfg = GlobalConfig::load().unwrap_or_default();
+    // A local model is Safe; a cloud model sends text out, so it needs the password.
+    if !active_is_local(&cfg) {
+        if let Some(r) = gate(&headers, "test the embedding provider") {
+            return r;
+        }
+    }
     let out = tokio::task::spawn_blocking(move || {
         let provider = embeddings::provider_from_settings(&cfg.embeddings)?;
         let start = std::time::Instant::now();
@@ -242,57 +238,44 @@ pub struct IndexPayload {
     pub all: Option<bool>,
 }
 
-/// POST /api/recall/index: starts the background indexing job.
+/// Whether the active profile keeps text on this computer (an unusable profile counts as not local).
+fn active_is_local(cfg: &GlobalConfig) -> bool {
+    embeddings::provider_from_settings(&cfg.embeddings).map(|p| p.is_local()).unwrap_or(false)
+}
+
+/// POST /api/recall/index: starts the background indexing job. A local model needs no password; a cloud model does.
 pub async fn api_index(State(state): State<AppState>, headers: HeaderMap, body: Option<Json<IndexPayload>>) -> Response {
-    if let Some(r) = gate(&headers, "index memories") {
-        return r;
-    }
-    {
-        let mut idx = INDEX.lock().unwrap_or_else(|x| x.into_inner());
-        if idx.running {
-            return bad("indexing is already running");
+    let cfg = GlobalConfig::load().unwrap_or_default();
+    if !active_is_local(&cfg) {
+        if let Some(r) = gate(&headers, "index memories with a cloud model") {
+            return r;
         }
-        *idx = IndexState { running: true, ..Default::default() };
     }
-    CANCEL.store(false, Ordering::Relaxed);
     let all = body.and_then(|b| b.0.all).unwrap_or(false);
     let db = Arc::clone(&state.db);
-    let tx = state.broadcast_tx.clone();
-    std::thread::spawn(move || {
-        let cfg = GlobalConfig::load().unwrap_or_default();
-        let result = embeddings::provider_from_settings(&cfg.embeddings).and_then(|provider| {
-            if all {
-                embeddings::drop_model_vectors(&db, &provider.model_id())?;
-            }
-            embeddings::index_with_progress(&db, provider.as_ref(), cfg.embeddings.max_tokens_per_day, &CANCEL, &mut |done, total| {
-                *INDEX.lock().unwrap_or_else(|x| x.into_inner()) = IndexState { running: true, done, total, error: None };
-                let _ = tx.send(json!({ "type": "index_progress", "done": done, "total": total }).to_string());
-            })
-        });
-        let mut idx = INDEX.lock().unwrap_or_else(|x| x.into_inner());
-        idx.running = false;
-        if let Err(e) = result {
-            idx.error = Some(e.to_string());
+    let started = jobs::start(&state, "index", "Indexing memories", move |ctl| {
+        let provider = embeddings::provider_from_settings(&cfg.embeddings)?;
+        if all {
+            embeddings::drop_model_vectors(&db, &provider.model_id())?;
         }
-        let _ = tx.send(json!({ "type": "index_progress", "done": idx.done, "total": idx.total, "finished": true }).to_string());
+        let n = embeddings::index_with_progress(&db, provider.as_ref(), cfg.embeddings.max_tokens_per_day, ctl.flag(), &mut |done, total| {
+            ctl.progress(done, total, Some(format!("{done} of {total} memories")));
+        })?;
+        Ok(format!("Indexed {n} memories with {}", provider.model_id()))
     });
-    Json(json!({ "started": true })).into_response()
+    match started {
+        Ok(id) => Json(json!({ "started": true, "job": id })).into_response(),
+        Err(e) => bad(e),
+    }
 }
 
 /// POST /api/recall/index/cancel
-pub async fn api_index_cancel(headers: HeaderMap) -> Response {
-    if let Some(r) = gate(&headers, "cancel indexing") {
-        return r;
-    }
-    CANCEL.store(true, Ordering::Relaxed);
-    Json(json!({ "success": true })).into_response()
+pub async fn api_index_cancel() -> Response {
+    Json(json!({ "success": jobs::cancel_kind("index") })).into_response()
 }
 
 /// POST /api/recall/clean: remove vectors of models no longer in use.
-pub async fn api_clean(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(r) = gate(&headers, "remove unused vectors") {
-        return r;
-    }
+pub async fn api_clean(State(state): State<AppState>) -> Response {
     let cfg = GlobalConfig::load().unwrap_or_default();
     match embeddings::provider_from_settings(&cfg.embeddings).and_then(|p| embeddings::remove_unused_vectors(&state.db, &p.model_id())) {
         Ok(n) => Json(json!({ "removed": n })).into_response(),

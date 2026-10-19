@@ -189,8 +189,12 @@ pub async fn api_proposals_decide_all(
 
 pub async fn api_memory_archive(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "archive a memory") {
+        return denied;
+    }
     match state.db.archive_memory(&id) {
         Ok(true) => {
             let _ = state.broadcast_tx.send(
@@ -270,9 +274,13 @@ pub struct UpdateMemoryPayload {
 
 pub async fn api_memory_update(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(payload): Json<UpdateMemoryPayload>,
 ) -> impl IntoResponse {
+    if let Err(denied) = super::guardrails::require_human_header(&headers, "edit a memory") {
+        return denied;
+    }
     match state.db.get_memory_by_id(&id) {
         Ok(Some(mut mem)) => {
             if let Some(s) = payload.summary {

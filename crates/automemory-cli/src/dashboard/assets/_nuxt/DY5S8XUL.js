@@ -1,1 +1,0 @@
-import{j as e,Y as t,c as o,o as n}from"./fzhh9usL.js";const s={class:"p-8 text-center text-text-muted text-sm"},_=e({__name:"coordination",setup(a){return t("/agents",{replace:!0}),(c,r)=>(n(),o("div",s,"Redirecting to Agents & locks..."))}});export{_ as default};

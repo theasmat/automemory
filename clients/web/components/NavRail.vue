@@ -158,6 +158,7 @@ import {
   Sliders as RecallIcon,
   MoreHorizontal as MoreHorizontalIcon,
   Settings as SettingsIcon,
+  Wrench as ToolsIcon,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -195,6 +196,7 @@ const advancedNav = [
   { path: '/constitution', label: 'Rules of the project', icon: RulesIcon },
   { path: '/graph', label: 'Knowledge graph', icon: GraphIcon },
   { path: '/recall', label: 'Recall settings', icon: RecallIcon },
+  { path: '/tools', label: 'Tools', icon: ToolsIcon },
   { path: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
