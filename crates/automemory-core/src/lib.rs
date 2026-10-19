@@ -13,6 +13,7 @@ pub mod graph;
 pub mod guardrails;
 pub mod hooks;
 pub mod keychain;
+pub mod llm;
 pub mod lockwatch;
 pub mod locking;
 pub mod models;

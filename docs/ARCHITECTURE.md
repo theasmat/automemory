@@ -8,7 +8,7 @@ Status: describes the code as built (Oct 2026). Items marked *(planned)* are not
 
 ## 1. System overview
 
-A local Rust daemon and CLI (single binary) with SQLite (WAL), an MCP server, and an embedded dashboard. Agents reach it through MCP tools and optional hooks. Nothing requires a network; the daemon makes **no LLM calls**.
+A local Rust daemon and CLI (single binary) with SQLite (WAL), an MCP server, and an embedded dashboard. Agents reach it through MCP tools and optional hooks. Nothing requires a network; the daemon makes **no LLM calls** unless you turn on the optional `[llm]` helper, which only produces suggestions for the Inbox (`llm.rs`).
 
 ```
 agents ──MCP / hooks──► adapters ──canonical events──► hook pipeline ──► core (ledger · store · event bus · plugin host)
@@ -38,7 +38,7 @@ Workspace layout:
 | Tests are the judge | Cross-review decided by test results, not votes |
 | Everything is a port | Hooks, adapters, stores, policies replaceable without touching core |
 | Degrade gracefully | Hooks → MCP only → file watcher |
-| Local first, no LLM in the daemon | Deterministic distillation, ranking, guardrails |
+| Local first, no LLM in the daemon by default | Deterministic distillation, ranking, guardrails; an optional LLM only suggests |
 
 ## 3. Core and ports
 

@@ -1,6 +1,7 @@
 pub mod control;
 pub mod guardrails;
 pub mod memories;
+pub mod llm;
 pub mod recall;
 pub mod setup;
 pub mod stats;
@@ -50,6 +51,10 @@ pub fn build_api_router() -> Router<AppState> {
         .route("/api/policy", get(crate::commands::serve::policy::api_policy))
         .route("/api/jobs", get(crate::commands::serve::jobs::api_list))
         .route("/api/jobs/:id/cancel", post(crate::commands::serve::jobs::api_cancel))
+        .route("/api/llm", get(llm::api_get).put(llm::api_put))
+        .route("/api/llm/key", axum::routing::put(llm::api_key_set).delete(llm::api_key_delete))
+        .route("/api/llm/run", post(llm::api_run))
+        .route("/api/llm/run/cancel", post(llm::api_run_cancel))
         .route("/api/recall", get(recall::api_get).put(recall::api_put))
         .route("/api/recall/profile", post(recall::api_profile_save))
         .route("/api/recall/profile/:name", delete(recall::api_profile_delete))

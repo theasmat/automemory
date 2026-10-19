@@ -238,6 +238,13 @@ enum Commands {
         command: EmbeddingsCommands,
     },
 
+    /// Optional LLM that only suggests (conflicts, duplicates, candidate notes) into the Inbox
+    #[command(next_help_heading = "Advanced")]
+    Llm {
+        #[command(subcommand)]
+        command: LlmCommands,
+    },
+
     /// Show where the last session left off (hand-off, checkpoint, decisions, repository state)
     #[command(next_help_heading = "Daily")]
     Resume,
@@ -1467,6 +1474,14 @@ async fn main() -> Result<()> {
             EmbeddingsCommands::Clean => commands::embeddings::clean()?,
             EmbeddingsCommands::Eval { file } => commands::embeddings::eval(file)?,
         },
+        Commands::Llm { command } => match command {
+            LlmCommands::Status => commands::llm::status()?,
+            LlmCommands::Use { model, endpoint, api_key_env, allow_network } => commands::llm::use_model(model, endpoint, api_key_env, allow_network)?,
+            LlmCommands::Off => commands::llm::off()?,
+            LlmCommands::KeySet { stdin, from_env } => commands::llm::key_set(stdin, from_env)?,
+            LlmCommands::KeyRemove => commands::llm::key_remove()?,
+            LlmCommands::Run { what } => commands::llm::run(&what)?,
+        },
         Commands::Resume => commands::continuity::resume()?,
         Commands::Handoff { note, message } => commands::continuity::handoff(note.or(message)).await?,
         Commands::Locks { project, coverage: true, days } => {
@@ -1580,6 +1595,38 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum LlmCommands {
+    /// Whether it is on, where it sends text, today's tokens
+    Status,
+    /// Turn it on with a model (any OpenAI-compatible chat endpoint, Ollama's /v1 included)
+    Use {
+        model: String,
+        /// Base URL, for example http://127.0.0.1:11434/v1
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Name of the environment variable holding the API key
+        #[arg(long)]
+        api_key_env: Option<String>,
+        /// Allow note text to be sent to a non-local endpoint
+        #[arg(long)]
+        allow_network: bool,
+    },
+    /// Turn it off again
+    Off,
+    /// Store the API key in the OS keychain (hidden prompt, --stdin or --from-env VAR)
+    KeySet {
+        #[arg(long)]
+        stdin: bool,
+        #[arg(long)]
+        from_env: Option<String>,
+    },
+    /// Remove the stored key
+    KeyRemove,
+    /// Run a job now: pairs (conflicts and duplicates) or distill (candidate notes from sessions)
+    Run { what: String },
 }
 
 #[derive(Subcommand)]

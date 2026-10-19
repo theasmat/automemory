@@ -17,11 +17,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-fn gate(headers: &HeaderMap, action: &str) -> Option<Response> {
+pub(super) fn gate(headers: &HeaderMap, action: &str) -> Option<Response> {
     require_human_header(headers, action).err().map(IntoResponse::into_response)
 }
 
-fn bad(msg: impl Into<String>) -> Response {
+pub(super) fn bad(msg: impl Into<String>) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": msg.into() }))).into_response()
 }
 

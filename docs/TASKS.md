@@ -106,7 +106,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 ## Next: quality, proof, reach (plan: PLAN §12)
 
 - [x] N1 Proof: eval harness with/without AutoMemory, published numbers, CI gate
-- [ ] N2 Optional LLM profile: contradiction check, merge/dedupe, session distill, staleness (proposals only)
+- [x] N2 Optional LLM helper: conflicts, duplicates, session distill (proposals only; one profile; staleness check not built)
 - [x] N3 Memory hygiene UI: confidence, last used, never recalled, bulk archive
 - [ ] N4 More agents: Cursor, Windsurf, Gemini CLI, Copilot (export-rules + MCP, contract fixtures)
 - [ ] N5 Team sync: shared remote, per-person trust

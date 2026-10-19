@@ -19,5 +19,5 @@ Only these four docs, `docs/research/` and the two files in `plan/` exist. Updat
 ## Rules
 
 - v1 scope: Claude Code, Codex, Antigravity adapters; Planning Room; Nuxt dashboard. Cloudflare SaaS and more agents come later.
-- The daemon makes no LLM calls. Agents never touch the DB with raw SQL (Zero-SQL rule).
+- The daemon makes no LLM call unless the user configures `[llm]` (off by default); an LLM only suggests (Inbox proposals, candidate notes), never writes trusted memory, takes a lock or decides a guardrail. Agents never touch the DB with raw SQL (Zero-SQL rule).
 - Build/test: `tests/run_all.sh` (or `cargo test --workspace`); bench: `cargo bench -p automemory-core --bench perf`.

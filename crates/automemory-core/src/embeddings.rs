@@ -43,11 +43,11 @@ fn vectors_from(value: &Value, key: &str, expected: usize) -> Result<Vec<Vec<f32
 
 /// reqwest's blocking client must not run inside a tokio worker; a short-lived thread keeps
 /// the call safe from both CLI and the async MCP server.
-fn off_runtime<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
+pub(crate) fn off_runtime<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
     std::thread::scope(|s| s.spawn(f).join().unwrap_or_else(|_| Err(anyhow!("embedding thread panicked"))))
 }
 
-fn is_loopback(url: &str) -> bool {
+pub(crate) fn is_loopback(url: &str) -> bool {
     ["//localhost", "//127.0.0.1", "//[::1]", "//0.0.0.0"].iter().any(|h| url.contains(h))
 }
 

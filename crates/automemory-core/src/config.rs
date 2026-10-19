@@ -22,6 +22,8 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub embeddings: EmbeddingSettings,
     #[serde(default)]
+    pub llm: LlmSettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
 }
 
@@ -47,6 +49,48 @@ impl Default for RetrievalSettings {
 impl RetrievalSettings {
     pub fn is_hybrid(&self) -> bool {
         self.mode.eq_ignore_ascii_case("hybrid")
+    }
+}
+
+/// `[llm]`: an optional model that only *suggests* (conflicts, duplicates, candidate notes). Off while `model` is empty.
+/// Any OpenAI-compatible chat endpoint, including Ollama's `/v1`. The key lives in the keychain under `llm`.
+// shortcut: one profile, add a map like [embeddings.profiles] when someone needs two.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmSettings {
+    #[serde(default)]
+    pub model: String,
+    /// Base URL, for example `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1`.
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key_env: String,
+    /// Required before any text goes to a host that is not this machine.
+    #[serde(default)]
+    pub allow_network: bool,
+    #[serde(default = "default_llm_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_llm_tokens")]
+    pub max_tokens_per_day: u64,
+}
+
+fn default_llm_timeout() -> u64 {
+    60
+}
+
+fn default_llm_tokens() -> u64 {
+    200_000
+}
+
+impl Default for LlmSettings {
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+            endpoint: String::new(),
+            api_key_env: String::new(),
+            allow_network: false,
+            timeout_secs: default_llm_timeout(),
+            max_tokens_per_day: default_llm_tokens(),
+        }
     }
 }
 
@@ -251,6 +295,7 @@ impl Default for GlobalConfig {
             locks: LockSettings::default(),
             retrieval: RetrievalSettings::default(),
             embeddings: EmbeddingSettings::default(),
+            llm: LlmSettings::default(),
             projects: Vec::new(),
         }
     }

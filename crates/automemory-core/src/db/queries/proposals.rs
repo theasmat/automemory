@@ -247,6 +247,23 @@ impl Database {
             params![status, now_str, id],
         )?;
 
+        drop(conn);
+        if rows > 0 {
+            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "llm_candidate") {
+                // A note an LLM suggested: a human approval makes it a user-confirmed fact, a rejection shelves it.
+                if let Ok(Some(mut m)) = self.get_memory_by_id(&p.target_id) {
+                    if approved {
+                        m.status = crate::models::MemoryStatus::Active;
+                        m.set_trust_tier(crate::models::TrustTier::UserStatement);
+                    } else {
+                        m.status = crate::models::MemoryStatus::Archived;
+                    }
+                    m.updated_at = Utc::now();
+                    self.update_memory(&m, Some("LLM suggestion decided by a human"), &[])?;
+                }
+            }
+        }
+        let conn = self.conn();
         if approved && rows > 0 {
             if let Some(p) = proposal {
                 if p.proposal_type == "duplicate_merge" && !p.target_id.is_empty() {

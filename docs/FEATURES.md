@@ -43,7 +43,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 | Git-vault sync with encrypted keys | |
 | Eval harness (memory on vs off) | |
 
-Cut list: symbol-level leases, own AST/code graph (codebase-memory-mcp supplies it), auto-distill of every session, a full auto-generated AGENTS.md (only a small managed block is written, see Shared instruction files), shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon.
+Cut list: symbol-level leases, own AST/code graph (codebase-memory-mcp supplies it), auto-distill of every session, a full auto-generated AGENTS.md (only a small managed block is written, see Shared instruction files), shell-regex arms race, storing raw agent reasoning, agent-edited memory, debate as default, LLM calls in the daemon by default (the optional `[llm]` helper only suggests).
 
 ## 3. Feature catalog
 
@@ -109,6 +109,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
+| Optional LLM helper (`automemory llm`, Tools page): conflicts, duplicates, candidate notes from sessions | ✅ | Off by default; local model needs no password, cloud needs consent + key in keychain + daily token cap; output is Inbox proposals only. Staleness check not built |
 | Dashboard control (Safe / Protected / Terminal-only tiers, jobs tray, Tools, agent set-up, decisions, lock settings, activity) | ✅ | Every write route has a tier (audit test); Protected asks the password every time |
 | Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 214 Rust tests + 14 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
