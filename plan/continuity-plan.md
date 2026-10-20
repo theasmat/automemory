@@ -1,6 +1,6 @@
 # Continuity: carry a long chat from one agent to another
 
-Status: C1–C5 built (Oct 2026); C6–C8 are plan. Summary and phases are in [docs/PLAN.md §16](../docs/PLAN.md); tasks C1–C8 are in
+Status: C1–C6 built (Oct 2026); C7–C8 are plan (dashboard button for history sync is not built: CLI only). Summary and phases are in [docs/PLAN.md §16](../docs/PLAN.md); tasks C1–C8 are in
 [docs/TASKS.md](../docs/TASKS.md).
 
 ## 1. The problem and the target

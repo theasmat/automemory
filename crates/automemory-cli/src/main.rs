@@ -1547,6 +1547,7 @@ async fn main() -> Result<()> {
             ContinuityCommands::Disable { agent } => commands::brief::disable(&agent)?,
             ContinuityCommands::Import { agent } => commands::brief::import_chats(agent.as_deref())?,
             ContinuityCommands::Draft => commands::brief::draft()?,
+            ContinuityCommands::SyncHistory { push, pull } => commands::brief::sync_history(push, pull)?,
             ContinuityCommands::Search { query, agent, limit } => commands::brief::search(&query, agent.as_deref(), limit)?,
             ContinuityCommands::HistoryForget { agent, all } => commands::brief::history_forget(agent.as_deref(), all)?,
         },
@@ -1719,6 +1720,13 @@ enum ContinuityCommands {
     Import { agent: Option<String> },
     /// Propose unconfirmed brief items (goal, constraints, ruled-out options, decisions, next steps, open questions) from the imported chats
     Draft,
+    /// Move imported chat history between your computers through the vault remote (never automatic). Without a flag: show what a push would send
+    SyncHistory {
+        #[arg(long)]
+        push: bool,
+        #[arg(long)]
+        pull: bool,
+    },
     /// Search the imported chat history of this project
     Search {
         query: String,

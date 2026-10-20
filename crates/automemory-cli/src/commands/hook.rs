@@ -428,6 +428,10 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         }
     }
 
+    if matches!(canonical, Some(CanonicalEvent::Stop | CanonicalEvent::SessionEnd | CanonicalEvent::PreCompact)) {
+        spawn_chat_refresh(&db, effective_project_id, &root_dir(), canonical == Some(CanonicalEvent::Stop));
+    }
+
     // The session is over: its files are free for other agents at once.
     if canonical == Some(CanonicalEvent::SessionEnd) {
         // Release first, so the hand-off does not list files as "holding" that are already free.
@@ -549,6 +553,31 @@ fn dir_of(root: &str) -> PathBuf {
 
 /// Start `automemory sync auto` detached (a hook never waits for the network). Throttled, and
 /// only when a git remote is configured.
+/// Keeps the brief current without a person asking: new chat lines of the agents a person turned on are imported and
+/// drafted in a detached process (the hook never waits). Nothing happens while no agent is on. Stops fire after every
+/// turn, so those are throttled; the end of a session and a compaction always refresh.
+fn spawn_chat_refresh(db: &Database, project_id: Option<&str>, cwd: &Path, throttle: bool) {
+    let Some(pid) = project_id else { return };
+    if !automemory_core::config::GlobalConfig::load().map(|c| !c.continuity.read_chats.is_empty()).unwrap_or(false) {
+        return;
+    }
+    let key = format!("chat_refresh_at:{pid}");
+    let now = chrono::Utc::now().timestamp();
+    if throttle && db.sync_kv_get(&key).and_then(|v| v.parse::<i64>().ok()).is_some_and(|t| now - t < 30) {
+        return;
+    }
+    db.sync_kv_set(&key, &now.to_string());
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = Command::new(exe)
+            .args(["continuity", "import"])
+            .current_dir(cwd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+}
+
 fn spawn_background_sync(db: &Database) {
     if !automemory_core::sync::auto::should_spawn(db) {
         return;

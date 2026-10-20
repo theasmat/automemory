@@ -280,6 +280,7 @@ pub(crate) const CLAUDE_HOOKS: &[HookSpec] = &[
     ("PostToolUseFailure", Some("*"), "post-tool-fail"),
     ("Stop", None, "stop"),
     ("SessionEnd", None, "session-end"),
+    ("PreCompact", None, "pre-compact"),
 ];
 
 pub(crate) const CODEX_HOOKS: &[HookSpec] = &[

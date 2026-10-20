@@ -4,7 +4,7 @@ use crate::db::Database;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatSession {
@@ -20,7 +20,7 @@ pub struct ChatSession {
     pub cursor: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub seq: i64,
     pub role: String,

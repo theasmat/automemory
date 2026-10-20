@@ -3,6 +3,7 @@
 pub mod archive;
 pub mod deliver;
 pub mod drafter;
+pub mod history_sync;
 pub mod model;
 pub mod readers;
 pub mod store;

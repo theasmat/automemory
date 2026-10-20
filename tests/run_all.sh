@@ -37,6 +37,7 @@ run "stale MCP servers (doctor)"      python3 tests/scenarios/stale_mcp.py
 run "continuity brief"                python3 tests/scenarios/continuity.py
 run "continuity chat history"         python3 tests/scenarios/continuity_history.py
 run "continuity dashboard"            python3 tests/scenarios/continuity_dashboard.py
+run "continuity triggers + history sync" python3 tests/scenarios/continuity_triggers.py
 run "guideline refresh on connect"    python3 tests/scenarios/guidelines_refresh.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
 run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py

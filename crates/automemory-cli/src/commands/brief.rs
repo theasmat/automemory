@@ -152,6 +152,38 @@ pub fn import_chats(only: Option<&str>) -> Result<()> {
     draft_from_chats(&db, project.as_deref())
 }
 
+/// Chat history between computers: shows what would be sent, or pushes (password) / pulls. The brief itself syncs on its own.
+pub fn sync_history(push: bool, pull: bool) -> Result<()> {
+    use automemory_core::{continuity::history_sync, sync::auto};
+    let (root, remote) = auto::vault_settings();
+    let Some(url) = remote else { bail!("no sync remote is set: automemory sync remote <git-url>") };
+    let Some(key) = auto::resolve_key(true) else { bail!("no sync key on this computer: run `automemory sync pair` or bootstrap with your phrase") };
+    if push {
+        let (db, project) = human("send chat history to the sync remote")?;
+        let Some(pid) = project else { bail!("this folder is not a registered project") };
+        let n = history_sync::write(&db, &pid, &root, &key)?;
+        let rep = auto::run(&db, &root, Some(&url), true, true, Some(&key))?;
+        println!("✓ {n} chat session(s) encrypted into the vault. sync: {}", rep.summary());
+    } else if pull {
+        let (db, _) = open()?;
+        let rep = auto::run(&db, &root, Some(&url), true, false, Some(&key))?;
+        let r = history_sync::read(&db, &root, &key)?;
+        println!("✓ pulled ({}). Added {} session(s), {} message(s); {} already here, {} for projects not on this computer, {} unreadable.", rep.summary(), r.sessions, r.messages, r.already_here, r.unknown_project, r.unreadable);
+    } else {
+        let (db, project) = open()?;
+        let Some(pid) = project else { bail!("this folder is not a registered project") };
+        let p = history_sync::plan(&db, &pid, &key)?;
+        if p.sessions.is_empty() {
+            println!("No chat history imported for this project yet.");
+        }
+        for (id, msgs, bytes) in &p.sessions {
+            println!("{id}: {msgs} message(s), {} KB encrypted", bytes / 1024 + 1);
+        }
+        println!("Nothing was sent. To send (password): automemory continuity sync-history --push    To fetch from your other computers: --pull");
+    }
+    Ok(())
+}
+
 /// Proposes unconfirmed brief items from the imported chats (no model; you or the next agent confirm them).
 pub fn draft() -> Result<()> {
     let (db, project) = open()?;
