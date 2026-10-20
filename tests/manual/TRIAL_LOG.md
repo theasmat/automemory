@@ -125,6 +125,12 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
   one cart lose updates (adds of 1 and 1 store 1): qty is computed in memory and written as an absolute value. (3) The 30-day cleanup
   deletes single items, not abandoned carts: a cart used 2 days ago lost its 31-day-old item. (4) Negative quantities are accepted.
   The room's plan said "read cart_id from the existing JWT cookie" while no verified auth exists; neither agent raised that in the room.
+- Fixed in the trial project (uncommitted there, 22 tests pass, one new test per finding): (1) a user cart id comes only from an
+  HS256 JWT whose signature checks out and has not expired (secret `SHOP_AUTH_SECRET`; none set means no token is trusted); ids are
+  namespaced `user:<sub>` / `guest:<uuid>` and a guest cookie must be a UUID, so a client cannot name another cart; (2) quantity is
+  incremented inside SQLite and the object takes the stored total; (3) cleanup deletes carts whose newest line is older than N days,
+  not single old lines; (4) `add` rejects quantities that are not whole numbers >= 1. The first test run of the original probe
+  (forged cookie opens user-42's cart, adds of 1+1 store 1, active cart loses a line, qty -5 accepted) now shows all four closed.
 
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
