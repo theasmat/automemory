@@ -1,0 +1,5 @@
+Coding agents without memory are just expensive amnesiacs.
+
+AutoMemory gives 20 agent harnesses verified shared memory, sub-2ms AST guardrails, and zero-collision git worktree locks.
+
+Pure Rust. Single binary. Local SQLite WAL. No cloud daemons required.

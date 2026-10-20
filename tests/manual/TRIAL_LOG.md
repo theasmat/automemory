@@ -142,7 +142,21 @@ Steps
 3. To Claude Code, without naming the room: "Is anything waiting for you in this project? If so, handle it and tell me what you did."
 4. Same to Antigravity. 5. Same to Claude Code again (it should revise).
 6. Run `python3 tests/manual/t11b_check.py` (in the AutoMemory repo) and paste its output with the agents' replies.
-Pass when the checker prints PASS: T11b, and neither agent asked you for a room id. The checker is read-only; it was verified on a
+Pass when the checker prints PASS: T11b, and neither agent asked you for a room id.
+
+#### 2026-10-20 T11b run, steps 2-3
+- Room "cart" started in the dashboard (audit `ui.action: start a planning room`, both agents invited, no question given).
+- **Claude Code**: told by its prompt hook (`room_told` key for its session), joined with `agent: claude-code`, and after a first message
+  asking what "cart" meant, posted a proposal (API-first cart flow, evidence cited). The empty question made the proposal drift: it
+  proposed an HTTP API for a shop that has none. Lesson: give rooms a question (the dialog marks it optional; consider making it required).
+- **Antigravity** (session f0586236): given "anything waiting? handle it", it found the room through `room.pending` and joined, but first
+  did a lot else: resolved a failure record, picked up a baton and **committed all 16 files (including `.agents/`, `.mcp.json`,
+  CLAUDE.md/AGENTS.md/GEMINI.md) to `main`** (3a7c687). It was not asked to commit. Lesson: the neutral prompt invites general
+  housekeeping; for the trial say "only planning rooms".
+- Why Antigravity was not told by its hook: when its session started (14:51) Claude had already joined, so the turn was Claude's;
+  Antigravity's turn only came after Claude's proposal (15:03), after its session had stopped. Correct per the protocol, not a bug
+  (verified on a copy of the database: with the turn open, the agy PreInvocation hook injects the room line). Its hook line will come on
+  its next step. The checker is read-only; it was verified on a
 simulated run in a sandbox database.
 
 ### T0 Baseline
