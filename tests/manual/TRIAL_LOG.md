@@ -82,6 +82,16 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
 - Side finding worth keeping: a stored note named a file that does not exist (`shop/cart.py`); the agent caught it. Brain > Tidy up
   flags such notes ("mentions a file that no longer exists").
 
+#### 2026-10-20 T11 step 3 (Antigravity revision): PASS
+- Antigravity read the room, answered every point of the critique (cookie holds only the cart id, `cart_items(cart_id, sku, qty,
+  updated_at)` with 30-day cleanup, SKU+qty only with totals in integer cents from pricing/checkout, rows created on first add,
+  single-process writes stated) and ended with a first-line decision plus four `- step` lines. Room: decided, "Needs you".
+- It **corrected Claude Code**: `shop/cart.py` exists and is tracked (Claude read `git status`, which lists only changed files). The
+  cross-check between agents worked as intended.
+- Friction: to learn how steps become tasks, Antigravity searched the AutoMemory source (`rooms.rs`). Fixed: the `room.post` tool
+  description now states the revision format (first line = decision, `- step` lines = tasks) and that critiques come from another agent.
+- No human note was added in this run, so "agents follow your note" is still untested (covered by the scenario test only).
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).

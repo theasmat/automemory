@@ -847,7 +847,7 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "room.post".to_string(),
-                description: "Post one turn (propose/critique/revise). Turn holder only; evidence IDs must resolve".to_string(),
+                description: "Post one turn: propose, then critique (by another agent), then revise. Turn holder only (or anyone when the turn is open); evidence IDs (memory/trace/failure/decision ids from memory.search) must resolve. In a revise post, put the final choice on the first line and the steps as `- step` lines: when the human approves, the first line becomes the decision and each step a task.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
