@@ -386,3 +386,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[derive(Deserialize, Default)]
+pub struct ValueQuery { pub days: Option<i64> }
+
+/// GET /api/value?days=7: the same figures as `automemory stats`.
+pub async fn api_value(State(state): State<AppState>, axum::extract::Query(q): axum::extract::Query<ValueQuery>) -> Response {
+    Json(automemory_core::report::value_report(&state.db, q.days.unwrap_or(7).clamp(1, 365))).into_response()
+}

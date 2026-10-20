@@ -76,6 +76,16 @@
       <Checklist title="Get started" :items="store.setupChecklist" />
     </div>
 
+    <!-- Is it working? -->
+    <Card v-if="valueLines.length" title="Last 7 days" data-tour="value-card">
+      <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+        <li v-for="l in valueLines" :key="l.label" class="flex items-baseline gap-3 text-sm">
+          <span class="text-xl font-semibold text-text tabular-nums w-10 text-right">{{ l.n }}</span>
+          <span class="text-text-muted">{{ l.label }}</span>
+        </li>
+      </ul>
+    </Card>
+
     <!-- Details -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card title="Your agents">
@@ -128,7 +138,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { request } from '~/utils/api';
 import { useAutoMemoryStore, agentLabel } from '~/stores/automemory';
 
 /** "claude" -> "Claude Code"; unknown names are shown as they are. */
@@ -144,6 +155,24 @@ function agentName(a: any): string {
 
 const store = useAutoMemoryStore();
 const previewDrawerOpen = ref(false);
+
+const value = ref<Record<string, number>>({});
+onMounted(async () => {
+  const r = await request<Record<string, number>>('/api/value?days=7');
+  if (r.ok && r.data) value.value = r.data;
+});
+const valueLines = computed(() =>
+  [
+    ['collisions_prevented', 'edit collisions prevented'],
+    ['risky_commands_stopped', 'risky commands stopped'],
+    ['notes_recalled', 'notes given to agents'],
+    ['notes_added_by_you', 'notes you added'],
+    ['notes_added_by_agents', 'notes agents added'],
+    ['handoffs_picked_up', 'hand-offs picked up'],
+  ]
+    .map(([k, label]) => ({ n: value.value[k] || 0, label }))
+    .filter((l) => l.n > 0)
+);
 
 const greeting = computed(() => {
   const hour = new Date().getHours();

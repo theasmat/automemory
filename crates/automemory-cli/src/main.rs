@@ -245,6 +245,16 @@ enum Commands {
         command: LlmCommands,
     },
 
+    /// What AutoMemory did for you lately (collisions prevented, notes recalled, hand-offs)
+    #[command(next_help_heading = "Daily")]
+    Stats {
+        /// How many days back
+        #[arg(long, default_value_t = 7)]
+        days: i64,
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Install the latest release (checksum-verified; asks first, `--check` only reports)
     #[command(next_help_heading = "Advanced")]
     Update {
@@ -1493,6 +1503,7 @@ async fn main() -> Result<()> {
             LlmCommands::KeyRemove => commands::llm::key_remove()?,
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Stats { days, json } => commands::stats::run(days, json)?,
         Commands::Update { check, yes } => commands::update::run(check, yes)?,
         Commands::Resume => commands::continuity::resume()?,
         Commands::Handoff { note, message } => commands::continuity::handoff(note.or(message)).await?,

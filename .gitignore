@@ -35,3 +35,4 @@ Thumbs.db
 .mcp.json
 
 
+tests/ui/.venv/

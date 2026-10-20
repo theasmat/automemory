@@ -129,6 +129,11 @@ def main():
                 rep.check(code == 403, f"Protected: {path} is refused without the password", str(code))
             code, _ = http(port, f"/api/memories/{mid}/update", "POST", {}, {"summary": "x"})
             rep.check(code == 403, "Protected: editing a memory is refused without the password", str(code))
+        code, body = http(port, "/api/value?days=7")
+        v = json.loads(body) if code == 200 else {}
+        rep.check(code == 200 and v.get("days") == 7 and "collisions_prevented" in v, "GET /api/value returns the figures", f"{code} {body[:80]}")
+        out = subprocess.run([sb.bin, "stats", "--json"], capture_output=True, text=True, env=sb.env, cwd=sb.project).stdout
+        rep.check(json.loads(out).get("days") == 7, "automemory stats --json matches", out[:80])
         code, body = http(port, "/api/memories/hygiene")
         rep.check(code == 200 and "items" in body, "GET /api/memories/hygiene answers", f"{code} {body[:80]}")
         code, _ = http(port, "/api/memories/archive_many", "POST", {}, {"ids": ["x"]})

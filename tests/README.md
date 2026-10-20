@@ -30,6 +30,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Optional LLM helper | `python3 tests/scenarios/llm_helper.py` | Off by default; cloud refused without consent; suggestions land as pending proposals only; reruns skip judged pairs; injection replies create nothing |
 | Agent matrix | `python3 tests/scenarios/agents_matrix.py` | 13 agents connect, get their instruction file and disconnect cleanly |
 | Self-update | `python3 tests/scenarios/update.py` | `update` asks first, verifies the checksum, refuses tampered or unchecked downloads, replaces atomically |
+| Dashboard pages in a browser | `tests/ui/.venv/bin/python tests/ui/smoke.py` | Every page, light and dark, loads with sample data and no console error, exception or 5xx; a Protected action opens the password prompt. Skipped (with a message) without Playwright: `python3 -m venv tests/ui/.venv && tests/ui/.venv/bin/pip install playwright && tests/ui/.venv/bin/playwright install chromium` |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
 | Guided tour and demo | `python3 tests/scenarios/tour.py` | `automemory tour --auto` 8 sandbox steps, collision prevention, learn topics, demo seed and remove |

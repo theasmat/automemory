@@ -117,10 +117,10 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Next improvements (plan: PLAN §13)
 
-- [ ] I1 Value report: `automemory stats` + Home card from audit_log/leases/recalls
+- [x] I1 Value report: `automemory stats`, `/api/value`, Home "Last 7 days" card (figures come from existing rows; sample data excluded)
 - [ ] I2 `hook --record` to capture real payloads; fixtures for Cursor/Windsurf/Gemini/Copilot
 - [ ] I3 Trust overlay table for teams (teammate pins arrive as requests)
-- [ ] I4 Browser smoke test for every dashboard page
+- [x] I4 Browser smoke test (Playwright): 21 pages x light/dark, password prompt; skipped with a message when Playwright is missing
 - [ ] I5 Lock hints from `/api/policy`
 - [ ] I6 `backup restore` + doctor backup check
 - [ ] I7 LLM profile map, native Cohere/Voyage/Gemini embedding adapters
@@ -130,7 +130,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 227 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 228 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

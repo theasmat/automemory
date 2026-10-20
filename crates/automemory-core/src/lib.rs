@@ -21,6 +21,7 @@ pub mod onboarding;
 pub mod overlap;
 pub mod ports;
 pub mod redaction;
+pub mod report;
 pub mod resume;
 pub mod retrieval;
 pub mod secrets;

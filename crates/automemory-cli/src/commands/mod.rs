@@ -8,6 +8,7 @@ pub mod doc;
 pub mod doctor;
 pub mod embeddings;
 pub mod llm;
+pub mod stats;
 pub mod update;
 pub mod eval;
 pub mod governance;
