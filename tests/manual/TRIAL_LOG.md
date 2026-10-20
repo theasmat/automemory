@@ -119,6 +119,12 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
   `task.submit`ted, then `baton.pass`. So room → decision → tasks → implementation → submit works end to end.
 - Note for users: a neutral "handle what is waiting" prompt is enough for an agent to start coding claimed tasks. The trial folder
   now has these uncommitted changes (shop/*.py, tests/test_cart.py).
+- Review of that code (maintainer, probes run against it): tests pass but four real defects. (1) The cart id is taken from an
+  **unverified** JWT `sub` (no signature check; the shop has no JWT code or secret) and guest cookies share the same id space, so
+  `auth=x.<{"sub":"user-42"}>.y` or `cart_id=user-42` opens user 42's cart; a test asserts this behaviour. (2) Two `Cart` objects for
+  one cart lose updates (adds of 1 and 1 store 1): qty is computed in memory and written as an absolute value. (3) The 30-day cleanup
+  deletes single items, not abandoned carts: a cart used 2 days ago lost its 31-day-old item. (4) Negative quantities are accepted.
+  The room's plan said "read cart_id from the existing JWT cookie" while no verified auth exists; neither agent raised that in the room.
 
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
