@@ -215,15 +215,24 @@ function formatRelativeTime(dateStr?: string): string {
 }
 
 /** Notes written by tools are markdown; show them as calm plain text. */
-const plainContent = computed(() =>
-  (props.memory.content || '')
+const plainContent = computed(() => {
+  const text = (props.memory.content || '')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/^#{1,6}\s*/gm, '')
     .replace(/\*\*|__|`/g, '')
     .replace(/^\s*[-*]\s+/gm, '• ')
     .replace(/\n{3,}/g, '\n\n')
-    .trim()
-);
+    .trim();
+  if (props.memory.type?.toLowerCase() !== 'decision') return text;
+  // A recorded decision repeats its topic and wording in the title; keep only what the title does not say.
+  return text
+    .split('\n')
+    .filter((l) => !/^(Architectural Decision|Decision):/i.test(l.trim()))
+    .map((l) => l.replace(/^Rationale:/i, 'Why:'))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+});
 const preview = computed(() => (plainContent.value && plainContent.value !== props.memory.summary ? plainContent.value : ''));
 const isLong = computed(() => preview.value.length > 220 || preview.value.split('\n').length > 3);
 

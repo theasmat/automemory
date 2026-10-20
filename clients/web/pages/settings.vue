@@ -108,7 +108,7 @@
       <Card>
         <p v-if="!activity.length" class="text-sm text-text-muted">Nothing blocked or changed from the dashboard yet.</p>
         <ul v-else class="divide-y divide-border/60">
-          <li v-for="(a, i) in activity.slice(0, 12)" :key="i" class="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4">
+          <li v-for="(a, i) in activity.slice(0, 6)" :key="i" class="py-3 first:pt-0 last:pb-0 flex items-start justify-between gap-4">
             <div class="min-w-0">
               <p class="text-sm text-text">{{ describeActivity(a) }}</p>
               <p v-if="a.details?.reason" class="text-xs text-text-muted truncate">{{ a.details.reason }}</p>
@@ -116,6 +116,7 @@
             <span class="text-xs text-text-muted flex-shrink-0">{{ ago(a.at) }}</span>
           </li>
         </ul>
+        <NuxtLink to="/activity" class="mt-3 inline-block text-sm text-accent hover:underline">See everything &rarr;</NuxtLink>
       </Card>
     </section>
 
@@ -146,6 +147,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { describeActivity, ago } from '~/utils/activity';
 import { protectedCall, request } from '~/utils/api';
 import { useRouter } from 'vue-router';
 import { useAutoMemoryStore } from '~/stores/automemory';
@@ -193,21 +195,6 @@ async function saveLocks() {
   } finally {
     busy.value = '';
   }
-}
-
-function describeActivity(a: any): string {
-  if (a.action === 'hook.deny') return `Blocked ${a.details?.agent || 'an agent'}: ${a.target}`;
-  if (a.action === 'hook.ask') return `Asked before ${a.target} (${a.details?.agent || 'agent'})`;
-  if (a.action === 'ui.action') return `Dashboard: ${a.target}`;
-  return a.action;
-}
-
-function ago(iso: string): string {
-  const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m} min ago`;
-  if (m < 1440) return `${Math.round(m / 60)} h ago`;
-  return `${Math.round(m / 1440)} d ago`;
 }
 
 async function startIntro() {

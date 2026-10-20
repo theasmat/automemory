@@ -185,10 +185,10 @@ const workingCount = computed(
   () => store.connectedAgents.filter((a) => a.status === 'editing' || a.status === 'active').length
 );
 const linkedCount = computed(() => store.connectedAgents.filter((a) => a.status !== 'not connected').length);
+// The big number already says how many are working; the line adds what it does not.
 const agentsLine = computed(() => {
-  if (workingCount.value > 0) return `${workingCount.value} working now`;
-  if (linkedCount.value > 0) return `${linkedCount.value} connected, all idle`;
-  return 'None connected yet';
+  if (linkedCount.value === 0) return 'None connected yet';
+  return `${workingCount.value > 0 ? 'working now' : 'idle'} · ${linkedCount.value} connected`;
 });
 const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length);
 
