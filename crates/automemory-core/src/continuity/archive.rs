@@ -96,6 +96,7 @@ impl Database {
         Ok(msgs.len())
     }
 
+    /// Words of the conversation itself: the one-line notes of tools an agent ran are kept for context (chat.get) but not searched.
     pub fn chat_search(&self, query: &str, project_id: Option<&str>, agent: Option<&str>, limit: usize) -> Result<Vec<ChatHit>> {
         let q = fts_query(query);
         if q.is_empty() {
@@ -105,7 +106,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT s.id, s.agent, s.title, m.seq, m.role, m.ts, snippet(chat_fts, 0, '[', ']', '…', 24)
              FROM chat_fts JOIN chat_messages m ON m.id = chat_fts.rowid JOIN chat_sessions s ON s.id = m.session_id
-             WHERE chat_fts MATCH ?1 AND (?2 IS NULL OR s.project_id = ?2) AND (?3 IS NULL OR s.agent = ?3)
+             WHERE chat_fts MATCH ?1 AND m.role != 'tool' AND (?2 IS NULL OR s.project_id = ?2) AND (?3 IS NULL OR s.agent = ?3)
              ORDER BY rank LIMIT ?4",
         )?;
         let rows = stmt.query_map(params![q, project_id, agent, limit as i64], |r| Ok(ChatHit { session: r.get(0)?, agent: r.get(1)?, title: r.get(2)?, seq: r.get(3)?, role: r.get(4)?, ts: r.get(5)?, snippet: r.get(6)? }))?

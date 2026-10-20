@@ -29,9 +29,9 @@ fn hash_tree(dir: &Path) -> String {
     format!("{:x}", h.finalize())
 }
 
-/// `new_line`: one more valid message in the agent's own format (what the agent would append). `secret`: a fragment of a
-/// secret planted in the fixture. `home_marker`: the fixture's absolute home folder text that must be shown as `~`.
-pub fn conformance(reader: &dyn TranscriptReader, fixture_home: &Path, project_root: &Path, new_line: &str, secret: &str) {
+/// `append_message(source_path)`: add exactly one more valid message the way the agent would (and, if the format can have
+/// corrupt entries, one corrupt entry before it). `secret`: a fragment of a secret planted in the fixture.
+pub fn conformance(reader: &dyn TranscriptReader, fixture_home: &Path, project_root: &Path, append_message: &dyn Fn(&Path), secret: &str) {
     let tmp = std::env::temp_dir().join(format!("am-testkit-{}-{}", reader.id(), std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     copy_dir(fixture_home, &tmp);
@@ -50,13 +50,9 @@ pub fn conformance(reader: &dyn TranscriptReader, fixture_home: &Path, project_r
     // Incremental: nothing new, then exactly the new line, even behind a corrupt one.
     let again = reader.read(&sessions[0], first.cursor.as_ref()).unwrap();
     assert!(again.messages.is_empty(), "nothing is read twice");
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new().append(true).open(&sessions[0].path).unwrap();
-    writeln!(f, "this line is not valid for any format {{{{").unwrap();
-    writeln!(f, "{new_line}").unwrap();
-    drop(f);
+    append_message(&sessions[0].path);
     let more = reader.read(&sessions[0], first.cursor.as_ref()).unwrap();
-    assert_eq!(more.messages.len(), 1, "a corrupt line is skipped and the new message arrives once: {:?}", more.messages);
+    assert_eq!(more.messages.iter().filter(|m| m.role != Role::Artifact).count(), 1, "a corrupt line is skipped and the new message arrives once: {:?}", more.messages);
 
     // Through the importer: secrets removed, each message stored once.
     let db = Database::open_in_memory().unwrap();

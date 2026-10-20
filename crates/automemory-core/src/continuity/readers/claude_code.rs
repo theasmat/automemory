@@ -133,7 +133,13 @@ mod tests {
     #[test]
     fn passes_the_reader_contract() {
         let line = r#"{"type":"assistant","isSidechain":false,"sessionId":"sess-001","timestamp":"2026-10-01T09:05:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"One more message appended later."}]}}"#;
-        super::super::testkit::conformance(&ClaudeCode, &fixture(), Path::new("/tmp/demo-shop"), line, "FIXTURESECRET1234567890");
+        let append = |path: &Path| {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+            writeln!(f, "this line is not valid for any format {{{{").unwrap();
+            writeln!(f, "{line}").unwrap();
+        };
+        super::super::testkit::conformance(&ClaudeCode, &fixture(), Path::new("/tmp/demo-shop"), &append, "FIXTURESECRET1234567890");
     }
 
     #[test]

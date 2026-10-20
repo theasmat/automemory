@@ -114,9 +114,9 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Backups (`automemory backup`, restore with a safety copy, doctor check) and hook payload recording (`hooks record`) | ✅ | Restore is terminal-only (replaces the database) |
 | Team trust overlay: a teammate's pin is a request, not a pin | ✅ | Needs a shared vault key; see `sync/deltas.rs` |
 | Native Cohere, Voyage and Gemini embeddings; several LLM profiles | ✅ | Mock-server tests only, not run against the live services |
-| Continuity brief (C1): goal, ruled-out options with reasons, open questions, next steps left by one agent and handed to the next with provenance; `automemory continuity`; syncs between computers | ✅ | Claude Code chats can be imported (opt-in), searched and opened by agents; Antigravity reader, drafter and the dashboard page are C3–C5 (plan/continuity-plan.md) |
+| Continuity brief (C1): goal, ruled-out options with reasons, open questions, next steps left by one agent and handed to the next with provenance; `automemory continuity`; syncs between computers | ✅ | Claude Code and Antigravity chats can be imported (opt-in), searched and opened by agents; drafter and the dashboard page are C4–C5 (plan/continuity-plan.md) |
 | Dashboard control (Safe / Protected / Terminal-only tiers, jobs tray, Tools, agent set-up, decisions, lock settings, activity) | ✅ | Every write route has a tier (audit test); Protected asks the password every time |
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 263 Rust tests + 31 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 266 Rust tests + 31 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

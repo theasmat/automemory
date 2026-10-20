@@ -103,5 +103,56 @@ def main():
     return rep.finish()
 
 
+
+
+def antigravity():
+    """C3: a long Antigravity chat becomes searchable for a Claude Code session, and its own plan is imported."""
+    sys.path.insert(0, str(REPO / "tests" / "continuity"))
+    from make_antigravity_fixture import build  # noqa: E402
+
+    rep = Report("continuity: Antigravity chat history")
+    sb = Sandbox("agyhist")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "agy-master"})
+    try:
+        root = sb.project.resolve()
+        sb.mcp("project.register", slug="app", display_name="app", path=str(root))
+        base = sb.home / ".gemini" / "antigravity"
+        build(base, str(root))
+        # A conversation of another workspace must not be read for this project.
+        other = sb.home / ".gemini" / "antigravity-ide"
+        build(other, "/somewhere/else/entirely")
+        for f in (other / "conversations").glob("*.db"):
+            f.rename(other / "conversations" / "other-sess.db")
+
+        out = sb.run("continuity", "sources").stdout
+        rep.check("Antigravity (agy)  off" in out and "found: 1" in out.split("Antigravity (agy)")[1], "sources finds this project's Antigravity chat and not the other workspace's", out[-500:])
+        rep.check(sb.run("continuity", "enable", "agy").returncode == 0, "a person turns Antigravity on")
+        r = sb.run("continuity", "import", "agy")
+        m = re.search(r"(\d+) new message", r.stdout)
+        rep.check(r.returncode == 0 and m and int(m.group(1)) >= 6, "the conversation and its plan are imported", r.stdout + r.stderr)
+        rep.check("0 new message" in sb.run("continuity", "import", "agy").stdout, "importing again adds nothing")
+
+        hits = sb.run("continuity", "search", "sticky routing", "--agent", "agy").stdout
+        rep.check("agy:agy-sess-001" in hits and "Plan the demo shop cart" in hits, "search finds the exchange, with the conversation's title", hits)
+        plan = sb.run("continuity", "search", "ruled out server-side sessions").stdout
+        rep.check("plan.md" in plan or "Ruled" in plan or "ruled" in plan, "the agent's own plan file is searchable too", plan)
+        for secret_word in ("FIXTURESECRET", "PRIVATE REASONING", "TOOL OUTPUT"):
+            rep.check(secret_word not in sb.run("continuity", "search", secret_word).stdout, f"{secret_word.lower()} was never stored")
+        rep.check("→ read_file" not in sb.run("continuity", "search", "read_file").stdout, "one-line tool notes are not searched")
+
+        # The switch: a new Claude Code session asks what was said.
+        g = j(sb.mcp("chat.search", query="sticky routing", agent="agy", project_id="app"))
+        rep.check(g["hits"] and g["hits"][0]["agent"] == "agy", "a Claude session finds the Antigravity discussion with chat.search", json.dumps(g)[:240])
+        got = j(sb.mcp("chat.get", session=g["hits"][0]["session"], from_seq=0, limit=12))
+        roles = [m["role"] for m in got["messages"]]
+        rep.check("user" in roles and "assistant" in roles and "tool" in roles, "chat.get opens the exchange with user, assistant and tool notes in order", json.dumps(roles))
+        brief_add = j(sb.mcp("continuity.brief", project_id="app", action="add", agent="claude-code", session_id="cl-1", items=[
+            {"kind": "rejected", "text": "Server-side sessions for the cart", "reason": "no sticky routing (found in the Antigravity chat)"}]))
+        rep.check(brief_add["changed"][0]["created"], "and records what it learned in the brief")
+    finally:
+        sb.cleanup()
+    return rep.finish()
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(max(main(), antigravity()))

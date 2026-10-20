@@ -5,6 +5,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
+pub mod antigravity;
 pub mod claude_code;
 #[cfg(test)]
 pub mod testkit;
@@ -15,6 +16,8 @@ pub enum Role {
     Assistant,
     /// A one-line note of a tool the agent ran ("→ Edit src/a.rs"); never the tool's output.
     Tool,
+    /// A plan or notes file the agent wrote about the conversation (not chat).
+    Artifact,
 }
 
 impl Role {
@@ -23,6 +26,7 @@ impl Role {
             Self::User => "user",
             Self::Assistant => "assistant",
             Self::Tool => "tool",
+            Self::Artifact => "artifact",
         }
     }
 }
@@ -67,7 +71,7 @@ pub trait TranscriptReader: Send + Sync {
 
 /// Every reader AutoMemory knows. Add a line here for a new agent.
 pub fn registry() -> Vec<Box<dyn TranscriptReader>> {
-    vec![Box::new(claude_code::ClaudeCode)]
+    vec![Box::new(claude_code::ClaudeCode), Box::new(antigravity::Antigravity)]
 }
 
 pub fn reader(agent: &str) -> Option<Box<dyn TranscriptReader>> {
