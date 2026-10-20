@@ -31,7 +31,7 @@ pub async fn api_room(State(state): State<AppState>, Path(id): Path<String>) -> 
     let posts = state.db.room_posts(&id).unwrap_or_default();
     let labels: serde_json::Map<String, serde_json::Value> = room.members.iter().chain(posts.iter().map(|p| &p.author_session))
         .map(|m| (m.clone(), json!(state.db.session_label(m)))).collect();
-    Json(json!({ "room": room, "posts": posts, "outcome": state.db.room_outcome(&id), "plan": plan, "labels": labels })).into_response()
+    Json(json!({ "room": room, "posts": posts, "outcome": state.db.room_outcome(&id), "plan": plan, "labels": labels, "brief": state.db.room_meta(&id) })).into_response()
 }
 
 pub async fn api_room_approve(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Response {
@@ -65,4 +65,35 @@ pub struct DecidePayload { pub decision: String, #[serde(default)] pub steps: Ve
 pub async fn api_room_decide(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>, Json(p): Json<DecidePayload>) -> Response {
     if let Some(r) = protected(&state, &headers, "decide a planning room") { return r; }
     match state.db.decide_room(&id, &p.decision, &p.steps) { Ok(o) => Json(json!({ "success": true, "outcome": o })).into_response(), Err(e) => bad(e.to_string()) }
+}
+
+#[derive(Deserialize)]
+pub struct CreatePayload {
+    pub topic: String,
+    #[serde(default)]
+    pub question: String,
+    #[serde(default)]
+    pub agents: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    pub project_id: Option<String>,
+}
+
+/// POST /api/rooms: you start a room; the invited agents are told on their next prompt.
+pub async fn api_room_create(State(state): State<AppState>, headers: HeaderMap, Json(p): Json<CreatePayload>) -> Response {
+    if let Some(r) = protected(&state, &headers, &format!("start a planning room: {}", p.topic)) { return r; }
+    let project = super::control::project_dir_pub(&state, p.project_id.as_deref()).and_then(|(pid, _)| pid);
+    let clean = |v: Vec<String>| v.into_iter().map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).take(20).collect::<Vec<_>>();
+    let meta = automemory_core::db::queries::rooms::RoomMeta {
+        question: p.question, scope: clean(p.scope), constraints: clean(p.constraints), invited: clean(p.agents), evidence: clean(p.evidence),
+        created_by: String::new(),
+    };
+    match state.db.create_room_by_human(project.as_deref(), &p.topic, meta) {
+        Ok(room) => Json(json!({ "success": true, "room": room })).into_response(),
+        Err(e) => bad(e.to_string()),
+    }
 }

@@ -1,6 +1,6 @@
 # Planning rooms: spec
 
-Status: plan, not built. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
+Status: R1 built (Oct 2026); the rest is a plan. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
 another agent needs to build it. Tasks R1–R5 are in [docs/TASKS.md](../docs/TASKS.md).
 
 ## 1. Where we are

@@ -34,6 +34,7 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/demo", Tier::Protected, "load or remove sample data"),
     ("/api/mode", Tier::Protected, "safety mode"),
     ("/api/memories", Tier::Protected, "add a memory"),
+    ("/api/rooms", Tier::Protected, "start a planning room"),
     ("/api/rooms/:id/note", Tier::Protected, "add a note to a planning room"),
     ("/api/rooms/:id/decide", Tier::Protected, "decide a planning room yourself"),
     ("/api/rooms/:id/approve", Tier::Protected, "approve a planning room's plan"),

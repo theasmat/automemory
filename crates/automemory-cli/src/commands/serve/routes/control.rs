@@ -51,6 +51,10 @@ fn project_dir(state: &AppState, project_id: Option<&str>) -> Option<(Option<Str
     })
 }
 
+pub(super) fn project_dir_pub(state: &AppState, project_id: Option<&str>) -> Option<(Option<String>, PathBuf)> {
+    project_dir(state, project_id)
+}
+
 /// Runs this same binary (so the dashboard does exactly what the CLI does) and returns its output.
 fn run_self(args: &[&str], cwd: &std::path::Path) -> anyhow::Result<String> {
     let out = std::process::Command::new(std::env::current_exe()?).args(args).current_dir(cwd).output()?;

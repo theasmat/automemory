@@ -27,7 +27,7 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
-        .route("/api/rooms", get(rooms::api_rooms))
+        .route("/api/rooms", get(rooms::api_rooms).post(rooms::api_room_create))
         .route("/api/rooms/:id", get(rooms::api_room))
         .route("/api/rooms/:id/note", post(rooms::api_room_note))
         .route("/api/rooms/:id/decide", post(rooms::api_room_decide))

@@ -120,6 +120,24 @@ def main():
         r = sb.mcp("room.post", room_id=r3, session_id="agent-y", kind="critique", body="late", evidence=[ev])
         rep.check("decided" in json.dumps(r), "after your decision the agents cannot post", json.dumps(r)[:120])
 
+        # R1: you start a room in the dashboard; invited agents learn about it from their prompt hook, once per turn.
+        code, _ = http(port, "/api/rooms", "POST", {}, {"topic": "checkout retries", "agents": ["claude"]})
+        rep.check(code == 403, "Protected: starting a room needs the password")
+        code, body = http(port, "/api/rooms", "POST", PW, {"topic": "checkout retries", "question": "Retry failed payments or not?",
+                                                         "agents": ["claude", "agy"], "evidence": [ev], "constraints": ["No new services"]})
+        r4 = json.loads(body).get("room", {}).get("id")
+        rep.check(code == 200 and r4, "a room started in the dashboard", f"{code} {body[:120]}")
+        hook_ctx = lambda agent, sid: json.dumps(sb.hook(agent, "prompt", {"session_id": sid, "hook_event_name": "UserPromptSubmit", "prompt": "hi"})[0] or {})
+        first = hook_ctx("claude", "cl-1")
+        rep.check("checkout retries" in first and "proposal" in first and "Retry failed payments" in first, "the invited agent is told on its next prompt", first[:240])
+        rep.check("checkout retries" not in hook_ctx("claude", "cl-1"), "and only once per turn")
+        rep.check("checkout retries" not in hook_ctx("codex", "cx-1"), "an agent that was not invited is not told")
+        joined = j(sb.mcp("room.join", session_id="cl-1", agent="claude-code", room_id=r4))
+        rep.check(joined["room"]["turn_holder"] == "cl-1" and joined["brief"]["constraints"] == ["No new services"], "joining gives the turn and the brief", json.dumps(joined)[:200])
+        sb.mcp("room.post", room_id=r4, session_id="cl-1", kind="propose", body="Retry once after 5 s", evidence=[ev])
+        agy = hook_ctx("agy", "ag-1")
+        rep.check("checkout retries" in agy and "critique" in agy, "the other invited agent is told it is its turn to critique", agy[:240])
+
         # Human tiebreak on a second room: send it back for another round.
         r2 = j(sb.mcp("room.join", session_id="agent-a", topic="cache", project_id="app"))["room"]["id"]
         j(sb.mcp("room.join", session_id="agent-b", room_id=r2))

@@ -3,12 +3,54 @@
     <PageHeader
       title="Planning rooms"
       description="Agents propose, critique and revise a plan together. You give the verdict: approving records the decision and creates a task for each step."
-    />
+    >
+      <template #actions>
+        <Button size="sm" variant="primary" lock="/api/rooms" @click="openNew">New room</Button>
+      </template>
+    </PageHeader>
+
+    <Modal :is-open="newOpen" title="New planning room" max-width-class="max-w-xl" @close="newOpen = false">
+      <form class="space-y-4" @submit.prevent="createRoom">
+        <label class="block text-xs text-text-muted">Topic
+          <input v-model="nr.topic" required class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Cart storage" />
+        </label>
+        <label class="block text-xs text-text-muted">The question to answer
+          <input v-model="nr.question" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Where do we keep the cart, and for how long?" />
+        </label>
+        <fieldset>
+          <legend class="text-xs text-text-muted">Invite (connected here)</legend>
+          <p v-if="!invitable.length" class="mt-1 text-sm text-text-muted">No agent is connected in this project. Connect one on the Agents page.</p>
+          <label v-for="a in invitable" :key="a.id" class="mt-1 flex items-center gap-2 text-sm text-text">
+            <input v-model="nr.agents" type="checkbox" :value="a.id" />
+            {{ agentName(a.id) }}
+            <span v-if="!a.native_hooks" class="text-xs text-text-muted">(no hooks: give it the room id yourself)</span>
+          </label>
+        </fieldset>
+        <div>
+          <label class="block text-xs text-text-muted">Starting evidence (optional)
+            <input v-model="evQuery" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Search notes…" @input="searchNotes" />
+          </label>
+          <label v-for="m in evResults" :key="m.id" class="mt-1 flex items-start gap-2 text-sm text-text">
+            <input v-model="nr.evidence" type="checkbox" :value="m.id" class="mt-1" /> {{ m.summary }}
+          </label>
+        </div>
+        <label class="block text-xs text-text-muted">Files in scope (comma separated, optional)
+          <input v-model="nr.scope" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="shop/cart.py, shop/checkout.py" />
+        </label>
+        <label class="block text-xs text-text-muted">Constraints, one per line (optional)
+          <textarea v-model="nr.constraints" rows="2" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="No new services" />
+        </label>
+        <div class="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" @click="newOpen = false">Cancel</Button>
+          <Button size="sm" variant="primary" type="submit" lock="/api/rooms" :disabled="!nr.topic.trim() || !nr.agents.length">Create</Button>
+        </div>
+      </form>
+    </Modal>
 
     <EmptyState
       v-if="rooms.length === 0"
       title="No rooms yet"
-      description="An agent opens one with the room.join tool when a design choice is worth two opinions. They take turns: propose, critique, revise."
+      description="Start one with New room, or an agent opens one with room.join. Agents take turns: propose, critique, revise; you decide."
     />
 
     <div v-else class="grid grid-cols-1 lg:grid-cols-[20rem_1fr] gap-4">
@@ -36,8 +78,14 @@
           <template #actions>
             <Badge :variant="stateBadge.variant">{{ stateBadge.label }}</Badge>
           </template>
+          <div v-if="detail.brief" class="mb-3 space-y-1 text-sm">
+            <p v-if="detail.brief.question" class="text-text"><span class="text-text-muted">Question:</span> {{ detail.brief.question }}</p>
+            <p v-if="detail.brief.scope?.length" class="text-xs text-text-muted">Scope: {{ detail.brief.scope.join(', ') }}</p>
+            <p v-if="detail.brief.constraints?.length" class="text-xs text-text-muted">Constraints: {{ detail.brief.constraints.join(' · ') }}</p>
+            <p v-if="detail.brief.invited?.length" class="text-xs text-text-muted">Invited: {{ detail.brief.invited.map(agentName).join(', ') }} (told on their next prompt)</p>
+          </div>
           <p class="text-xs text-text-muted">
-            Agents: {{ detail.room.members.map(label).join(', ') }}
+            Agents: {{ detail.room.members.length ? detail.room.members.map(label).join(', ') : 'none joined yet' }}
             <span v-if="detail.room.turn_holder && detail.room.turn_holder !== lastAuthor"> · waiting for {{ label(detail.room.turn_holder) }}</span>
             <span v-else-if="detail.room.state !== 'decided'"> · waiting for another agent to join and reply</span>
           </p>
@@ -102,6 +150,47 @@ const selectedId = ref('');
 const detail = ref<any>(null);
 const busy = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
+
+const newOpen = ref(false);
+const nr = reactive({ topic: '', question: '', agents: [] as string[], evidence: [] as string[], scope: '', constraints: '' });
+const invitable = ref<any[]>([]);
+const evQuery = ref('');
+const evResults = ref<any[]>([]);
+const agentName = (id: string) => ({ claude: 'Claude Code', agy: 'Antigravity', codex: 'Codex' } as Record<string, string>)[id] || id;
+
+async function openNew() {
+  Object.assign(nr, { topic: '', question: '', agents: [], evidence: [], scope: '', constraints: '' });
+  evQuery.value = '';
+  evResults.value = [];
+  newOpen.value = true;
+  const r = await request<any>('/api/agents/setup');
+  invitable.value = r.ok ? (r.data.agents || []).filter((a: any) => a.registered_here && a.id !== 'claude-desktop') : [];
+}
+
+let evTimer: ReturnType<typeof setTimeout> | null = null;
+function searchNotes() {
+  if (evTimer) clearTimeout(evTimer);
+  evTimer = setTimeout(async () => {
+    if (!evQuery.value.trim()) { evResults.value = []; return; }
+    const r = await request<any[]>(`/api/memories?q=${encodeURIComponent(evQuery.value)}`);
+    const picked = evResults.value.filter((m) => nr.evidence.includes(m.id));
+    evResults.value = [...picked, ...(r.ok && Array.isArray(r.data) ? r.data.filter((m: any) => !nr.evidence.includes(m.id)).slice(0, 6) : [])];
+  }, 250);
+}
+
+async function createRoom() {
+  const body = {
+    topic: nr.topic, question: nr.question, agents: nr.agents, evidence: nr.evidence,
+    scope: nr.scope.split(',').map((x) => x.trim()).filter(Boolean),
+    constraints: nr.constraints.split('\n').map((x) => x.trim()).filter(Boolean),
+  };
+  const r = await protectedCall('POST', '/api/rooms', 'start a planning room', body);
+  if (!r.ok) return toast.error(r.error || 'Not created');
+  newOpen.value = false;
+  toast.success('Room started. Invited agents are told on their next prompt.');
+  selectedId.value = r.data.room.id;
+  await load();
+}
 
 const kindLabel: Record<string, string> = { propose: 'Proposal', critique: 'Critique', revise: 'Revision', note: 'Your note' };
 const note = ref('');

@@ -131,7 +131,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Planning rooms people use (plan: PLAN §14, spec: plan/room-plan.md)
 
-- [ ] R1 Start a room from the dashboard (topic, question, invited agents, evidence picker, scope, constraints); hook tells invited agents
+- [x] R1 Start a room from the dashboard (topic, question, invited agents, evidence picker, scope, constraints); the prompt hook tells an invited agent once per turn, with its own session id; `room.join`/`room.status` return the brief. Brief kept in `sync_kv` (rooms do not sync)
 - [ ] R2 Human notes in a room; edit the plan (decision, steps with owner/files/check) before approving
 - [ ] R3 Tasks with order/owner/files/check and live state on the room page; claiming locks files; Revise → follow-up room supersedes
 - [ ] R4 1–3 rounds, multi-critic, turn timeout; WebSocket updates (only if the A/B favours rooms)
@@ -141,7 +141,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 241 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 246 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

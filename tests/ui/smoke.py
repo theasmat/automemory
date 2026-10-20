@@ -88,6 +88,13 @@ def main():
             page.wait_for_timeout(500)
             body = page.inner_text("main")
             rep.check("auth strategy" in body and "Needs sticky routing" in body and "Add token table" in body, "the room page shows the discussion and the plan", body[:200])
+            page.get_by_role("button", name="New room").click()
+            page.wait_for_timeout(400)
+            dialog = page.inner_text("body")
+            rep.check("New planning room" in dialog and ("Claude Code" in dialog or "No agent is connected" in dialog),
+                      "the New room dialog opens and lists agents to invite (or says none is connected)", dialog[-300:])
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
             page.get_by_role("button", name="Approve").click()
             page.locator("input[type=password]").fill("smoke pw")
             page.keyboard.press("Enter")

@@ -289,6 +289,26 @@ pub struct RoomPlan {
     pub evidence: Vec<String>,
 }
 
+/// What a person asked for when starting a room from the dashboard. Rooms are per machine (they do not sync), so this
+/// lives in `sync_kv` as `room_meta:<id>`.
+// shortcut: kept in sync_kv, not columns; move to a migration if rooms ever sync between machines.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RoomMeta {
+    #[serde(default)]
+    pub question: String,
+    #[serde(default)]
+    pub scope: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    /// Agent names as the hooks know them (`claude`, `agy`, `codex`).
+    #[serde(default)]
+    pub invited: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub created_by: String,
+}
+
 /// The human's verdict on a decided room, kept so approving twice is impossible.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoomOutcome {
@@ -334,6 +354,72 @@ impl Database {
         Ok(rooms.into_iter().map(|r| { let n = self.room_posts(&r.id).map(|p| p.len() as i64).unwrap_or(0); (r, n) }).collect())
     }
 
+    pub fn room_meta(&self, room_id: &str) -> Option<RoomMeta> {
+        self.sync_kv_get(&format!("room_meta:{room_id}")).and_then(|j| serde_json::from_str(&j).ok())
+    }
+
+    /// A room you start: nobody holds the turn, so the first invited agent to join proposes.
+    pub fn create_room_by_human(&self, project_id: Option<&str>, topic: &str, mut meta: RoomMeta) -> Result<Room> {
+        let topic = clip(topic, 120);
+        if topic.is_empty() {
+            return Err(anyhow!("the topic is empty"));
+        }
+        if meta.invited.is_empty() {
+            return Err(anyhow!("invite at least one agent"));
+        }
+        for id in &meta.evidence {
+            if !self.evidence_resolves(id)? {
+                return Err(anyhow!("evidence does not resolve: {id}"));
+            }
+        }
+        meta.question = clip(&meta.question, 400);
+        meta.created_by = "human".into();
+        let now = Utc::now();
+        let id = format!("room-{}", Uuid::now_v7().simple());
+        self.conn().execute(
+            "INSERT INTO rooms (id, project_id, topic, state, members, turn_holder, round, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'open', '[]', NULL, 0, ?4, ?4)",
+            params![id, project_id, topic, now.to_rfc3339()],
+        )?;
+        self.sync_kv_set(&format!("room_meta:{id}"), &serde_json::to_string(&meta)?);
+        self.get_room(&id)?.ok_or_else(|| anyhow!("room vanished"))
+    }
+
+    /// One line per room that waits for this agent: its turn, or an open turn in a room it was invited to. Each line is
+    /// given once per turn (the hooks fire on every prompt), at most two rooms.
+    pub fn room_lines_for(&self, project_id: Option<&str>, session_id: &str, agent: &str) -> Vec<String> {
+        let Ok(rooms) = self.list_rooms(project_id, 20) else { return vec![] };
+        let mut lines = Vec::new();
+        for (room, _) in rooms {
+            if room.state == RoomState::Decided || self.room_outcome(&room.id).is_some() {
+                continue;
+            }
+            let meta = self.room_meta(&room.id).unwrap_or_default();
+            let invited = meta.invited.iter().any(|a| a == agent) || room.members.iter().any(|m| m == session_id);
+            let last = self.room_posts(&room.id).ok().and_then(|p| p.into_iter().rev().find(|p| p.kind != PostKind::Note)).map(|p| p.author_session);
+            let mine = room.turn_holder.as_deref() == Some(session_id)
+                || (room.turn_holder.is_none() && invited && last.as_deref() != Some(session_id));
+            if !mine {
+                continue;
+            }
+            let told = format!("room_told:{session_id}:{}:{}:{}", room.id, room.state, room.round);
+            if self.sync_kv_get(&told).is_some() {
+                continue;
+            }
+            self.sync_kv_set(&told, "1");
+            let what = match room.state { RoomState::Open => "proposal", RoomState::Critique => "critique", _ => "revision" };
+            let question = if meta.question.is_empty() { String::new() } else { format!(" Question: {}", meta.question) };
+            lines.push(format!(
+                "[AutoMemory] Planning room \"{}\" ({}) waits for your {what}.{question} Join with room.join (room_id, session_id \"{session_id}\", agent), read room.status, then room.post.",
+                room.topic, room.id
+            ));
+            if lines.len() == 2 {
+                break;
+            }
+        }
+        lines
+    }
+
     pub fn room_outcome(&self, room_id: &str) -> Option<RoomOutcome> {
         self.sync_kv_get(&format!("room_outcome:{room_id}")).and_then(|j| serde_json::from_str(&j).ok())
     }
@@ -348,7 +434,7 @@ impl Database {
         let revise = posts.iter().rev().find(|p| p.kind == PostKind::Revise).ok_or_else(|| anyhow!("no revision in the room"))?;
         let critique = posts.iter().rev().find(|p| p.kind == PostKind::Critique);
         let decision = revise.body.lines().map(str::trim).find(|l| !l.is_empty()).map(|l| clip(l.trim_start_matches(['#', ' ']), 200)).unwrap_or_default();
-        let mut evidence: Vec<String> = posts.iter().flat_map(|p| p.evidence.clone()).collect();
+        let mut evidence: Vec<String> = posts.iter().flat_map(|p| p.evidence.clone()).chain(self.room_meta(room_id).unwrap_or_default().evidence).collect();
         evidence.sort();
         evidence.dedup();
         Ok(RoomPlan {
@@ -724,6 +810,32 @@ mod tests {
         // Rooms made by the old rotation kept the turn on the proposer.
         db.conn().execute("UPDATE rooms SET turn_holder = 'sess-a' WHERE id = ?1", [&room.id]).unwrap();
         assert_eq!(db.join_room(&room.id, "sess-b").unwrap().unwrap().turn_holder.as_deref(), Some("sess-b"));
+    }
+
+    #[test]
+    fn a_room_you_start_tells_invited_agents_once_per_turn() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        assert!(db.create_room_by_human(None, "cart", RoomMeta::default()).is_err(), "someone must be invited");
+        let meta = RoomMeta { question: "Where do carts live?".into(), invited: vec!["claude".into(), "agy".into()], evidence: vec![ev.clone()], ..Default::default() };
+        let room = db.create_room_by_human(None, "cart", meta).unwrap();
+        assert_eq!((room.members.len(), room.turn_holder.clone()), (0, None));
+
+        let lines = db.room_lines_for(None, "c1", "claude");
+        assert!(lines.len() == 1 && lines[0].contains("waits for your proposal") && lines[0].contains("Where do carts live?"), "{lines:?}");
+        assert!(db.room_lines_for(None, "c1", "claude").is_empty(), "told once per turn");
+        assert!(db.room_lines_for(None, "x1", "codex").is_empty(), "not invited, not told");
+
+        db.join_room(&room.id, "c1").unwrap();
+        db.post_to_room(&room.id, "c1", PostKind::Propose, "SQLite", std::slice::from_ref(&ev)).unwrap();
+        assert!(db.room_lines_for(None, "c1", "claude").is_empty(), "the proposer is not asked to critique itself");
+        let agy = db.room_lines_for(None, "g1", "agy");
+        assert!(agy.len() == 1 && agy[0].contains("critique"), "{agy:?}");
+        db.join_room(&room.id, "g1").unwrap();
+        db.post_to_room(&room.id, "g1", PostKind::Critique, "expiry?", std::slice::from_ref(&ev)).unwrap();
+        assert!(db.room_lines_for(None, "c1", "claude")[0].contains("revision"), "the proposer is told to revise");
+        db.post_to_room(&room.id, "c1", PostKind::Revise, "SQLite with expiry\n- add table", &[ev.clone()]).unwrap();
+        assert!(db.room_lines_for(None, "g1", "agy").is_empty() && db.room_plan(&room.id).unwrap().evidence.contains(&ev));
     }
 
     #[test]

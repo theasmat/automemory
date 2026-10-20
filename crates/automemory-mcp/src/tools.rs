@@ -2414,8 +2414,13 @@ impl ToolRegistry {
                 if let Some(room_id) = arguments.get("room_id").and_then(|v| v.as_str()) {
                     match self.db.join_room(room_id, session_id) {
                         Ok(Some(room)) => ToolCallResult::json(&json!({
+                            "brief": self.db.room_meta(room_id),
+                            "next_action": if room.turn_holder.as_deref() == Some(session_id) {
+                                "It is your turn: read room.status (the brief and any notes from the human are your guidance), then room.post."
+                            } else {
+                                "Wait for your turn (room.pending), then room.post."
+                            },
                             "room": room,
-                            "next_action": "Post with room.post when turn_holder is your session."
                         })),
                         Ok(None) => ToolCallResult::error("Room not found"),
                         Err(e) => ToolCallResult::error(format!("Failed to join room: {}", e)),
@@ -2507,6 +2512,7 @@ impl ToolRegistry {
                         let labels: serde_json::Map<String, Value> = room.members.iter().chain(std::iter::once(&"human".to_string()))
                             .map(|m| (m.clone(), json!(self.db.session_label(m)))).collect();
                         ToolCallResult::json(&json!({
+                            "brief": self.db.room_meta(room_id),
                             "room": room,
                             "posts": posts,
                             "labels": labels,

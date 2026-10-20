@@ -27,6 +27,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T9 | Human password gate | PASS | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 | T11 | Planning room: two real agents agree a plan, the human approves it | PASS (3 fixes) | 2026-10-20 |
+| T11b | Room started in the dashboard; invited agents find it with no id pasted | PENDING | |
 
 ## Test cases
 

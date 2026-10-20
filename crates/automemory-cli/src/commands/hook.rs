@@ -212,6 +212,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         if agy_style(agent) {
             let mut parts = db.drain_notes(&session_id);
             parts.extend(others_leases_note(&db, effective_project_id, &session_id));
+            parts.extend(db.room_lines_for(effective_project_id, &session_id, agent));
             let first_step = raw_payload.get("invocationNum").and_then(|v| v.as_i64()) == Some(0);
             if first_step {
                 parts.extend(resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)));
@@ -257,7 +258,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     // ── Pending-work nudge: only speaks when something is assigned ─────────
     if canonical == Some(CanonicalEvent::UserPromptSubmit) {
         spawn_background_sync(&db);
-        let parts: Vec<String> = [
+        let mut parts: Vec<String> = [
             resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)),
             pending_work_nudge(&db, effective_project_id, &session_id),
             others_leases_note(&db, effective_project_id, &session_id),
@@ -265,6 +266,8 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         .into_iter()
         .flatten()
         .collect();
+        // Planning rooms that wait for this agent (its turn, or an invitation), told once per turn.
+        parts.extend(db.room_lines_for(effective_project_id, &session_id, agent));
         if parts.is_empty() {
             emit!("{{}}");
         } else if native_hook_style(agent) {
