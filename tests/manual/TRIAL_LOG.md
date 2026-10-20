@@ -45,7 +45,15 @@ Pass when
 - Approve records ONE decision (Project brain > Decisions, agent "room", the critique as dissent) and one task per step; a second approval is refused.
 - `task.next` in an agent returns the first step; no agent called `decision.record` for it.
 Also note: did the agents find and use the room tools without being told the tool names? Quote what they did if not.
-Result: _not run yet_
+Result: _in progress_
+
+#### 2026-10-20 T11 setup (maintainer)
+- Daemon on :4545 already runs the new build (started 13:20, after the 13:16 install); `GET /api/rooms` → `[]`.
+- Re-ran `automemory connect claude` and `connect agy` in the trial folder. Antigravity's rules and skill got the rooms paragraph,
+  but **CLAUDE.md did not**: `connect` only wrote the guidelines when CLAUDE.md was missing, so existing projects never received new
+  guidance. Fixed: a CLAUDE.md that AutoMemory wrote (starts with its heading) has its guidelines section refreshed up to the managed
+  block; a user's own CLAUDE.md is untouched (unit test). Re-ran `connect claude`: CLAUDE.md now has the Planning rooms line, the
+  managed memory block is intact.
 
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.

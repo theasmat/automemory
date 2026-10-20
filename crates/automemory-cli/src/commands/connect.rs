@@ -491,9 +491,7 @@ pub(crate) fn connect_claude(
         merge_mcp_config(&ws_mcp, exe_path)?;
 
         let claude_md = workspace_root.join("CLAUDE.md");
-        if !claude_md.exists() {
-            let _ = fs::write(&claude_md, automemory_rules_content());
-        }
+        let _ = fs::write(&claude_md, refresh_guidelines(&fs::read_to_string(&claude_md).unwrap_or_default()));
         let _ = install_git_post_commit_hook(workspace_root, exe_path);
 
         println!("✓ [WORKSPACE] Connected to Claude at {}", ws_mcp.display());
@@ -1250,6 +1248,22 @@ When finishing your assigned task or when reaching context window limits:
 "#
 }
 
+/// CLAUDE.md with our guidelines current. A file we wrote (it starts with our heading) gets the heading section
+/// replaced up to the managed block, so new guidance reaches existing projects; a file of the user's is left alone.
+fn refresh_guidelines(existing: &str) -> String {
+    const HEADING: &str = "# AutoMemory Multi-Agent Coordination Guidelines";
+    if existing.trim().is_empty() {
+        return automemory_rules_content().to_string();
+    }
+    if !existing.starts_with(HEADING) {
+        return existing.to_string();
+    }
+    match existing.find("<!-- automemory:begin") {
+        Some(i) => format!("{}\n{}", automemory_rules_content().trim_end(), &existing[i..]),
+        None => automemory_rules_content().to_string(),
+    }
+}
+
 pub(crate) fn automemory_rules_content() -> &'static str {
     r#"# AutoMemory Multi-Agent Coordination Guidelines
 
@@ -1333,4 +1347,20 @@ pub(crate) fn remove_git_post_commit_hook(workspace_root: &Path) -> Result<bool>
         fs::write(&path, rest)?;
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod guideline_tests {
+    use super::*;
+
+    #[test]
+    fn our_guidelines_are_refreshed_and_user_files_are_untouched() {
+        let old = "# AutoMemory Multi-Agent Coordination Guidelines\n\n- **Handoffs**: old text\n\n<!-- automemory:begin -->\nmemory\n<!-- automemory:end -->\n";
+        let new = refresh_guidelines(old);
+        assert!(new.contains("**Planning rooms**") && new.contains("<!-- automemory:begin -->\nmemory") && !new.contains("old text"), "{new}");
+        assert_eq!(refresh_guidelines(&new), new, "idempotent");
+        let mine = "# My project\nUse tabs.\n";
+        assert_eq!(refresh_guidelines(mine), mine);
+        assert!(refresh_guidelines("").starts_with("# AutoMemory"));
+    }
 }
