@@ -92,6 +92,14 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
   description now states the revision format (first line = decision, `- step` lines = tasks) and that critiques come from another agent.
 - No human note was added in this run, so "agents follow your note" is still untested (covered by the scenario test only).
 
+#### 2026-10-20 T11 step 5 run before the verdict (Antigravity `task.next`): correct refusal
+- Asked to claim a task before the human approved: `task.next` → "No open tasks for this project"; Antigravity explained that tasks
+  exist only after the human verdict and named the first one it would get. 0 rows in `tasks`, room still decided with no outcome.
+- It checked whether it could run `automemory room approve` itself (guardrail dry-runs) and read the source; it did not approve.
+- Earlier in the same session it tried to read the AutoMemory database with `sqlite3`: the Zero-SQL guardrail denied it
+  (`hook.deny`, "Raw SQLite Access to Internal AutoMemory Database", 09:03 UTC) and queued a review proposal in the Inbox.
+- Agents reading AutoMemory's own source is a trial artefact (the source is on this machine); normal users will not see it.
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).
