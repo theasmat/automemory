@@ -17,7 +17,8 @@ pub async fn api_rooms(State(state): State<AppState>, Query(q): Query<RoomsQuery
         .map(|(r, posts)| {
             let outcome = state.db.room_outcome(&r.id);
             let needs_you = r.state == automemory_core::models::RoomState::Decided && outcome.is_none();
-            json!({ "room": r, "posts": posts, "outcome": outcome, "needs_you": needs_you })
+            let labels: serde_json::Map<String, serde_json::Value> = r.members.iter().map(|m| (m.clone(), json!(state.db.session_label(m)))).collect();
+            json!({ "room": r, "posts": posts, "outcome": outcome, "needs_you": needs_you, "labels": labels })
         })
         .collect();
     Json(out).into_response()
@@ -27,7 +28,10 @@ pub async fn api_rooms(State(state): State<AppState>, Query(q): Query<RoomsQuery
 pub async fn api_room(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     let Ok(Some(room)) = state.db.get_room(&id) else { return bad("room not found") };
     let plan = state.db.room_plan(&id).ok();
-    Json(json!({ "room": room, "posts": state.db.room_posts(&id).unwrap_or_default(), "outcome": state.db.room_outcome(&id), "plan": plan })).into_response()
+    let posts = state.db.room_posts(&id).unwrap_or_default();
+    let labels: serde_json::Map<String, serde_json::Value> = room.members.iter().chain(posts.iter().map(|p| &p.author_session))
+        .map(|m| (m.clone(), json!(state.db.session_label(m)))).collect();
+    Json(json!({ "room": room, "posts": posts, "outcome": state.db.room_outcome(&id), "plan": plan, "labels": labels })).into_response()
 }
 
 pub async fn api_room_approve(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Response {
@@ -43,4 +47,22 @@ pub async fn api_room_reject(State(state): State<AppState>, headers: HeaderMap, 
 pub async fn api_room_again(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Response {
     if let Some(r) = protected(&state, &headers, "send a planning room back for another round") { return r; }
     match state.db.another_round(&id) { Ok(room) => Json(json!({ "success": true, "room": room })).into_response(), Err(e) => bad(e.to_string()) }
+}
+
+#[derive(Deserialize)]
+pub struct NotePayload { pub text: String }
+
+/// POST /api/rooms/:id/note: your remark in the room; no turn, no state change.
+pub async fn api_room_note(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>, Json(p): Json<NotePayload>) -> Response {
+    if let Some(r) = protected(&state, &headers, "add a note to a planning room") { return r; }
+    match state.db.add_room_note(&id, &p.text) { Ok(post) => Json(json!({ "success": true, "post": post })).into_response(), Err(e) => bad(e.to_string()) }
+}
+
+#[derive(Deserialize)]
+pub struct DecidePayload { pub decision: String, #[serde(default)] pub steps: Vec<String> }
+
+/// POST /api/rooms/:id/decide: your decision, at any stage; stores the decision and one task per step.
+pub async fn api_room_decide(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>, Json(p): Json<DecidePayload>) -> Response {
+    if let Some(r) = protected(&state, &headers, "decide a planning room") { return r; }
+    match state.db.decide_room(&id, &p.decision, &p.steps) { Ok(o) => Json(json!({ "success": true, "outcome": o })).into_response(), Err(e) => bad(e.to_string()) }
 }

@@ -498,7 +498,7 @@ impl RoomProtocol for PcrProtocol {
         if kind != expected {
             return Err(anyhow!("room expects {expected}, not {kind}"));
         }
-        if turn_holder != Some(author) {
+        if turn_holder.is_some_and(|t| t != author) {
             return Err(anyhow!("not your turn"));
         }
         if kind == PostKind::Propose && evidence_empty {

@@ -68,7 +68,9 @@ impl Database {
         }
         if !room.members.contains(&session_id.to_string()) {
             room.members.push(session_id.to_string());
-            if room.turn_holder.is_none() {
+            // An unheld turn, or one an agent holds only because it was alone after its own post, goes to the newcomer.
+            let last_author = self.room_posts(id)?.last().map(|p| p.author_session.clone());
+            if room.turn_holder.is_none() || (room.turn_holder.is_some() && room.turn_holder == last_author) {
                 room.turn_holder = Some(session_id.to_string());
             }
             room.updated_at = Utc::now();
@@ -142,6 +144,9 @@ impl Database {
         let room = self
             .get_room(room_id)?
             .ok_or_else(|| anyhow!("room not found"))?;
+        if kind == PostKind::Note {
+            return Err(anyhow!("notes come from the human, through the dashboard"));
+        }
         protocol.validate_turn(
             room.state,
             kind,
@@ -149,6 +154,10 @@ impl Database {
             author_session,
             evidence.is_empty(),
         )?;
+        let previous = self.room_posts(room_id)?.into_iter().rev().find(|p| p.kind != PostKind::Note);
+        if kind == PostKind::Critique && previous.as_ref().is_some_and(|p| p.author_session == author_session) {
+            return Err(anyhow!("a critique must come from another agent: wait for one to join"));
+        }
         for id in evidence {
             if !self.evidence_resolves(id)? {
                 return Err(anyhow!("evidence does not resolve: {id}"));
@@ -193,10 +202,11 @@ impl Database {
             RoomState::Critique => RoomState::Revise,
             RoomState::Revise | RoomState::Decided => RoomState::Decided,
         };
+        // The next turn goes to another member; alone, it stays open for whoever joins (nobody critiques their own post).
         let next_turn = if next_state == RoomState::Decided {
             None
         } else {
-            Some(next_member(&room.members, author_session))
+            Some(next_member(&room.members, author_session)).filter(|n| n != author_session)
         };
         self.conn().execute(
             "UPDATE rooms SET state = ?1, turn_holder = ?2, round = round + 1, updated_at = ?3 WHERE id = ?4",
@@ -351,12 +361,50 @@ impl Database {
         })
     }
 
-    /// Human approval: records the decision and one task per step. Refuses a second time.
+    /// Human approval of the agents' plan as written.
     pub fn approve_room(&self, room_id: &str) -> Result<RoomOutcome> {
+        let plan = self.room_plan(room_id)?;
+        self.store_plan(room_id, plan, "room")
+    }
+
+    /// The human decides, at any stage: the decision text and steps are theirs (prefilled from the agents' plan
+    /// when there is one). Ends the discussion.
+    pub fn decide_room(&self, room_id: &str, decision: &str, steps: &[String]) -> Result<RoomOutcome> {
+        let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
+        if decision.trim().is_empty() {
+            return Err(anyhow!("the decision is empty"));
+        }
+        let agents = self.room_plan(room_id).ok();
+        let steps: Vec<String> = steps.iter().map(|t| clip(t, 120)).filter(|t| !t.is_empty()).take(20).collect();
+        let unchanged = agents.as_ref().is_some_and(|p| p.decision == decision.trim() && p.tasks == steps);
+        let posts = self.room_posts(room_id)?;
+        let mut evidence: Vec<String> = posts.iter().flat_map(|p| p.evidence.clone()).collect();
+        evidence.sort();
+        evidence.dedup();
+        let plan = RoomPlan {
+            topic: room.topic.clone(),
+            decision: clip(decision, 200),
+            reason: match &agents {
+                Some(p) if unchanged => p.reason.clone(),
+                Some(p) => format!("Decided by the human in planning room {room_id}, starting from the agents' plan: {}", clip(&p.decision, 300)),
+                None => format!("Decided by the human in planning room {room_id} after {} post(s).", posts.len()),
+            },
+            dissent: posts.iter().rev().find(|p| p.kind == PostKind::Critique).map(|c| clip(&c.body, 400)),
+            tasks: steps,
+            evidence,
+        };
+        let out = self.store_plan(room_id, plan, if unchanged { "room" } else { "human" })?;
+        self.conn().execute(
+            "UPDATE rooms SET state = 'decided', turn_holder = NULL, updated_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), room_id],
+        )?;
+        Ok(out)
+    }
+
+    fn store_plan(&self, room_id: &str, plan: RoomPlan, agent: &str) -> Result<RoomOutcome> {
         if self.room_outcome(room_id).is_some() {
             return Err(anyhow!("this room already has an outcome"));
         }
-        let plan = self.room_plan(room_id)?;
         let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
         let decision = self.record_decision(crate::models::DecisionRecordArgs {
             project_id: room.project_id.as_deref(),
@@ -365,7 +413,7 @@ impl Database {
             reason: &plan.reason,
             alternatives: &[],
             dissent: plan.dissent.as_deref(),
-            agent: "room",
+            agent,
             symbols: &[],
             evidence: &plan.evidence,
         })?;
@@ -376,6 +424,55 @@ impl Database {
         let out = RoomOutcome { outcome: "approved".into(), decision_id: Some(decision.id), task_ids, at: Utc::now().to_rfc3339() };
         self.sync_kv_set(&format!("room_outcome:{room_id}"), &serde_json::to_string(&out)?);
         Ok(out)
+    }
+
+    /// A human remark in the room: no turn, no state change. Agents see it in room.status.
+    pub fn add_room_note(&self, room_id: &str, text: &str) -> Result<RoomPost> {
+        if self.get_room(room_id)?.is_none() {
+            return Err(anyhow!("room not found"));
+        }
+        if self.room_outcome(room_id).is_some() {
+            return Err(anyhow!("the room is closed"));
+        }
+        let text = clip(text, ROOM_BODY_BUDGET);
+        if text.is_empty() {
+            return Err(anyhow!("the note is empty"));
+        }
+        let post = RoomPost {
+            id: format!("post-{}", Uuid::now_v7().simple()),
+            room_id: room_id.to_string(),
+            author_session: "human".into(),
+            kind: PostKind::Note,
+            body: text,
+            evidence: vec![],
+            created_at: Utc::now(),
+        };
+        self.conn().execute(
+            "INSERT INTO room_posts (id, room_id, author_session, kind, body, evidence, created_at) VALUES (?1, ?2, 'human', 'note', ?3, '[]', ?4)",
+            params![post.id, room_id, post.body, post.created_at.to_rfc3339()],
+        )?;
+        Ok(post)
+    }
+
+    /// A readable name per session: what the agent said it is, else the agent its hooks recorded, else a short id.
+    pub fn session_label(&self, session: &str) -> String {
+        if session == "human" {
+            return "You".into();
+        }
+        let name = self.sync_kv_get(&format!("session_agent:{session}")).filter(|n| !n.is_empty()).or_else(|| {
+            self.conn().query_row("SELECT agent_adapter FROM tool_events WHERE session_id = ?1 LIMIT 1", [session], |r| r.get::<_, String>(0)).ok()
+        });
+        let pretty = |n: &str| match n {
+            "claude" | "claude-code" => "Claude Code".to_string(),
+            "agy" | "antigravity" => "Antigravity".to_string(),
+            "codex" => "Codex".to_string(),
+            other => other.to_string(),
+        };
+        let short: String = session.chars().take(6).collect();
+        match name {
+            Some(n) => format!("{} ({short})", pretty(&n)),
+            None => format!("agent {short}"),
+        }
     }
 
     pub fn reject_room(&self, room_id: &str) -> Result<RoomOutcome> {
@@ -599,8 +696,54 @@ mod tests {
         db.post_to_room(&r2.id, "sess-b", PostKind::Propose, "p", &[ev])
             .unwrap();
         // r2 now waits on sess-b itself (solo rotation); sess-a sees only r1.
+        // Alone after its proposal, sess-b does not keep the turn: r2 is open to whoever joins, so sess-a sees both.
         let mine = db.pending_rooms(None, Some("sess-a")).unwrap();
-        assert_eq!(mine.len(), 1);
+        assert_eq!(mine.len(), 2);
+    }
+
+    #[test]
+    fn a_lone_proposer_does_not_keep_the_turn_and_cannot_critique_itself() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let room = db.create_room(None, "cart", "sess-a").unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(db.get_room(&room.id).unwrap().unwrap().turn_holder, None);
+        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Critique, "self", std::slice::from_ref(&ev)).is_err());
+        let r = db.join_room(&room.id, "sess-b").unwrap().unwrap();
+        assert_eq!(r.turn_holder.as_deref(), Some("sess-b"));
+        db.post_to_room(&room.id, "sess-b", PostKind::Critique, "cookie is enough", std::slice::from_ref(&ev)).unwrap();
+        assert_eq!(db.get_room(&room.id).unwrap().unwrap().turn_holder.as_deref(), Some("sess-a"));
+    }
+
+    #[test]
+    fn a_room_stuck_on_its_own_author_is_handed_to_the_next_joiner() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let room = db.create_room(None, "cart", "sess-a").unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", &[ev]).unwrap();
+        // Rooms made by the old rotation kept the turn on the proposer.
+        db.conn().execute("UPDATE rooms SET turn_holder = 'sess-a' WHERE id = ?1", [&room.id]).unwrap();
+        assert_eq!(db.join_room(&room.id, "sess-b").unwrap().unwrap().turn_holder.as_deref(), Some("sess-b"));
+    }
+
+    #[test]
+    fn the_human_can_note_and_decide_at_any_stage() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let room = db.create_room(None, "cart", "sess-a").unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", &[ev]).unwrap();
+        let note = db.add_room_note(&room.id, "It must survive a login").unwrap();
+        assert_eq!(note.kind, PostKind::Note);
+        assert_eq!(db.get_room(&room.id).unwrap().unwrap().state, RoomState::Critique, "a note changes no state");
+        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Note, "x", &[]).is_err(), "agents cannot post notes");
+        let out = db.decide_room(&room.id, "Store the cart in SQLite", &["Add cart table".into(), "".into(), "Migrate cookie carts".into()]).unwrap();
+        assert_eq!(out.task_ids.len(), 2);
+        assert_eq!(db.get_room(&room.id).unwrap().unwrap().state, RoomState::Decided);
+        let d = db.list_decisions(None, None, 5).unwrap();
+        assert!(d.iter().any(|d| d.agent == "human" && d.decision == "Store the cart in SQLite"));
+        assert!(db.add_room_note(&room.id, "late").is_err() && db.decide_room(&room.id, "again", &[]).is_err());
+        assert_eq!(db.session_label("human"), "You");
+        assert!(db.session_label("abcdef123").starts_with("agent abcdef"));
     }
 
     #[test]

@@ -25,7 +25,7 @@
               <span class="text-sm font-semibold text-text truncate">{{ r.room.topic }}</span>
               <Badge :variant="badge(r).variant">{{ badge(r).label }}</Badge>
             </div>
-            <p class="mt-1 text-xs text-text-muted">{{ r.posts }} post{{ r.posts === 1 ? '' : 's' }} · {{ r.room.members.length }} agent{{ r.room.members.length === 1 ? '' : 's' }}</p>
+            <p class="mt-1 text-xs text-text-muted">{{ r.posts }} post{{ r.posts === 1 ? '' : 's' }} · {{ r.room.members.map((m: string) => shortName(r.labels?.[m] || m)).join(', ') }}</p>
           </button>
         </li>
       </ul>
@@ -37,32 +37,45 @@
             <Badge :variant="stateBadge.variant">{{ stateBadge.label }}</Badge>
           </template>
           <p class="text-xs text-text-muted">
-            Agents: {{ detail.room.members.join(', ') }}<span v-if="detail.room.turn_holder"> · waiting for {{ detail.room.turn_holder }}</span>
+            Agents: {{ detail.room.members.map(label).join(', ') }}
+            <span v-if="detail.room.turn_holder && detail.room.turn_holder !== lastAuthor"> · waiting for {{ label(detail.room.turn_holder) }}</span>
+            <span v-else-if="detail.room.state !== 'decided'"> · waiting for another agent to join and reply</span>
           </p>
           <ol class="mt-4 space-y-4">
-            <li v-for="p in detail.posts" :key="p.id" class="rounded-xl bg-surface-2/60 px-4 py-3">
+            <li v-for="p in detail.posts" :key="p.id" class="rounded-xl px-4 py-3" :class="p.kind === 'note' ? 'bg-accent/10' : 'bg-surface-2/60'">
               <div class="flex items-center gap-2 text-xs text-text-muted">
-                <Badge variant="info">{{ kindLabel[p.kind] || p.kind }}</Badge>
-                <span class="font-medium text-text">{{ p.author_session }}</span>
+                <Badge :variant="p.kind === 'note' ? 'accent' : 'info'">{{ kindLabel[p.kind] || p.kind }}</Badge>
+                <span class="font-medium text-text" :title="p.author_session">{{ label(p.author_session) }}</span>
               </div>
               <p class="mt-2 text-sm text-text whitespace-pre-line">{{ p.body }}</p>
               <p v-if="p.evidence?.length" class="mt-2 text-xs text-text-muted">Based on {{ p.evidence.length }} stored note{{ p.evidence.length === 1 ? '' : 's' }}</p>
             </li>
           </ol>
           <p v-if="!detail.posts.length" class="mt-3 text-sm text-text-muted">Nobody has posted yet.</p>
+          <form v-if="!detail.outcome" class="mt-4 flex gap-2" @submit.prevent="sendNote">
+            <input v-model="note" class="flex-1 rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Add a note for the agents (a constraint, an answer, a preference)" />
+            <Button size="sm" variant="secondary" type="submit" lock="/api/rooms/:id/note" :disabled="!note.trim()">Send</Button>
+          </form>
         </Card>
 
-        <Card v-if="detail.plan && !detail.outcome" title="If you approve">
-          <p class="text-sm text-text">{{ detail.plan.decision }}</p>
-          <p v-if="detail.plan.dissent" class="mt-2 text-xs text-text-muted">Objection it answered: {{ detail.plan.dissent }}</p>
-          <ul v-if="detail.plan.tasks.length" class="mt-3 space-y-1 text-sm text-text">
-            <li v-for="t in detail.plan.tasks" :key="t" class="flex gap-2"><span aria-hidden="true">•</span>{{ t }}</li>
-          </ul>
-          <p v-else class="mt-3 text-sm text-text-muted">The plan lists no steps, so no tasks will be created. Only the decision is recorded.</p>
+        <Card v-if="!detail.outcome" :title="detail.plan ? 'The agents\' plan: approve or change it' : 'Decide it yourself'">
+          <p class="text-sm text-text-muted">
+            {{ detail.plan ? 'Edit anything below before approving. Approving stores the decision and one task per step.'
+                           : 'You can end the discussion now with your own decision. It is stored like an approved plan.' }}
+          </p>
+          <p v-if="detail.plan?.dissent" class="mt-2 text-xs text-text-muted">Objection it answered: {{ detail.plan.dissent }}</p>
+          <label class="mt-3 block text-xs text-text-muted">Decision
+            <input v-model="form.decision" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Store the cart in SQLite" />
+          </label>
+          <label class="mt-3 block text-xs text-text-muted">Steps, one per line (each becomes a task)
+            <textarea v-model="form.steps" rows="4" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Add the cart table&#10;Migrate cookie carts" />
+          </label>
           <div class="mt-4 flex flex-wrap gap-2">
-            <Button size="sm" variant="primary" lock="/api/rooms/:id/approve" :loading="busy" @click="act('approve', 'approve this plan')">Approve</Button>
-            <Button size="sm" variant="secondary" lock="/api/rooms/:id/another-round" :loading="busy" @click="act('another-round', 'send this plan back for another round')">Another round</Button>
-            <Button size="sm" variant="ghost" lock="/api/rooms/:id/reject" :loading="busy" @click="act('reject', 'reject this plan')">Reject</Button>
+            <Button size="sm" variant="primary" lock="/api/rooms/:id/decide" :loading="busy" :disabled="!form.decision.trim()" @click="decide">
+              {{ detail.plan ? (edited ? 'Approve with my changes' : 'Approve') : 'Decide now' }}
+            </Button>
+            <Button v-if="detail.plan" size="sm" variant="secondary" lock="/api/rooms/:id/another-round" :loading="busy" @click="act('another-round', 'send this plan back for another round')">Another round</Button>
+            <Button v-if="detail.plan" size="sm" variant="ghost" lock="/api/rooms/:id/reject" :loading="busy" @click="act('reject', 'reject this plan')">Reject</Button>
           </div>
         </Card>
 
@@ -79,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { request, protectedCall } from '~/utils/api';
 import { useToast } from '~/composables/useToast';
 
@@ -90,7 +103,41 @@ const detail = ref<any>(null);
 const busy = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const kindLabel: Record<string, string> = { propose: 'Proposal', critique: 'Critique', revise: 'Revision' };
+const kindLabel: Record<string, string> = { propose: 'Proposal', critique: 'Critique', revise: 'Revision', note: 'Your note' };
+const note = ref('');
+const form = reactive({ decision: '', steps: '' });
+let formFor = '';
+const label = (s: string) => detail.value?.labels?.[s] || s;
+// Rooms from before the fix keep the turn on whoever posted last; that really means "waiting for another agent".
+const lastAuthor = computed(() => [...(detail.value?.posts || [])].reverse().find((p: any) => p.kind !== 'note')?.author_session);
+const shortName = (l: string) => l.replace(/\s*\([^)]*\)$/, '');
+const steps = () => form.steps.split('\n').map((x) => x.trim()).filter(Boolean);
+const edited = computed(() => !!detail.value?.plan && (form.decision.trim() !== detail.value.plan.decision || steps().join('\n') !== detail.value.plan.tasks.join('\n')));
+
+/** Prefill the form from the agents' plan once per room (and when a plan appears), never over your typing. */
+function prefill() {
+  const key = `${selectedId.value}:${!!detail.value?.plan}`;
+  if (formFor === key) return;
+  formFor = key;
+  Object.assign(form, { decision: detail.value?.plan?.decision || '', steps: (detail.value?.plan?.tasks || []).join('\n') });
+}
+
+async function sendNote() {
+  const r = await protectedCall('POST', `/api/rooms/${encodeURIComponent(selectedId.value)}/note`, 'add a note to this room', { text: note.value });
+  if (r.ok) { note.value = ''; await loadDetail(); } else toast.error(r.error || 'Not sent');
+}
+
+async function decide() {
+  busy.value = true;
+  try {
+    const r = await protectedCall('POST', `/api/rooms/${encodeURIComponent(selectedId.value)}/decide`, 'decide this planning room', { decision: form.decision, steps: steps() });
+    if (r.ok) toast.success(`Decided: ${r.data.outcome.task_ids.length} task(s) created`);
+    else toast.error(r.error || 'Not decided');
+    await load();
+  } finally {
+    busy.value = false;
+  }
+}
 
 function badge(r: any): { label: string; variant: 'ok' | 'warn' | 'info' | 'accent' | 'bad' } {
   if (r.outcome) return r.outcome.outcome === 'approved' ? { label: 'Approved', variant: 'ok' } : { label: 'Rejected', variant: 'bad' };
@@ -110,7 +157,7 @@ async function load() {
 
 async function loadDetail() {
   const r = await request<any>(`/api/rooms/${encodeURIComponent(selectedId.value)}`);
-  if (r.ok) detail.value = r.data;
+  if (r.ok) { detail.value = r.data; prefill(); }
 }
 
 function select(id: string) {

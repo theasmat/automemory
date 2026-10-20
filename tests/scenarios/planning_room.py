@@ -96,6 +96,26 @@ def main():
         t = j(sb.mcp("task.next", session_id="agent-c", project_id="app"))
         rep.check(t.get("task", {}).get("title") == "Add the token table", "another agent claims the first step", json.dumps(t)[:160])
 
+        # A lone proposer does not keep the turn; the human can note and decide at any stage; agents show by name.
+        r3 = j(sb.mcp("room.join", session_id="agent-x", agent="claude-code", topic="cart storage", project_id="app"))["room"]["id"]
+        sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="propose", body="Keep carts in SQLite", evidence=[ev])
+        r = sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="critique", body="self", evidence=[ev])
+        rep.check("another agent" in json.dumps(r), "an agent cannot critique its own proposal", json.dumps(r)[:140])
+        joined = j(sb.mcp("room.join", session_id="agent-y", agent="antigravity", room_id=r3))["room"]
+        rep.check(joined["turn_holder"] == "agent-y", "the next agent to join gets the turn", json.dumps(joined)[:140])
+        code, _ = http(port, f"/api/rooms/{r3}/note", "POST", {}, {"text": "Carts must survive a login"})
+        rep.check(code == 403, "Protected: a note needs the password")
+        code, _ = http(port, f"/api/rooms/{r3}/note", "POST", PW, {"text": "Carts must survive a login"})
+        st = j(sb.mcp("room.status", room_id=r3))
+        rep.check(code == 200 and any(p["kind"] == "note" and "survive a login" in p["body"] for p in st["posts"]) and st["labels"]["agent-x"].startswith("Claude Code"),
+                  "agents see your note and each other's names in room.status", json.dumps(st)[:200])
+        d3 = json.loads(http(port, f"/api/rooms/{r3}")[1])
+        rep.check(d3["labels"]["agent-y"].startswith("Antigravity") and d3["labels"]["human"] == "You", "the dashboard gets names, not session ids", json.dumps(d3["labels"]))
+        code, body = http(port, f"/api/rooms/{r3}/decide", "POST", PW, {"decision": "Store carts in SQLite", "steps": ["Add cart table", "Migrate cookie carts"]})
+        rep.check(code == 200 and len(json.loads(body)["outcome"]["task_ids"]) == 2, "you can decide mid-discussion; steps become tasks", f"{code} {body[:120]}")
+        r = sb.mcp("room.post", room_id=r3, session_id="agent-y", kind="critique", body="late", evidence=[ev])
+        rep.check("decided" in json.dumps(r), "after your decision the agents cannot post", json.dumps(r)[:120])
+
         # Human tiebreak on a second room: send it back for another round.
         r2 = j(sb.mcp("room.join", session_id="agent-a", topic="cache", project_id="app"))["room"]["id"]
         j(sb.mcp("room.join", session_id="agent-b", room_id=r2))

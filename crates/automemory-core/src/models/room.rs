@@ -43,6 +43,8 @@ pub enum PostKind {
     Propose,
     Critique,
     Revise,
+    /// A human remark: no turn, no state change, never evidence.
+    Note,
 }
 
 impl std::fmt::Display for PostKind {
@@ -51,6 +53,7 @@ impl std::fmt::Display for PostKind {
             Self::Propose => write!(f, "propose"),
             Self::Critique => write!(f, "critique"),
             Self::Revise => write!(f, "revise"),
+            Self::Note => write!(f, "note"),
         }
     }
 }
@@ -62,6 +65,7 @@ impl std::str::FromStr for PostKind {
             "propose" => Ok(Self::Propose),
             "critique" => Ok(Self::Critique),
             "revise" => Ok(Self::Revise),
+            "note" => Ok(Self::Note),
             other => Err(format!("Unknown post kind: {other}")),
         }
     }

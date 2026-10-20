@@ -836,6 +836,7 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
+                        "agent": { "type": "string", "description": "Your agent name (claude-code, antigravity, codex, …) so people see who wrote what" },
                         "session_id": { "type": "string", "description": "Joining session ID" },
                         "room_id": { "type": "string", "description": "Room to join (omit to create)" },
                         "topic": { "type": "string", "description": "Topic for a new room" },
@@ -851,6 +852,7 @@ impl ToolRegistry {
                     "type": "object",
                     "properties": {
                         "room_id": { "type": "string", "description": "Room ID" },
+                        "agent": { "type": "string", "description": "Your agent name (claude-code, antigravity, codex, …) so people see who wrote what" },
                         "session_id": { "type": "string", "description": "Posting session ID" },
                         "kind": { "type": "string", "enum": ["propose", "critique", "revise"] },
                         "body": { "type": "string", "description": "Short rationale (capped, never raw reasoning)" },
@@ -861,7 +863,7 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "room.status".to_string(),
-                description: "Fetch a room with its posts in order".to_string(),
+                description: "Fetch a room by id: its topic, members (with agent names), turn, and posts in order, including notes from the human".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -2404,6 +2406,9 @@ impl ToolRegistry {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: session_id"),
                 };
+                if let Some(a) = arguments.get("agent").and_then(|v| v.as_str()).filter(|a| !a.trim().is_empty()) {
+                    self.db.sync_kv_set(&format!("session_agent:{session_id}"), &a.chars().take(40).collect::<String>());
+                }
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
 
                 if let Some(room_id) = arguments.get("room_id").and_then(|v| v.as_str()) {
@@ -2439,6 +2444,9 @@ impl ToolRegistry {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: session_id"),
                 };
+                if let Some(a) = arguments.get("agent").and_then(|v| v.as_str()).filter(|a| !a.trim().is_empty()) {
+                    self.db.sync_kv_set(&format!("session_agent:{session_id}"), &a.chars().take(40).collect::<String>());
+                }
                 let kind = match arguments
                     .get("kind")
                     .and_then(|v| v.as_str())
@@ -2496,10 +2504,13 @@ impl ToolRegistry {
                 match self.db.get_room(room_id) {
                     Ok(Some(room)) => {
                         let posts = self.db.room_posts(room_id).unwrap_or_default();
+                        let labels: serde_json::Map<String, Value> = room.members.iter().chain(std::iter::once(&"human".to_string()))
+                            .map(|m| (m.clone(), json!(self.db.session_label(m)))).collect();
                         ToolCallResult::json(&json!({
                             "room": room,
                             "posts": posts,
-                            "next_action": "Post with room.post when turn_holder is your session."
+                            "labels": labels,
+                            "next_action": "Notes (kind note, author human) are the human's guidance: follow them. Post with room.post when turn_holder is your session or empty."
                         }))
                     }
                     Ok(None) => ToolCallResult::error("Room not found"),

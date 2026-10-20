@@ -55,6 +55,21 @@ Result: _in progress_
   block; a user's own CLAUDE.md is untouched (unit test). Re-ran `connect claude`: CLAUDE.md now has the Planning rooms line, the
   managed memory block is intact.
 
+#### 2026-10-20 T11 step 1 (room opened, proposal posted)
+Report: room `room-01a158788849725585986e3e4edfda2f` ("Shopping cart storage: session vs cookie vs database"), proposal "store carts in
+SQLite keyed by session/user id" with one evidence note; the agent found and used the room tools on its own. The tester saw the post in
+the dashboard but (1) authors showed as session UUIDs and (2) there was no way to give a decision in the room.
+Findings and fixes (installed, dashboard restarted)
+1. **Turn bug**: alone in the room, the proposer got the turn back after posting, so a second agent joining could never critique (it
+   would be "not your turn") and the proposer could critique itself. Now the turn stays open until another agent joins, a joiner takes
+   a turn held only by the last poster (this repairs the live room), and a critique of your own proposal is refused.
+2. **Names**: the session that opened the room is Antigravity (its hooks recorded the session as `agy`), not Claude. Rooms now show
+   "Antigravity (fabb96)" / "Claude Code (…)" / "You", from the hook records or an optional `agent` argument on room.join/room.post.
+3. **The human in the room**: you can post a note at any time (agents see it in room.status as the human's guidance), and you can
+   decide at any stage: the decision form is prefilled with the agents' plan when there is one, can be edited, and "Approve" /
+   "Approve with my changes" / "Decide now" stores the decision and one task per step. Protected, logged.
+Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests green.
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).

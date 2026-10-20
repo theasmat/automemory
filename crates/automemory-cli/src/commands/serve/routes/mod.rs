@@ -29,6 +29,8 @@ pub fn build_api_router() -> Router<AppState> {
         )
         .route("/api/rooms", get(rooms::api_rooms))
         .route("/api/rooms/:id", get(rooms::api_room))
+        .route("/api/rooms/:id/note", post(rooms::api_room_note))
+        .route("/api/rooms/:id/decide", post(rooms::api_room_decide))
         .route("/api/rooms/:id/approve", post(rooms::api_room_approve))
         .route("/api/rooms/:id/reject", post(rooms::api_room_reject))
         .route("/api/rooms/:id/another-round", post(rooms::api_room_again))
