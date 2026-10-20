@@ -83,6 +83,26 @@ def main():
             rep.check(page.get_by_role("button", name="Back up").locator("svg[aria-label]").count() == 0, "a Safe button shows no lock")
             rep.check(not problems, "every lock path exists in /api/policy", "; ".join(problems))
             page.close()
+            # Continuity: seeded through the same API the page uses (the dashboard's own project, whichever it picks).
+            import json as _j, urllib.request as _u
+            for it in ({"kind": "goal", "text": "Ship the cart"}, {"kind": "rejected", "text": "Server-side sessions", "reason": "no sticky routing"}):
+                _u.urlopen(_u.Request(base + "/api/continuity/items", data=_j.dumps(it).encode(), method="POST",
+                                      headers={"Content-Type": "application/json", "X-AutoMemory-Password": "smoke pw"}), timeout=60)
+            # Continuity: the brief with provenance, the preview, opt-in rows with locks, and Hand off now (Safe).
+            page = browser.new_page()
+            problems = []
+            page.on("console", lambda m: m.type == "error" and problems.append(m.text[:160]))
+            page.goto(base + "/continuity", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            body = page.inner_text("main")
+            rep.check("Ship the cart" in body and "Server-side sessions because no sticky routing" in body and "you" in body, "the Continuity page shows the brief with who wrote it", body[:300])
+            rep.check("Claude Code" in body and "Antigravity" in body and "Off" in body and "Codex" in body, "every agent is listed, off by default, and agents without a reader are named")
+            rep.check(page.get_by_role("button", name="Turn on").first.locator("svg[aria-label]").count() == 1, "turning an agent on shows the lock")
+            page.get_by_role("button", name="Hand off now").click()
+            page.wait_for_timeout(1500)
+            rep.check("Hand-off written" in page.inner_text("main"), "Hand off now works without a password", page.inner_text("main")[:200])
+            rep.check(not problems, "the Continuity page uses only known policy paths", "; ".join(problems))
+            page.close()
             # Planning rooms: the discussion and plan show, and approving (asks the password) records the verdict.
             page = browser.new_page()
             page.goto(base + "/rooms", wait_until="networkidle")

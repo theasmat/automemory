@@ -1,1 +1,0 @@
-import{j as e,a1 as t,c as o,o as a}from"./D-KUZhl5.js";const n={class:"p-8 text-center text-text-muted text-sm"},_=e({__name:"proposals",setup(s){return t("/inbox",{replace:!0}),(c,r)=>(a(),o("div",n,"Redirecting to Inbox..."))}});export{_ as default};

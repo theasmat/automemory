@@ -42,7 +42,18 @@ pub async fn api_overview(State(state): State<AppState>, Query(q): Query<Project
             "found": r.sessions(&home, &root).len(), "sessions": stored.len(), "messages": stored.iter().map(|s| s.messages).sum::<i64>(), "last_message_at": last,
         })
     }).collect();
+    // An agent that chatted well after the brief was last touched: the brief may be behind.
+    let newest_item = state.db.brief_list(pid.as_deref(), false).unwrap_or_default().iter().map(|i| i.updated_at).max();
+    let stale: Vec<Value> = sources.iter().filter(|s| s["enabled"] == true).filter_map(|s| {
+        let last = chrono::DateTime::parse_from_rfc3339(s["last_message_at"].as_str()?).ok()?.to_utc();
+        let mins = newest_item.map(|n| (last - n).num_minutes()).unwrap_or(i64::MAX);
+        (mins >= 30).then(|| json!({ "agent": s["id"], "label": s["label"], "minutes": if mins == i64::MAX { Value::Null } else { json!(mins) } }))
+    }).collect();
+    // Agents with no reader yet: their agent-written brief still works.
+    let others: Vec<Value> = [("codex", "Codex"), ("gemini", "Gemini CLI"), ("command-code", "Command Code"), ("zcode", "Z code"), ("cursor", "Cursor")]
+        .iter().map(|(id, label)| json!({ "id": id, "label": label })).collect();
     Json(json!({
+        "stale": stale, "others": others,
         "project": pid, "root": root.to_string_lossy(), "items": items, "kinds": ItemKind::ALL.iter().map(|k| json!({ "id": k.as_str(), "heading": k.heading() })).collect::<Vec<_>>(),
         "preview": preview, "preview_tokens": preview.as_ref().map(|p| p.len() / 4).unwrap_or(0), "inject_tokens": tokens_budget(), "sources": sources,
     })).into_response()
@@ -191,4 +202,43 @@ pub async fn api_item_action(State(state): State<AppState>, headers: HeaderMap, 
         _ => state.db.brief_set_status(&id, ItemStatus::Removed),
     };
     match done { Ok(true) => Json(json!({ "success": true })).into_response(), Ok(false) => bad("no such item"), Err(e) => bad(e.to_string()) }
+}
+
+/// GET /api/continuity/history-sync: what a push would send (nothing is written).
+pub async fn api_history_plan(State(state): State<AppState>, Query(q): Query<ProjectQuery>) -> Response {
+    use automemory_core::{continuity::history_sync, sync::auto};
+    let (_, remote) = auto::vault_settings();
+    let Some(key) = auto::resolve_key(remote.is_some()) else { return Json(json!({ "remote": false })).into_response() };
+    let Some(pid) = root_of(&state, q.project_id.as_deref()).and_then(|(p, _)| p) else { return Json(json!({ "remote": true, "sessions": [] })).into_response() };
+    match history_sync::plan(&state.db, &pid, &key) {
+        Ok(p) => Json(json!({ "remote": true, "sessions": p.sessions.iter().map(|(id, m, b)| json!({ "id": id, "messages": m, "kb": b / 1024 + 1 })).collect::<Vec<_>>() })).into_response(),
+        Err(e) => Json(json!({ "remote": true, "sessions": [], "note": e.to_string() })).into_response(),
+    }
+}
+
+/// POST /api/continuity/history-sync/push (Protected): encrypt this project's chat history into the vault and push it.
+pub async fn api_history_push(State(state): State<AppState>, headers: HeaderMap, body: Option<Json<ImportPayload>>) -> Response {
+    use automemory_core::{continuity::history_sync, sync::auto};
+    if let Some(r) = protected(&state, &headers, "send chat history to the sync remote") { return r; }
+    let p = body.map(|b| b.0).unwrap_or_default();
+    let (root, remote) = auto::vault_settings();
+    let (Some(url), Some(key)) = (remote.clone(), auto::resolve_key(remote.is_some())) else { return bad("no sync remote is set (Sync page)") };
+    let Some(pid) = root_of(&state, p.project_id.as_deref()).and_then(|(p, _)| p) else { return bad("no project yet") };
+    let n = match history_sync::write(&state.db, &pid, &root, &key) { Ok(n) => n, Err(e) => return bad(e.to_string()) };
+    match auto::run(&state.db, &root, Some(&url), true, true, Some(&key)) {
+        Ok(rep) => Json(json!({ "success": true, "sessions": n, "summary": rep.summary() })).into_response(),
+        Err(e) => bad(e.to_string()),
+    }
+}
+
+/// POST /api/continuity/history-sync/pull: fetch chat history your other computers pushed.
+pub async fn api_history_pull(State(state): State<AppState>) -> Response {
+    use automemory_core::{continuity::history_sync, sync::auto};
+    let (root, remote) = auto::vault_settings();
+    let (Some(url), Some(key)) = (remote.clone(), auto::resolve_key(remote.is_some())) else { return bad("no sync remote is set (Sync page)") };
+    if let Err(e) = auto::run(&state.db, &root, Some(&url), true, false, Some(&key)) { return bad(e.to_string()); }
+    match history_sync::read(&state.db, &root, &key) {
+        Ok(r) => Json(json!({ "success": true, "report": r })).into_response(),
+        Err(e) => bad(e.to_string()),
+    }
 }

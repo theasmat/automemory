@@ -37,6 +37,8 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/continuity/import", Tier::Safe, "import new chat messages from agents already turned on"),
     ("/api/continuity/handoff", Tier::Safe, "write a hand-off with the brief preview"),
     ("/api/continuity/source/:agent", Tier::Protected, "allow or stop reading one agent's chats"),
+    ("/api/continuity/history-sync/push", Tier::Protected, "send chat history to the sync remote"),
+    ("/api/continuity/history-sync/pull", Tier::Safe, "fetch chat history from the sync remote"),
     ("/api/continuity/history", Tier::Protected, "delete imported chat history"),
     ("/api/continuity/items", Tier::Protected, "add to the brief"),
     ("/api/continuity/items/:id", Tier::Protected, "edit a brief item"),

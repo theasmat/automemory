@@ -162,7 +162,11 @@ pub fn run_job(what: &str, cancel: &AtomicBool, progress: &mut dyn FnMut(usize, 
             let n = llm::distill_sessions(&db, project.as_deref(), &mut complete)?;
             Ok(format!("{n} candidate note(s) suggested from recent sessions. Approve them in the Inbox to add them."))
         }
-        other => bail!("unknown job '{other}': use pairs or distill"),
+        "brief" => {
+            let n = automemory_core::continuity::drafter::draft_with_llm(&db, project.as_deref(), &mut complete)?;
+            Ok(format!("{n} brief item(s) suggested from the latest imported chat. They are drafts: confirm them on the Continuity page."))
+        }
+        other => bail!("unknown job '{other}': use pairs, distill or brief"),
     }
 }
 

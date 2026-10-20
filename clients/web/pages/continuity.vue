@@ -13,6 +13,9 @@
 
     <template v-else-if="data">
       <!-- Hand-off result / preview -->
+      <p v-for="st in data.stale" :key="st.agent" class="rounded-xl bg-warn-bg px-4 py-2 text-sm text-warn">
+        {{ st.label }} chatted {{ st.minutes ? `${st.minutes} min` : 'a while' }} after the brief was last updated. Click Hand off now to bring it up to date.
+      </p>
       <Card :title="`What the next agent receives (about ${data.preview_tokens} tokens)`">
         <p v-if="handoffNote" class="mb-3 text-sm text-ok">{{ handoffNote }}</p>
         <pre v-if="data.preview" class="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl bg-surface-2/60 px-4 py-3 text-xs text-text">{{ data.preview }}</pre>
@@ -90,6 +93,30 @@
           <p v-if="latest('chat-import')" class="mt-3 text-xs text-text-muted">Last import: {{ latest('chat-import')!.state }} {{ latest('chat-import')!.message }}</p>
         </Card>
 
+        <Card v-if="data.others?.length" title="Other agents">
+          <p class="text-sm text-text-muted">No chat reader yet for {{ data.others.map((o: any) => o.label).join(', ') }}. They still read and write the brief through <code>continuity.brief</code>; transcript reading is added one agent at a time.</p>
+        </Card>
+
+        <Card title="Chat history on your other computers">
+          <p v-if="!hs || !hs.remote" class="text-sm text-text-muted">Needs a sync remote first (Sync page). The brief itself already travels with it; chat history only moves when you click here.</p>
+          <template v-else>
+            <ul v-if="hs.sessions.length" class="mb-3 text-sm text-text-muted">
+              <li v-for="x in hs.sessions" :key="x.id">{{ x.id }}: {{ x.messages }} messages, about {{ x.kb }} KB encrypted</li>
+            </ul>
+            <p v-else class="mb-3 text-sm text-text-muted">{{ hs.note || 'No chat imported for this project yet.' }}</p>
+            <div class="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" lock="/api/continuity/history-sync/push" :disabled="!hs.sessions.length" @click="pushHistory">Send to my other computers</Button>
+              <Button size="sm" variant="secondary" :loading="busy === 'pull'" @click="pullHistory">Fetch from my other computers</Button>
+            </div>
+            <p v-if="hsNote" class="mt-2 text-xs text-text-muted">{{ hsNote }}</p>
+          </template>
+        </Card>
+
+        <Card v-if="llm?.on" title="Suggest with the AI helper">
+          <p class="text-sm text-text-muted">Optional. {{ llm.local ? 'Your local model reads the latest imported chat and suggests brief items.' : `Sends the last 40 messages of the latest imported chat (secrets already removed) to ${llm.model} and asks for brief items.` }} Everything it suggests is a draft until you or an agent confirms it.</p>
+          <div class="mt-3"><Button size="sm" variant="secondary" :lock="llm.local ? undefined : '/api/llm/run'" @click="suggest">Suggest items</Button></div>
+        </Card>
+
         <Card title="Search earlier chats">
           <form class="flex gap-2" @submit.prevent="search">
             <input v-model="q" class="flex-1 rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="e.g. sticky routing" aria-label="Search" />
@@ -137,14 +164,46 @@ const q = ref('');
 const hits = ref<any[]>([]);
 const searched = ref(false);
 const chat = ref<any>(null);
+const hs = ref<any>(null);
+const hsNote = ref('');
+const llm = ref<any>(null);
 
 const itemsOf = (kind: string) => (data.value?.items || []).filter((i: any) => i.kind === kind);
 
 async function load() {
   const r = await request<any>('/api/continuity');
   if (r.ok) data.value = r.data;
+  const h = await request<any>('/api/continuity/history-sync');
+  if (h.ok) hs.value = h.data;
 }
-onMounted(load);
+onMounted(async () => {
+  await load();
+  const l = await request<any>('/api/llm');
+  if (l.ok) llm.value = l.data;
+});
+
+async function pushHistory() {
+  const r = await protectedCall('POST', '/api/continuity/history-sync/push', 'send chat history to the sync remote', {});
+  hsNote.value = r.ok ? `Sent ${r.data.sessions} session(s), encrypted. ${r.data.summary}` : r.error || 'Not sent';
+}
+
+async function pullHistory() {
+  busy.value = 'pull';
+  try {
+    const r = await safeCall('POST', '/api/continuity/history-sync/pull');
+    hsNote.value = r.ok ? `Added ${r.data.report.sessions} session(s) (${r.data.report.messages} messages); ${r.data.report.already_here} already here.` : r.error || 'Could not fetch';
+    await load();
+  } finally {
+    busy.value = '';
+  }
+}
+
+async function suggest() {
+  const r = llm.value?.local ? await safeCall('POST', '/api/llm/run', { what: 'brief' }) : await protectedCall('POST', '/api/llm/run', 'send chat text to the AI helper', { what: 'brief' });
+  if (!r.ok) return toast.error(r.error || 'Could not start');
+  await refresh();
+  setTimeout(load, 4000);
+}
 
 async function handOff() {
   busy.value = 'handoff';

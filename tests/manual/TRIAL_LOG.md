@@ -549,3 +549,10 @@ Found and fixed (installed)
 
 ### 2026-10-19 T9 Human password gate: PASS (dashboard half confirmed by the tester after the hardening: "yes it fixed")
 
+
+### T12 Antigravity long chat -> Claude Code continues: NOT RUN YET (needs you and live agents)
+
+Prepared in C8. Steps and the checker are in `tests/manual/t12_check.py` (read-only). Pass when: the Antigravity chat imports, the brief has a
+goal, a next step and what was ruled out, you confirm the drafts, and Claude Code (new session, same folder) answers "where did we get to / what
+was ruled out and why / next step" from the brief without you re-explaining. Record the result and any wrong or missing item below.
+Offline evidence so far: `tests/eval/continuity_eval.py` (golden chats; recall 18/18 on phrasings the drafter was tuned on, so expect lower on real chats).

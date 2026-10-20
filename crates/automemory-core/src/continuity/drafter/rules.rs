@@ -81,7 +81,7 @@ impl Extractor for Rejections {
     fn cap(&self) -> usize { 6 }
     fn extract(&self, ctx: &DraftContext) -> Vec<Draft> {
         static R: OnceLock<Regex> = OnceLock::new();
-        let r = re(&R, r"(?i)\b(rule[sd]? (them |it |this |that )?out|ruled out|instead of|rather than|don'?t use|do not use|not going to use|let'?s not|scrap(ped)? (the|that|this)|drop(ped)? the (idea|approach|plan))\b");
+        let r = re(&R, r"(?i)\b(rule[sd]? (them |it |this |that )?out|ruled out|instead of|rather than|don'?t use|do not use|should not use|shouldn'?t use|must not use|won'?t use|not going to use|let'?s not|scrap(ped)? (the|that|this)|drop(ped)? the (idea|approach|plan))\b");
         hits(ctx, &["user", "assistant"], r).map(|h| draft(ItemKind::Rejected, h, true)).collect()
     }
 }
@@ -93,8 +93,8 @@ impl Extractor for Decisions {
     fn extract(&self, ctx: &DraftContext) -> Vec<Draft> {
         static R: OnceLock<Regex> = OnceLock::new();
         let r = re(&R, r"(?i)\b(let'?s (use|go with|do)|we('ll| will| decided to| chose to) (use|go with|store|keep)|decided (to|on)|go(ing)? with|we chose|i chose)\b");
-        // A sentence that also rules something out is already a rejection.
-        hits(ctx, &["user"], r).filter(|(_, s)| !s.to_lowercase().contains("instead of") && !s.to_lowercase().contains("rather than")).map(|h| draft(ItemKind::Decision, h, true)).collect()
+        // "Use X rather than Y" is both the choice and the rejection; the brief keeps both.
+        hits(ctx, &["user"], r).map(|h| draft(ItemKind::Decision, h, true)).collect()
     }
 }
 

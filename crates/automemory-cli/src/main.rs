@@ -1840,7 +1840,7 @@ enum LlmCommands {
         #[command(subcommand)]
         command: LlmProfileCommands,
     },
-    /// Run a job now: pairs (conflicts and duplicates) or distill (candidate notes from sessions)
+    /// Run a job now: pairs (conflicts and duplicates) or distill (candidate notes from sessions) or brief (draft hand-off items from the latest imported chat)
     Run { what: String },
 }
 

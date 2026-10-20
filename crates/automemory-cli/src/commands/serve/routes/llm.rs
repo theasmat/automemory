@@ -136,8 +136,8 @@ pub async fn api_key_delete(headers: HeaderMap, axum::extract::Query(q): axum::e
 pub struct RunPayload { pub what: String }
 
 pub async fn api_run(State(state): State<AppState>, headers: HeaderMap, Json(p): Json<RunPayload>) -> Response {
-    if !matches!(p.what.as_str(), "pairs" | "distill") {
-        return bad("unknown job: use pairs or distill");
+    if !matches!(p.what.as_str(), "pairs" | "distill" | "brief") {
+        return bad("unknown job: use pairs, distill or brief");
     }
     let cfg = GlobalConfig::load().unwrap_or_default();
     let client = match LlmClient::from_settings(&cfg.llm) { Ok(c) => c, Err(e) => return bad(e.to_string()) };

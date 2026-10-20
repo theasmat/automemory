@@ -31,6 +31,8 @@
 
     <WelcomeCard />
 
+    <NuxtLink v-if="continuityLine" to="/continuity" class="block rounded-xl bg-warn-bg px-4 py-2 text-sm text-warn">{{ continuityLine }}</NuxtLink>
+
     <!-- At a glance: three tiles, one number each -->
     <section aria-label="At a glance" class="grid grid-cols-3 gap-3 sm:gap-4">
       <NuxtLink to="/agents" data-tour="agents-card" class="group">
@@ -196,7 +198,14 @@ const agentsLine = computed(() => {
   return `${workingCount.value > 0 ? 'working now' : 'idle'} · ${linkedCount.value} connected`;
 });
 const roomsWaiting = ref(0);
+const continuityLine = ref('');
 onMounted(async () => {
+  const c = await request<any>('/api/continuity');
+  if (c.ok && c.data.project) {
+    const drafts = c.data.items.filter((i: any) => i.state === 'draft').length;
+    const st = c.data.stale?.[0];
+    continuityLine.value = st ? `${st.label} has worked since the hand-off brief was last updated. Open Continuity to bring it up to date.` : drafts ? `${drafts} drafted hand-off item${drafts === 1 ? '' : 's'} to confirm on Continuity.` : '';
+  }
   const r = await request<any[]>('/api/rooms');
   if (r.ok && Array.isArray(r.data)) roomsWaiting.value = r.data.filter((x) => x.needs_you).length;
 });

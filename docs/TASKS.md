@@ -161,11 +161,11 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] C5 Deterministic drafter + confirm flow
 - [x] C6 Automatic triggers + manual history sync
 - [ ] C7 Per-agent research and readers (Codex, Gemini CLI, Command Code, Z code, Cursor)
-- [ ] C8 Continuity eval + live trial T12 + optional LLM drafting
+- [x] C8 Continuity eval (golden chats, floor 0.8), optional LLM drafting (`llm run brief`, drafts only), dashboard history sync + stale hint + AI-helper button; live trial T12 prepared (`tests/manual/t12_check.py`) but NOT RUN: needs you
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 269 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 270 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

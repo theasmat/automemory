@@ -2,7 +2,10 @@
 //! state draft). No model is called. Drafts are shown with their provenance and a next agent or you confirms,
 //! corrects or removes them; nothing here is trusted knowledge. To add a heuristic, add a file with an `Extractor`
 //! and one line in `extractors()`.
+mod llm;
 mod rules;
+
+pub use llm::draft_with_llm;
 
 use super::archive::{ChatMessage, ChatSession};
 use super::{ItemKind, ItemStatus, NewItem, Origin};
