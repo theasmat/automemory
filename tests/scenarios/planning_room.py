@@ -121,7 +121,7 @@ def main():
         rep.check("decided" in json.dumps(r), "after your decision the agents cannot post", json.dumps(r)[:120])
 
         # R1: you start a room in the dashboard; invited agents learn about it from their prompt hook, once per turn.
-        code, _ = http(port, "/api/rooms", "POST", {}, {"topic": "checkout retries", "agents": ["claude"]})
+        code, _ = http(port, "/api/rooms", "POST", {}, {"topic": "checkout retries", "question": "Q?", "agents": ["claude"]})
         rep.check(code == 403, "Protected: starting a room needs the password")
         code, body = http(port, "/api/rooms", "POST", PW, {"topic": "checkout retries", "question": "Retry failed payments or not?",
                                                          "agents": ["claude", "agy"], "evidence": [ev], "constraints": ["No new services"]})

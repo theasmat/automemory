@@ -40,6 +40,7 @@ Non-goals (deliberately):
 ## 3. User flows
 
 ### 3.1 Start a room (R1)
+The question is required (trial T11b: a room called just "cart" made an agent invent an HTTP API). For a human-made room that has none (older ones), the hook line says "No question was given … state your assumptions".
 1. Dashboard → Planning rooms → **New room**.
 2. Fill in: topic (short), the question to answer, agents to invite (from Agents: connected ones are listed), and
    optionally context: notes found by search (they become starting evidence), files or symbols in scope, constraints

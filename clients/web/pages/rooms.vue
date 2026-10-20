@@ -14,8 +14,8 @@
         <label class="block text-xs text-text-muted">Topic
           <input v-model="nr.topic" required class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Cart storage" />
         </label>
-        <label class="block text-xs text-text-muted">The question to answer
-          <input v-model="nr.question" class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Where do we keep the cart, and for how long?" />
+        <label class="block text-xs text-text-muted">The question to answer (agents work from this)
+          <input v-model="nr.question" required class="mt-1 w-full rounded-xl bg-surface-2 px-3 py-2 text-sm text-text" placeholder="Where do we keep the cart, and for how long?" />
         </label>
         <fieldset>
           <legend class="text-xs text-text-muted">Invite (connected here)</legend>
@@ -42,7 +42,7 @@
         </label>
         <div class="flex justify-end gap-2">
           <Button size="sm" variant="ghost" @click="newOpen = false">Cancel</Button>
-          <Button size="sm" variant="primary" type="submit" lock="/api/rooms" :disabled="!nr.topic.trim() || !nr.agents.length">Create</Button>
+          <Button size="sm" variant="primary" type="submit" lock="/api/rooms" :disabled="!nr.topic.trim() || !nr.question.trim() || !nr.agents.length">Create</Button>
         </div>
       </form>
     </Modal>

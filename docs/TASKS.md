@@ -141,7 +141,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 246 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 247 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

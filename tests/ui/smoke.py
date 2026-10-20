@@ -33,6 +33,7 @@ def main():
     sb = Sandbox("smoke")
     sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "smoke-master"})
     sb.run("demo")
+    sb.run("connect", "claude")  # an agent to invite in the New room dialog
     # A decided planning room waiting for the human verdict.
     sb.mcp("project.register", slug="app", display_name="app", path=str(sb.project))
     ev = sb.mcp("memory.save", summary="Routing note", content="No sticky sessions", type="fact", scope="project", project_id="app")
@@ -93,6 +94,12 @@ def main():
             dialog = page.inner_text("body")
             rep.check("New planning room" in dialog and ("Claude Code" in dialog or "No agent is connected" in dialog),
                       "the New room dialog opens and lists agents to invite (or says none is connected)", dialog[-300:])
+            page.fill("input[placeholder='Cart storage']", "Topic only")
+            if page.locator("fieldset input[type=checkbox]").count():
+                page.locator("fieldset input[type=checkbox]").first.check()
+                rep.check(not page.get_by_role("button", name="Create").is_enabled(), "Create stays disabled until the question is filled in")
+                page.fill("input[placeholder^='Where do we keep']", "Where?")
+                rep.check(page.get_by_role("button", name="Create").is_enabled(), "and enables once it is")
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)
             page.get_by_role("button", name="Approve").click()

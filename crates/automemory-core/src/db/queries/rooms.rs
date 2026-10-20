@@ -364,6 +364,9 @@ impl Database {
         if topic.is_empty() {
             return Err(anyhow!("the topic is empty"));
         }
+        if meta.question.trim().is_empty() {
+            return Err(anyhow!("write the question the agents should answer"));
+        }
         if meta.invited.is_empty() {
             return Err(anyhow!("invite at least one agent"));
         }
@@ -394,7 +397,8 @@ impl Database {
             if room.state == RoomState::Decided || self.room_outcome(&room.id).is_some() {
                 continue;
             }
-            let meta = self.room_meta(&room.id).unwrap_or_default();
+            let stored = self.room_meta(&room.id);
+            let meta = stored.clone().unwrap_or_default();
             let invited = meta.invited.iter().any(|a| a == agent) || room.members.iter().any(|m| m == session_id);
             let last = self.room_posts(&room.id).ok().and_then(|p| p.into_iter().rev().find(|p| p.kind != PostKind::Note)).map(|p| p.author_session);
             let mine = room.turn_holder.as_deref() == Some(session_id)
@@ -408,7 +412,13 @@ impl Database {
             }
             self.sync_kv_set(&told, "1");
             let what = match room.state { RoomState::Open => "proposal", RoomState::Critique => "critique", _ => "revision" };
-            let question = if meta.question.is_empty() { String::new() } else { format!(" Question: {}", meta.question) };
+            // A room a person started without a question (older ones): say so, so the agent states its assumptions
+            // instead of guessing the goal (trial T11b: "cart" produced a proposal for an API the shop does not have).
+            let question = match (&stored, meta.question.is_empty()) {
+                (_, false) => format!(" Question: {}", meta.question),
+                (Some(_), true) => " No question was given: read room.status for notes from the human, and state your assumptions at the top of your post instead of guessing the goal.".to_string(),
+                (None, true) => String::new(),
+            };
             lines.push(format!(
                 "[AutoMemory] Planning room \"{}\" ({}) waits for your {what}.{question} Join with room.join (room_id, session_id \"{session_id}\", agent), read room.status, then room.post.",
                 room.topic, room.id
@@ -816,7 +826,8 @@ mod tests {
     fn a_room_you_start_tells_invited_agents_once_per_turn() {
         let db = Database::open_in_memory().unwrap();
         let ev = seed_memory(&db);
-        assert!(db.create_room_by_human(None, "cart", RoomMeta::default()).is_err(), "someone must be invited");
+        assert!(db.create_room_by_human(None, "cart", RoomMeta { invited: vec!["claude".into()], ..Default::default() }).is_err(), "a question is required");
+        assert!(db.create_room_by_human(None, "cart", RoomMeta { question: "Q?".into(), ..Default::default() }).is_err(), "someone must be invited");
         let meta = RoomMeta { question: "Where do carts live?".into(), invited: vec!["claude".into(), "agy".into()], evidence: vec![ev.clone()], ..Default::default() };
         let room = db.create_room_by_human(None, "cart", meta).unwrap();
         assert_eq!((room.members.len(), room.turn_holder.clone()), (0, None));
@@ -825,6 +836,7 @@ mod tests {
         assert!(lines.len() == 1 && lines[0].contains("waits for your proposal") && lines[0].contains("Where do carts live?"), "{lines:?}");
         assert!(db.room_lines_for(None, "c1", "claude").is_empty(), "told once per turn");
         assert!(db.room_lines_for(None, "x1", "codex").is_empty(), "not invited, not told");
+
 
         db.join_room(&room.id, "c1").unwrap();
         db.post_to_room(&room.id, "c1", PostKind::Propose, "SQLite", std::slice::from_ref(&ev)).unwrap();
@@ -836,6 +848,18 @@ mod tests {
         assert!(db.room_lines_for(None, "c1", "claude")[0].contains("revision"), "the proposer is told to revise");
         db.post_to_room(&room.id, "c1", PostKind::Revise, "SQLite with expiry\n- add table", &[ev.clone()]).unwrap();
         assert!(db.room_lines_for(None, "g1", "agy").is_empty() && db.room_plan(&room.id).unwrap().evidence.contains(&ev));
+    }
+
+    #[test]
+    fn a_human_room_without_a_question_says_so_and_agent_rooms_do_not() {
+        let db = Database::open_in_memory().unwrap();
+        db.sync_kv_set("room_meta:legacy", &serde_json::to_string(&RoomMeta { invited: vec!["claude".into()], ..Default::default() }).unwrap());
+        db.conn().execute("INSERT INTO rooms (id, project_id, topic, state, members, turn_holder, round, created_at, updated_at) VALUES ('legacy', NULL, 'cart', 'open', '[]', NULL, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')", []).unwrap();
+        let legacy = db.room_lines_for(None, "c2", "claude");
+        assert!(legacy.len() == 1 && legacy[0].contains("No question was given") && legacy[0].contains("state your assumptions"), "{legacy:?}");
+        let made = db.create_room(None, "by agent", "g9").unwrap();
+        let line = db.room_lines_for(None, "g9", "agy");
+        assert!(line.iter().all(|l| !l.contains("No question")), "an agent-made room has no brief and no such remark: {line:?} {}", made.id);
     }
 
     #[test]
