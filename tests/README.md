@@ -33,6 +33,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Dashboard pages in a browser | `tests/ui/.venv/bin/python tests/ui/smoke.py` | Every page, light and dark, loads with sample data and no console error, exception or 5xx; a Protected action opens the password prompt. Skipped (with a message) without Playwright: `python3 -m venv tests/ui/.venv && tests/ui/.venv/bin/pip install playwright && tests/ui/.venv/bin/playwright install chromium` |
 | Hook recording | `python3 tests/scenarios/hook_record.py` | Off by default; payloads saved with secrets removed; converter makes a fixture |
 | Backup and restore | `python3 tests/scenarios/backup.py` | create, list, restore with `--yes`, old DB kept, damaged file refused, doctor warns about unreadable copies |
+| Hook fuzz | `python3 tests/scenarios/hook_fuzz.py` | Garbage JSON into the real hook: always exit 0 and one JSON object; a command nested 60000 deep is denied (`HOOK_FUZZ_N=2000` harder) |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
 | Guided tour and demo | `python3 tests/scenarios/tour.py` | `automemory tour --auto` 8 sandbox steps, collision prevention, learn topics, demo seed and remove |
@@ -43,7 +44,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Eval harness | `python3 tests/eval/run_eval.py selftest` | Scoring and report maths (the real A/B runs are manual, see below) |
 
 Single Rust tests: `cargo test -p automemory-core <name>`. Benchmarks (in-process pipeline means):
-`cargo bench -p automemory-core --bench perf`.
+`cargo bench -p automemory-core --bench perf`. Harder fuzzing: `FUZZ_ITERS=100000 FUZZ_SEED=7 cargo test -p automemory-core --test fuzz_like --release`.
 
 ### Reading the latency number
 

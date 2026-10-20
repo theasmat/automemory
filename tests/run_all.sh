@@ -30,6 +30,7 @@ run "embeddings modes"                python3 tests/scenarios/embeddings_modes.p
 run "optional LLM helper"             python3 tests/scenarios/llm_helper.py
 run "agent matrix"                    python3 tests/scenarios/agents_matrix.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
+run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py
 run "self-update"                     python3 tests/scenarios/update.py
 run "backup and restore"              python3 tests/scenarios/backup.py
 run "shared instruction files"        python3 tests/scenarios/rules_export.py

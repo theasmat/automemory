@@ -132,6 +132,21 @@ impl<'a> GuardrailEvaluator<'a> {
         let command_str = self.extract_command_string(tool_name, args);
         let tree = ShellCommandTree::parse(&command_str);
 
+        // Nested deeper than we inspect: block rather than let the unexamined remainder through.
+        if tree.truncated && !tree.is_destructive_rm_root_or_home() {
+            return GuardrailDecision {
+                action: GuardrailAction::Block,
+                severity: GuardrailSeverity::Critical,
+                risk_score: 1.0,
+                title: "Command Too Deeply Nested To Inspect".to_string(),
+                risk_summary: "The command nests subshells deeper than any real command does, so its tail could not be checked.".to_string(),
+                mitigation_hint: Some("Split it into plain commands.".to_string()),
+                rule_matched: Some("rule_nesting_depth".to_string()),
+                matched_failure_id: None,
+                requires_confirmation: true,
+            };
+        }
+
         // 1. ── AST-Aware Structured Shell Interception (Highest Precision) ──
         if tree.is_destructive_rm_root_or_home() {
             return GuardrailDecision {

@@ -38,12 +38,48 @@ pub struct ShellCommandTree {
     pub raw_input: String,
     /// A downloader or decoder (`curl`, `wget`, `base64 -d`) piped straight into a shell.
     pub pipes_to_shell: bool,
+    /// The command nested deeper than we inspect (`$($($(...`); what lies beyond was not examined.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+thread_local! {
+    static DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static TRUNCATED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// Deeper than any real command; also keeps recursion far from the stack limit (it aborted the hook near 8000).
+const MAX_DEPTH: usize = 40;
+
+struct DepthGuard;
+impl DepthGuard {
+    fn enter() -> Option<Self> {
+        DEPTH.with(|d| {
+            if d.get() >= MAX_DEPTH {
+                TRUNCATED.with(|t| t.set(true));
+                None
+            } else {
+                d.set(d.get() + 1);
+                Some(DepthGuard)
+            }
+        })
+    }
+}
+impl Drop for DepthGuard {
+    fn drop(&mut self) {
+        DEPTH.with(|d| d.set(d.get() - 1));
+    }
 }
 
 impl ShellCommandTree {
     /// Tokenizes a raw shell command string, resolves quotes/pipes/subshells (`sh -c`, `sudo`, `npx`, `eval`),
     /// and produces a normalized list of individual parsed commands.
     pub fn parse(raw: &str) -> Self {
+        if DEPTH.with(|d| d.get()) == 0 {
+            TRUNCATED.with(|t| t.set(false));
+        }
+        let Some(_guard) = DepthGuard::enter() else {
+            return Self { commands: Vec::new(), raw_input: raw.to_string(), pipes_to_shell: false, truncated: true };
+        };
         let stripped = strip_heredoc_bodies(raw);
         let mut commands = Vec::new();
         let mut pipes_to_shell = false;
@@ -74,6 +110,7 @@ impl ShellCommandTree {
             commands,
             raw_input: raw.to_string(),
             pipes_to_shell,
+            truncated: TRUNCATED.with(|t| t.get()),
         }
     }
 
@@ -658,6 +695,10 @@ fn unwrap_command_tokens(tokens: &[String]) -> Vec<ParsedCommand> {
     if tokens.is_empty() {
         return Vec::new();
     }
+    // `sudo sudo sudo ...` recurses once per wrapper; stop at the depth limit and keep what we have.
+    let Some(_guard) = DepthGuard::enter() else {
+        return vec![build_parsed_command(tokens)];
+    };
 
     let binary = tokens[0].clone();
 
@@ -861,5 +902,20 @@ mod tests {
         // An unterminated heredoc does not swallow the rest either.
         let open = format!("cat <<EOF\n{danger}");
         assert!(ShellCommandTree::parse(&open).is_destructive_rm_root_or_home());
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    #[test]
+    fn absurd_nesting_is_cut_off_instead_of_overflowing_the_stack() {
+        for unit in ["$((", "$(", "sudo ", "sh -c '", "eval "] {
+            let tree = ShellCommandTree::parse(&format!("{}rm -rf /", unit.repeat(20_000)));
+            assert!(tree.truncated, "{unit}");
+        }
+        assert!(!ShellCommandTree::parse("sudo sh -c 'echo $(date)'").truncated, "normal nesting is untouched");
+        assert!(ShellCommandTree::parse("rm -rf /").is_destructive_rm_root_or_home(), "and the flag resets between calls");
     }
 }
