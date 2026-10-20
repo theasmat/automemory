@@ -268,6 +268,142 @@ impl Database {
     }
 }
 
+/// What approving a decided room would store: the decision and the tasks.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RoomPlan {
+    pub topic: String,
+    pub decision: String,
+    pub reason: String,
+    pub dissent: Option<String>,
+    pub tasks: Vec<String>,
+    pub evidence: Vec<String>,
+}
+
+/// The human's verdict on a decided room, kept so approving twice is impossible.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RoomOutcome {
+    pub outcome: String, // "approved" | "rejected"
+    pub decision_id: Option<String>,
+    pub task_ids: Vec<String>,
+    pub at: String,
+}
+
+fn clip(s: &str, max: usize) -> String {
+    let t = s.trim();
+    if t.chars().count() <= max { t.to_string() } else { format!("{}…", t.chars().take(max).collect::<String>().trim_end()) }
+}
+
+/// Steps of a plan: bullet or numbered lines, at most 10.
+pub fn extract_steps(body: &str) -> Vec<String> {
+    body.lines()
+        .filter_map(|l| {
+            let t = l.trim_start();
+            let rest = t.strip_prefix(['-', '*', '•']).or_else(|| {
+                let digits = t.chars().take_while(|c| c.is_ascii_digit()).count();
+                (digits > 0).then(|| t[digits..].strip_prefix(['.', ')'])).flatten()
+            })?;
+            let step = rest.trim();
+            (!step.is_empty()).then(|| clip(step, 120))
+        })
+        .take(10)
+        .collect()
+}
+
+impl Database {
+    /// Every room, newest first, with how many posts it holds.
+    pub fn list_rooms(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<(Room, i64)>> {
+        let rooms: Vec<Room> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare(
+                "SELECT id, project_id, topic, state, members, turn_holder, round, created_at, updated_at FROM rooms
+                 WHERE (?1 IS NULL OR project_id = ?1 OR project_id IS NULL) ORDER BY updated_at DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![project_id, limit as i64], Self::row_to_room)?.collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        Ok(rooms.into_iter().map(|r| { let n = self.room_posts(&r.id).map(|p| p.len() as i64).unwrap_or(0); (r, n) }).collect())
+    }
+
+    pub fn room_outcome(&self, room_id: &str) -> Option<RoomOutcome> {
+        self.sync_kv_get(&format!("room_outcome:{room_id}")).and_then(|j| serde_json::from_str(&j).ok())
+    }
+
+    /// The plan a decided room produced: the last revision, the objection it answered, the steps it lists.
+    pub fn room_plan(&self, room_id: &str) -> Result<RoomPlan> {
+        let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
+        if room.state != RoomState::Decided {
+            return Err(anyhow!("the room is not decided yet"));
+        }
+        let posts = self.room_posts(room_id)?;
+        let revise = posts.iter().rev().find(|p| p.kind == PostKind::Revise).ok_or_else(|| anyhow!("no revision in the room"))?;
+        let critique = posts.iter().rev().find(|p| p.kind == PostKind::Critique);
+        let decision = revise.body.lines().map(str::trim).find(|l| !l.is_empty()).map(|l| clip(l.trim_start_matches(['#', ' ']), 200)).unwrap_or_default();
+        let mut evidence: Vec<String> = posts.iter().flat_map(|p| p.evidence.clone()).collect();
+        evidence.sort();
+        evidence.dedup();
+        Ok(RoomPlan {
+            topic: room.topic,
+            decision,
+            reason: format!("Agreed in planning room {room_id}: {}", clip(&revise.body, 600)),
+            dissent: critique.map(|c| clip(&c.body, 400)),
+            tasks: extract_steps(&revise.body),
+            evidence,
+        })
+    }
+
+    /// Human approval: records the decision and one task per step. Refuses a second time.
+    pub fn approve_room(&self, room_id: &str) -> Result<RoomOutcome> {
+        if self.room_outcome(room_id).is_some() {
+            return Err(anyhow!("this room already has an outcome"));
+        }
+        let plan = self.room_plan(room_id)?;
+        let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
+        let decision = self.record_decision(crate::models::DecisionRecordArgs {
+            project_id: room.project_id.as_deref(),
+            topic: &plan.topic,
+            decision: &plan.decision,
+            reason: &plan.reason,
+            alternatives: &[],
+            dissent: plan.dissent.as_deref(),
+            agent: "room",
+            symbols: &[],
+            evidence: &plan.evidence,
+        })?;
+        let mut task_ids = Vec::new();
+        for step in &plan.tasks {
+            task_ids.push(self.create_task(&format!("room:{room_id}"), room.project_id.as_deref(), step, &format!("From the planning room \"{}\": {}", plan.topic, plan.decision), &[])?.id);
+        }
+        let out = RoomOutcome { outcome: "approved".into(), decision_id: Some(decision.id), task_ids, at: Utc::now().to_rfc3339() };
+        self.sync_kv_set(&format!("room_outcome:{room_id}"), &serde_json::to_string(&out)?);
+        Ok(out)
+    }
+
+    pub fn reject_room(&self, room_id: &str) -> Result<RoomOutcome> {
+        let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
+        if room.state != RoomState::Decided || self.room_outcome(room_id).is_some() {
+            return Err(anyhow!("only a decided room without an outcome can be rejected"));
+        }
+        let out = RoomOutcome { outcome: "rejected".into(), decision_id: None, task_ids: vec![], at: Utc::now().to_rfc3339() };
+        self.sync_kv_set(&format!("room_outcome:{room_id}"), &serde_json::to_string(&out)?);
+        Ok(out)
+    }
+
+    /// The human tiebreak: send a decided room back for another critique and revision.
+    pub fn another_round(&self, room_id: &str) -> Result<Room> {
+        let room = self.get_room(room_id)?.ok_or_else(|| anyhow!("room not found"))?;
+        if room.state != RoomState::Decided || self.room_outcome(room_id).is_some() {
+            return Err(anyhow!("only a decided room without an outcome can go another round"));
+        }
+        let last_author = self.room_posts(room_id)?.last().map(|p| p.author_session.clone()).unwrap_or_default();
+        let turn = next_member(&room.members, &last_author);
+        self.conn().execute(
+            "UPDATE rooms SET state = 'critique', turn_holder = ?1, updated_at = ?2 WHERE id = ?3",
+            params![turn, Utc::now().to_rfc3339(), room_id],
+        )?;
+        Ok(self.get_room(room_id)?.ok_or_else(|| anyhow!("room vanished"))?)
+    }
+}
+
 /// Round-robin turn rotation. Solo rooms rotate to themselves.
 fn next_member(members: &[String], author: &str) -> String {
     if members.is_empty() {
@@ -392,6 +528,61 @@ mod tests {
             .is_err());
         assert!(db.join_room(&room.id, "sess-c").is_err());
         assert_eq!(db.room_posts(&room.id).unwrap().len(), 3);
+    }
+
+    fn decided_room(db: &Database, ev: &str, revise: &str) -> String {
+        let room = db.create_room(None, "auth strategy", "sess-a").unwrap();
+        db.join_room(&room.id, "sess-b").unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "Use sessions", &[ev.to_string()]).unwrap();
+        db.post_to_room(&room.id, "sess-b", PostKind::Critique, "Sessions need sticky routing", &[ev.to_string()]).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Revise, revise, &[ev.to_string()]).unwrap();
+        room.id
+    }
+
+    #[test]
+    fn steps_are_read_from_bullets_and_numbers_only() {
+        let steps = extract_steps("Plan\n1. Add the token table\n2) Write the login route\n- Add tests\nnot a step\n  * Update docs\n-\n");
+        assert_eq!(steps, vec!["Add the token table", "Write the login route", "Add tests", "Update docs"]);
+        assert_eq!(extract_steps(&"- x\n".repeat(30)).len(), 10);
+    }
+
+    #[test]
+    fn approving_a_decided_room_stores_one_decision_and_its_tasks_once() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let id = decided_room(&db, &ev, "Use JWT in a cookie\n- Add the token table\n- Write the login route");
+        let plan = db.room_plan(&id).unwrap();
+        assert_eq!(plan.decision, "Use JWT in a cookie");
+        assert_eq!(plan.tasks.len(), 2);
+        assert!(plan.dissent.as_deref().unwrap().contains("sticky routing"));
+
+        let out = db.approve_room(&id).unwrap();
+        assert_eq!(out.task_ids.len(), 2);
+        let decisions = db.list_decisions(None, None, 10).unwrap();
+        assert!(decisions.iter().any(|d| d.topic == "auth strategy" && d.agent == "room" && d.dissent.is_some()));
+        assert_eq!(db.list_tasks(None, None, 10).unwrap().len(), 2);
+        assert!(db.approve_room(&id).is_err(), "no second approval");
+        assert!(db.reject_room(&id).is_err() && db.another_round(&id).is_err(), "an outcome is final");
+    }
+
+    #[test]
+    fn rejecting_stores_nothing_and_another_round_reopens_the_critique() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let open = db.create_room(None, "undecided", "sess-a").unwrap();
+        assert!(db.approve_room(&open.id).is_err() && db.another_round(&open.id).is_err(), "only decided rooms");
+
+        let r1 = decided_room(&db, &ev, "Plan A\n- one");
+        db.reject_room(&r1).unwrap();
+        assert!(db.list_decisions(None, None, 10).unwrap().is_empty() && db.list_tasks(None, None, 10).unwrap().is_empty());
+
+        let r2 = decided_room(&db, &ev, "Plan B\n- two");
+        let room = db.another_round(&r2).unwrap();
+        assert_eq!(room.state, RoomState::Critique);
+        assert_eq!(room.turn_holder.as_deref(), Some("sess-b"), "the other agent critiques the revision");
+        db.post_to_room(&r2, "sess-b", PostKind::Critique, "Still unclear", &[ev.clone()]).unwrap();
+        db.post_to_room(&r2, "sess-a", PostKind::Revise, "Plan B2\n- two\n- three", &[ev]).unwrap();
+        assert_eq!(db.room_plan(&r2).unwrap().tasks.len(), 2, "the latest revision is the plan");
     }
 
     #[test]

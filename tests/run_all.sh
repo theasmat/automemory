@@ -30,6 +30,7 @@ run "embeddings modes"                python3 tests/scenarios/embeddings_modes.p
 run "optional LLM helper"             python3 tests/scenarios/llm_helper.py
 run "native embedding adapters"       python3 tests/scenarios/embeddings_native.py
 run "agent matrix"                    python3 tests/scenarios/agents_matrix.py
+run "planning room (two agents + human)" python3 tests/scenarios/planning_room.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
 run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py
 run "self-update"                     python3 tests/scenarios/update.py

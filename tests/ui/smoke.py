@@ -25,7 +25,7 @@ from dashboard import free_port  # noqa: E402
 
 PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/recall", "/safety", "/sync", "/settings", "/memories",
          "/proposals", "/coordination", "/guardrails", "/skills", "/traces", "/replay", "/failures", "/docs",
-         "/constitution", "/graph", "/overview", "/activity"]
+         "/constitution", "/graph", "/overview", "/activity", "/rooms"]
 
 
 def main():
@@ -33,6 +33,15 @@ def main():
     sb = Sandbox("smoke")
     sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "smoke-master"})
     sb.run("demo")
+    # A decided planning room waiting for the human verdict.
+    sb.mcp("project.register", slug="app", display_name="app", path=str(sb.project))
+    ev = sb.mcp("memory.save", summary="Routing note", content="No sticky sessions", type="fact", scope="project", project_id="app")
+    ev = ev.get("id") or ev.get("memory", {}).get("id")
+    rid = sb.mcp("room.join", session_id="agent-a", topic="auth strategy", project_id="app")["room"]["id"]
+    sb.mcp("room.join", session_id="agent-b", room_id=rid)
+    for who, kind, body in (("agent-a", "propose", "Server sessions"), ("agent-b", "critique", "Needs sticky routing"),
+                            ("agent-a", "revise", "Use JWT in a cookie\n- Add token table\n- Write login route")):
+        sb.mcp("room.post", room_id=rid, session_id=who, kind=kind, body=body, evidence=[ev])
     # The password prompt only appears once a human password exists.
     subprocess.run([sb.bin, "rule", "passwd", "--from-env"], env={**sb.env, "AUTOMEMORY_PASSWORD": "smoke pw"}, cwd=sb.project, capture_output=True)
     port = free_port()
@@ -72,6 +81,18 @@ def main():
             page.goto(base + "/tools", wait_until="networkidle")
             rep.check(page.get_by_role("button", name="Back up").locator("svg[aria-label]").count() == 0, "a Safe button shows no lock")
             rep.check(not problems, "every lock path exists in /api/policy", "; ".join(problems))
+            page.close()
+            # Planning rooms: the discussion and plan show, and approving (asks the password) records the verdict.
+            page = browser.new_page()
+            page.goto(base + "/rooms", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            body = page.inner_text("main")
+            rep.check("auth strategy" in body and "Needs sticky routing" in body and "Add token table" in body, "the room page shows the discussion and the plan", body[:200])
+            page.get_by_role("button", name="Approve").click()
+            page.locator("input[type=password]").fill("smoke pw")
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(1500)
+            rep.check("Approved. The decision is recorded and 2 tasks" in page.inner_text("main"), "approving shows the verdict and the task count", page.inner_text("main")[-200:])
             page.close()
             # A Protected action asks for the password before anything is sent.
             page = browser.new_page()

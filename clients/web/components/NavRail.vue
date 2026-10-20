@@ -188,6 +188,7 @@ const mobileNav = computed(() => [
 ]);
 
 const advancedNav = [
+  { path: '/rooms', label: 'Planning rooms', icon: AgentsIcon },
   { path: '/skills', label: 'Learned skills', icon: SkillsIcon },
   { path: '/traces', label: 'What worked', icon: TracesIcon },
   { path: '/failures', label: 'Problems & fixes', icon: FailuresIcon },

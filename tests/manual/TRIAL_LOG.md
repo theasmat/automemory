@@ -26,8 +26,26 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T8 | Dashboard: pages show real data, tour and Settings work | PASS | 2026-10-19 |
 | T9 | Human password gate | PASS | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
+| T11 | Planning room: two real agents agree a plan, the human approves it | PENDING | |
 
 ## Test cases
+
+### T11 Planning room (two real agents + you)
+Goal: Claude Code and Antigravity discuss one design choice in a room, reach a plan, and your approval turns it into a decision and tasks.
+Needs: `automemory connect claude` and `automemory connect agy` re-run in the trial folder (the rules text now explains rooms), `automemory serve` running, dashboard open at `/rooms`.
+Prompts
+1. Claude Code: "We need to decide how the shop stores the cart (session, cookie, or database). Open a planning room on that with room.join, find evidence with memory.search (save one note first if there is none), post your proposal, then tell me the room id."
+2. Antigravity: "Join planning room <id> with room.join and wait for your turn (check room.pending). Post a critique with room.post; it needs evidence from memory.search."
+3. Claude Code: "Check room.pending, then post your revision: the final choice and 2-4 steps as `- step` lines."
+4. You: dashboard > Planning rooms. Read the discussion and "If you approve", then press Approve (password) — or Another round / Reject.
+5. Either agent: "Claim the next task with task.next and say what it is."
+Pass when
+- Each agent posted only on its own turn; a post out of turn or without evidence was refused with a clear message (try one on purpose).
+- The room shows Needs you after the revision; the discussion matches what the agents said.
+- Approve records ONE decision (Project brain > Decisions, agent "room", the critique as dissent) and one task per step; a second approval is refused.
+- `task.next` in an agent returns the first step; no agent called `decision.record` for it.
+Also note: did the agents find and use the room tools without being told the tool names? Quote what they did if not.
+Result: _not run yet_
 
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.

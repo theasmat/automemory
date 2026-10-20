@@ -2473,7 +2473,7 @@ impl ToolRegistry {
                         let room = self.db.get_room(room_id).ok().flatten();
                         let next_action = match room.as_ref().map(|r| r.state) {
                             Some(automemory_core::models::RoomState::Decided) => {
-                                "Room decided. Record the outcome with decision.record."
+                                "Room decided. A human now approves the plan (dashboard > Planning rooms, or `automemory room approve <id>`); approving records the decision and creates a task for each step. Do not call decision.record for it."
                             }
                             _ => "Turn rotated. The next holder continues with room.post.",
                         };

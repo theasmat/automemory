@@ -1210,6 +1210,12 @@ Locks are automatic: AutoMemory's hooks take a lock when you edit a file and rel
 Do not call `lock.acquire` or `lock.release` yourself. If an edit is reported as held by another agent, read the
 holder and its goal, then pick other work or wait.
 
+## 3. Planning rooms
+For a design choice worth a second opinion, open a room with `room.join` (topic, your session id) and ask the other agent to
+`room.join` it. Take turns: `room.post` kind `propose`, then `critique`, then `revise`; each post needs evidence (ids of
+stored notes from `memory.search`). End the revision with a short list of steps (`- step`). A human then approves it: that
+records the decision and creates the tasks, so do not call `decision.record` for it. Claim tasks with `task.next`.
+
 ---
 
 ## 3. Autonomous Architectural Decisions & Checkpoints
@@ -1252,6 +1258,7 @@ This workspace is integrated with **AutoMemory**.
 - **Mutual Exclusion**: File locks are automatic (hooks lock a file when you edit it). Do not call `lock.acquire` yourself; if an edit is reported as held by another agent, pick other work or wait.
 - **Architectural Policy**: Record non-trivial architectural decisions with `decision.record` so all parallel agents see them with 0ms latency.
 - **Handoffs**: Pass context to peer workers using `baton.pass`.
+- **Planning rooms**: For a design choice worth a second opinion, `room.join` a room, take turns with `room.post` (propose, critique, revise; evidence required), end with steps as `- step` lines. A human approves it; then claim the tasks with `task.next`.
 - **Pre-Tool Safety**: Pre-tool hooks intercept destructive operations (e.g. recursive root deletions, force pushes). Never attempt raw destructive shell commands.
 "#
 }

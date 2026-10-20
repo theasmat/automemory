@@ -16,12 +16,12 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-fn bad(msg: impl Into<String>) -> Response {
+pub(super) fn bad(msg: impl Into<String>) -> Response {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": msg.into() }))).into_response()
 }
 
 /// Protected action: asks for the password, then notes the action in the audit log.
-fn protected(state: &AppState, headers: &HeaderMap, text: &str) -> Option<Response> {
+pub(super) fn protected(state: &AppState, headers: &HeaderMap, text: &str) -> Option<Response> {
     if let Err(e) = require_human_header(headers, text) {
         return Some(e.into_response());
     }

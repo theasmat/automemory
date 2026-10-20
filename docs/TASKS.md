@@ -8,7 +8,8 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] Live sessions: run `tests/manual/LIVE_CHECKLIST.md` sections A (Claude Code), B (Codex, trust hooks in `/hooks`), C (Antigravity), D (two agents, one repo), E (dashboard in a browser); log results in that file
 - [ ] Phase 2 gate: write ≥ 20 real tasks in `tests/eval/tasks/`, run `off` / `on` / `verify` arms ≥ 3 times each, read `run_eval.py report` (method in `tests/eval/README.md`)
 - [ ] Measure stale-flag precision (target ≥ 90%) and retrieval precision@3 on those tasks; plant stale and poisoned memories and confirm flagging, quarantine and revoke
-- [ ] Planning Room A/B: solo + tests vs Room on a defined task set; drop the Room if it does not win
+- [ ] Planning Room A/B: solo + tests vs Room on a defined task set; drop the Room if it does not win. Live two-agent trial: T11 in `tests/manual/TRIAL_LOG.md`
+- [x] Planning Room made usable: dashboard page (discussion, plan preview, approve / another round / reject), `automemory room`, approval stores the decision and tasks, Home shows rooms waiting, agents' rules text explains rooms; scenario `planning_room.py` plays two agents and the human
 - [ ] Decide whether the PRD's "5 ms p95" means the pipeline (met, ≈1.3 ms) or the whole process (≈9 ms p95, ≈5 ms of it binary start-up); if the latter, reduce binary start-up
 - [ ] Before deploying `workers/sync-gateway`: set `STRIPE_WEBHOOK_SECRET` / `LEMONSQUEEZY_WEBHOOK_SECRET`, `ADMIN_SECRET`, leave `ENABLE_DEV_AUTH_BYPASS` unset
 
@@ -130,7 +131,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 238 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 241 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

@@ -71,6 +71,11 @@
       <NuxtLink to="/agents"><Button size="sm" variant="secondary">See locks</Button></NuxtLink>
     </div>
 
+    <div v-if="roomsWaiting > 0" class="flex items-center justify-between gap-3 rounded-card bg-warn-bg px-5 py-4">
+      <p class="text-sm text-text">{{ roomsWaiting }} planning room{{ roomsWaiting === 1 ? '' : 's' }} agreed on a plan and wait for your verdict.</p>
+      <NuxtLink to="/rooms"><Button size="sm" variant="secondary">Review</Button></NuxtLink>
+    </div>
+
     <!-- Guided setup -->
     <div data-tour="setup-card">
       <Checklist title="Get started" :items="store.setupChecklist" />
@@ -190,7 +195,12 @@ const agentsLine = computed(() => {
   if (linkedCount.value === 0) return 'None connected yet';
   return `${workingCount.value > 0 ? 'working now' : 'idle'} · ${linkedCount.value} connected`;
 });
-const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length);
+const roomsWaiting = ref(0);
+onMounted(async () => {
+  const r = await request<any[]>('/api/rooms');
+  if (r.ok && Array.isArray(r.data)) roomsWaiting.value = r.data.filter((x) => x.needs_you).length;
+});
+const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length + roomsWaiting.value);
 
 const hasNeedsYou = computed(() => {
   return store.stats.pending_proposals > 0 || longHeldLocks.value.length > 0;

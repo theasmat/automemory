@@ -3,6 +3,7 @@ pub mod guardrails;
 pub mod memories;
 pub mod llm;
 pub mod recall;
+pub mod rooms;
 pub mod setup;
 pub mod stats;
 pub mod sync;
@@ -26,6 +27,11 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/rooms", get(rooms::api_rooms))
+        .route("/api/rooms/:id", get(rooms::api_room))
+        .route("/api/rooms/:id/approve", post(rooms::api_room_approve))
+        .route("/api/rooms/:id/reject", post(rooms::api_room_reject))
+        .route("/api/rooms/:id/another-round", post(rooms::api_room_again))
         .route("/api/value", get(control::api_value))
         .route("/api/memories/hygiene", get(control::api_memory_hygiene))
         .route("/api/memories/archive_many", post(control::api_memory_archive_many))

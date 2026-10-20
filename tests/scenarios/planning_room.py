@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Planning room end to end with two simulated agents (separate MCP sessions) and a human:
+turn rules, evidence rules, the agents cannot approve their own plan, the human verdict (dashboard API and CLI)
+records one decision and one task per step, and a task can then be claimed by another agent."""
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+sys.path.insert(0, str(Path(__file__).parent))
+from dashboard import free_port, http  # noqa: E402
+from harness import Report, Sandbox  # noqa: E402
+
+PW = {"X-AutoMemory-Password": "correct horse"}
+
+
+def j(x):
+    if isinstance(x, dict):
+        return x
+    try:
+        return json.loads(x)
+    except (TypeError, ValueError):
+        return {"text": x}  # tool errors come back as plain text
+
+
+def main():
+    rep = Report("planning room")
+    sb = Sandbox("room")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "room-master"})
+    server = None
+    try:
+        sb.mcp("project.register", slug="app", display_name="app", path=str(sb.project))
+        mem = j(sb.mcp("memory.save", summary="Sessions need sticky routing", content="Load balancer has no sticky sessions", type="fact", scope="project", project_id="app"))
+        ev = mem.get("id") or mem.get("memory", {}).get("id")
+        rep.check(bool(ev), "an evidence note exists", str(mem)[:120])
+
+        # Agent A opens the room, agent B joins.
+        room = j(sb.mcp("room.join", session_id="agent-a", topic="auth strategy", project_id="app"))["room"]
+        rid = room["id"]
+        j(sb.mcp("room.join", session_id="agent-b", room_id=rid))
+        post = lambda who, kind, body, evidence=None: sb.mcp("room.post", room_id=rid, session_id=who, kind=kind, body=body, evidence=[ev] if evidence is None else evidence)
+
+        r = post("agent-b", "propose", "I go first")
+        rep.check("refused" in json.dumps(r).lower(), "the wrong agent cannot post out of turn", json.dumps(r)[:140])
+        r = post("agent-a", "propose", "no evidence", evidence=[])
+        rep.check("refused" in json.dumps(r).lower(), "a proposal without evidence is refused", json.dumps(r)[:140])
+        r = post("agent-a", "propose", "fake", evidence=["does-not-exist"])
+        rep.check("refused" in json.dumps(r).lower(), "evidence that does not resolve is refused", json.dumps(r)[:140])
+        post("agent-a", "propose", "Use server sessions")
+        post("agent-b", "critique", "Sessions need sticky routing, we have none")
+        done = j(post("agent-a", "revise", "Use JWT in an HttpOnly cookie\n1. Add the token table\n2. Write the login route\n3. Add rotation tests"))
+        rep.check(done["room"]["state"] == "decided", "after one round the room is decided", json.dumps(done)[:160])
+        rep.check("human" in done["next_action"].lower() and "decision.record" in done["next_action"], "agents are told a human approves, not to record it themselves", done["next_action"])
+
+        # Nothing is stored until the human approves.
+        nt = j(sb.mcp("task.next", session_id="agent-c", project_id="app"))
+        rep.check("No open tasks" in json.dumps(nt), "no tasks exist before approval", json.dumps(nt)[:100])
+        subprocess.run([sb.bin, "rule", "passwd", "--from-env"], env={**sb.env, "AUTOMEMORY_PASSWORD": "correct horse"}, cwd=sb.project, capture_output=True)
+
+        # CLI: the verdict needs the password; agents (and scripts) without it are refused.
+        r = sb.run("room", "approve", rid)
+        rep.check(r.returncode != 0, "the CLI refuses to approve without the password", (r.stdout + r.stderr)[-160:])
+        out = sb.run("room", "show", rid).stdout
+        rep.check("If you approve" in out and "task: Add the token table" in out, "room show previews the decision and tasks", out[-300:])
+        rep.check("WAITING FOR YOUR VERDICT" in sb.run("room", "list").stdout, "room list says it waits for you")
+
+        # Dashboard API.
+        port = free_port()
+        server = subprocess.Popen([sb.bin, "serve", "--port", str(port)], cwd=sb.project, env=sb.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            try:
+                http(port, "/api/stats")
+                break
+            except OSError:
+                time.sleep(0.1)
+        code, body = http(port, "/api/rooms")
+        rooms = json.loads(body)
+        rep.check(code == 200 and rooms[0]["needs_you"] is True and rooms[0]["posts"] == 3, "GET /api/rooms shows it needs you", body[:160])
+        code, body = http(port, f"/api/rooms/{rid}")
+        d = json.loads(body)
+        rep.check(len(d["posts"]) == 3 and len(d["plan"]["tasks"]) == 3 and d["plan"]["decision"].startswith("Use JWT"), "GET /api/rooms/:id has the discussion and the plan", body[:200])
+        for action in ("approve", "reject", "another-round"):
+            code, _ = http(port, f"/api/rooms/{rid}/{action}", "POST", {}, {})
+            rep.check(code == 403, f"Protected: {action} is refused without the password", str(code))
+        code, body = http(port, f"/api/rooms/{rid}/approve", "POST", PW, {})
+        out = json.loads(body).get("outcome", {})
+        rep.check(code == 200 and len(out.get("task_ids", [])) == 3 and out.get("decision_id"), "approving with the password stores a decision and 3 tasks", f"{code} {body[:160]}")
+        code, body = http(port, "/api/decisions")
+        rep.check("auth strategy" in body and "Sessions need sticky routing" in body, "the decision carries the critique as dissent", body[:240])
+        code, _ = http(port, f"/api/rooms/{rid}/approve", "POST", PW, {})
+        rep.check(code == 400, "a second approval is refused")
+
+        # Another agent claims the first task.
+        t = j(sb.mcp("task.next", session_id="agent-c", project_id="app"))
+        rep.check(t.get("task", {}).get("title") == "Add the token table", "another agent claims the first step", json.dumps(t)[:160])
+
+        # Human tiebreak on a second room: send it back for another round.
+        r2 = j(sb.mcp("room.join", session_id="agent-a", topic="cache", project_id="app"))["room"]["id"]
+        j(sb.mcp("room.join", session_id="agent-b", room_id=r2))
+        for who, kind in (("agent-a", "propose"), ("agent-b", "critique"), ("agent-a", "revise")):
+            sb.mcp("room.post", room_id=r2, session_id=who, kind=kind, body=f"{kind} - one step", evidence=[ev])
+        code, body = http(port, f"/api/rooms/{r2}/another-round", "POST", PW, {})
+        room2 = json.loads(body).get("room", {})
+        rep.check(code == 200 and room2.get("state") == "critique" and room2.get("turn_holder") == "agent-b", "another round hands the critique to the other agent", f"{code} {body[:140]}")
+    finally:
+        if server:
+            server.terminate()
+            server.wait(timeout=5)
+        sb.cleanup()
+    return rep.finish()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

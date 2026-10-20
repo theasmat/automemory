@@ -245,6 +245,13 @@ enum Commands {
         command: LlmCommands,
     },
 
+    /// Planning rooms: see what agents agreed and approve, reject or send it back
+    #[command(next_help_heading = "Daily")]
+    Room {
+        #[command(subcommand)]
+        command: RoomCommands,
+    },
+
     /// Save, list and restore copies of the database
     #[command(next_help_heading = "Advanced")]
     Backup {
@@ -1520,6 +1527,13 @@ async fn main() -> Result<()> {
             },
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Room { command } => match command {
+            RoomCommands::List => commands::room::list()?,
+            RoomCommands::Show { id } => commands::room::show(&id)?,
+            RoomCommands::Approve { id } => commands::room::approve(&id)?,
+            RoomCommands::Reject { id } => commands::room::reject(&id)?,
+            RoomCommands::Again { id } => commands::room::again(&id)?,
+        },
         Commands::Backup { command } => match command.unwrap_or(BackupCommands::Create) {
             BackupCommands::Create => commands::backup::create()?,
             BackupCommands::List => commands::backup::list()?,
@@ -1641,6 +1655,20 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum RoomCommands {
+    /// Every room and what it waits for
+    List,
+    /// The discussion and, for a decided room, what approving would store
+    Show { id: String },
+    /// Approve the plan: records the decision and one task per step
+    Approve { id: String },
+    /// Reject the plan: nothing is stored
+    Reject { id: String },
+    /// Send a decided room back for another critique and revision
+    Again { id: String },
 }
 
 #[derive(Subcommand)]
