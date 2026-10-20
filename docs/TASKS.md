@@ -118,11 +118,11 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 ## Next improvements (plan: PLAN §13)
 
 - [x] I1 Value report: `automemory stats`, `/api/value`, Home "Last 7 days" card (figures come from existing rows; sample data excluded)
-- [ ] I2 `hook --record` to capture real payloads; fixtures for Cursor/Windsurf/Gemini/Copilot
+- [x] I2 `automemory hooks record on|off|status` saves redacted payloads; `tests/contract/record_to_fixture.py <agent>` turns them into a golden contract fixture. Fixtures for Cursor/Windsurf/Gemini/Copilot still need recordings from real sessions
 - [ ] I3 Trust overlay table for teams (teammate pins arrive as requests)
 - [x] I4 Browser smoke test (Playwright): 21 pages x light/dark, password prompt; skipped with a message when Playwright is missing
 - [ ] I5 Lock hints from `/api/policy`
-- [ ] I6 `backup restore` + doctor backup check
+- [x] I6 `automemory backup [create|list|restore]` (restore keeps the old DB as before-restore-*, refuses while in use or for damaged files); doctor shares the backup code (newest 10 kept) and warns about unreadable copies
 - [ ] I7 LLM profile map, native Cohere/Voyage/Gemini embedding adapters
 - [ ] I8 Fuzz hook JSON, shell parser, delta files
 - [ ] I9 Windows CI for update/hooks/connect
@@ -130,7 +130,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 228 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 229 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

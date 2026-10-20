@@ -54,7 +54,7 @@ def main(agents):
                     style = case.get("style", "native")
                     if "setup" in case:
                         sb.run(*case["setup"])
-                    parsed, raw, err = sb.hook(AGENT_ID[agent], case["event"], case["payload"])
+                    parsed, raw, err = sb.hook(AGENT_ID.get(agent, agent), case["event"], case["payload"])
                     exp = case["expect"]
                     got = kind_of(parsed, style)
                     text = text_of(parsed, style)

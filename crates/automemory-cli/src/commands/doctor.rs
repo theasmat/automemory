@@ -82,38 +82,11 @@ pub fn execute() -> Result<()> {
                 );
             }
 
-            // 5. Snapshot backup (VACUUM INTO) + prune to newest 5
+            // 5. Snapshot backup (shared with `automemory backup`: newest 10 kept)
             print!("Snapshotting database backup... ");
-            let backups_dir = config.home_dir.join("backups");
-            let backup_path = backups_dir.join(format!(
-                "automemory-{}.db",
-                Utc::now().format("%Y%m%d-%H%M%S")
-            ));
-            match db.backup_to(&backup_path) {
-                Ok(()) => {
-                    println!("✓ OK ({:?})", backup_path);
-                    if let Ok(mut snaps) = std::fs::read_dir(&backups_dir).map(|rd| {
-                        let mut v: Vec<_> = rd
-                            .filter_map(|e| e.ok().map(|e| e.path()))
-                            .filter(|p| {
-                                p.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .map(|n| n.starts_with("automemory-") && n.ends_with(".db"))
-                                    .unwrap_or(false)
-                            })
-                            .collect();
-                        v.sort();
-                        v
-                    }) {
-                        while snaps.len() > 5 {
-                            let old = snaps.remove(0);
-                            let _ = std::fs::remove_file(&old);
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("⚠ backup skipped: {}", e);
-                }
+            match automemory_core::backup::create(&db, &config.home_dir) {
+                Ok(path) => println!("✓ OK ({:?})", path),
+                Err(e) => println!("⚠ backup skipped: {}", e),
             }
         }
         Err(e) => {
@@ -187,6 +160,18 @@ pub fn execute() -> Result<()> {
             println!("✓ {}", super::lock::coverage_line(&db, 7));
         } else {
             println!("– database unavailable");
+        }
+    }
+
+    // Backups: every saved copy should open (a damaged one is no use when it is needed).
+    {
+        print!("Checking backups... ");
+        let all = automemory_core::backup::list(&config.home_dir);
+        let bad: Vec<_> = all.iter().filter(|(f, ..)| automemory_core::backup::check(f).is_err()).collect();
+        match (all.first(), bad.is_empty()) {
+            (None, _) => println!("– none yet (automemory backup)"),
+            (_, false) => println!("⚠ {} unreadable: {}", bad.len(), bad.iter().map(|(f, ..)| f.display().to_string()).collect::<Vec<_>>().join(", ")),
+            (Some((_, _, when)), true) => println!("✓ {} readable, newest {} day(s) old", all.len(), (chrono::Utc::now() - *when).num_days()),
         }
     }
 

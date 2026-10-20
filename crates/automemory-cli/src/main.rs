@@ -245,6 +245,13 @@ enum Commands {
         command: LlmCommands,
     },
 
+    /// Save, list and restore copies of the database
+    #[command(next_help_heading = "Advanced")]
+    Backup {
+        #[command(subcommand)]
+        command: Option<BackupCommands>,
+    },
+
     /// What AutoMemory did for you lately (collisions prevented, notes recalled, hand-offs)
     #[command(next_help_heading = "Daily")]
     Stats {
@@ -775,6 +782,10 @@ enum HooksCommands {
         id: String,
         /// New priority
         priority: u8,
+    },
+    /// Save real hook payloads (secrets removed) to turn into contract fixtures: on, off or status
+    Record {
+        mode: String,
     },
 }
 
@@ -1503,6 +1514,11 @@ async fn main() -> Result<()> {
             LlmCommands::KeyRemove => commands::llm::key_remove()?,
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Backup { command } => match command.unwrap_or(BackupCommands::Create) {
+            BackupCommands::Create => commands::backup::create()?,
+            BackupCommands::List => commands::backup::list()?,
+            BackupCommands::Restore { file, yes } => commands::backup::restore(&file, yes)?,
+        },
         Commands::Stats { days, json } => commands::stats::run(days, json)?,
         Commands::Update { check, yes } => commands::update::run(check, yes)?,
         Commands::Resume => commands::continuity::resume()?,
@@ -1598,6 +1614,7 @@ async fn main() -> Result<()> {
             HooksCommands::Disable { id } => {
                 commands::hooks_admin::set_field(&id, |h| h.enabled = false)?;
             }
+            HooksCommands::Record { mode } => commands::hooks_admin::record(&mode)?,
             HooksCommands::Move { id, priority } => {
                 commands::hooks_admin::set_field(&id, |h| h.priority = priority)?;
             }
@@ -1618,6 +1635,21 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum BackupCommands {
+    /// Save a copy now (the default)
+    Create,
+    /// Show saved copies and whether each one opens
+    List,
+    /// Replace the database with a saved copy (the current one is kept)
+    Restore {
+        file: String,
+        /// Do not ask
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]

@@ -73,6 +73,7 @@ pub fn run(agent: &str, event: &str, project_arg: &str) {
     if !io::stdin().is_terminal() {
         let _ = io::stdin().read_to_string(&mut input);
     }
+    super::hooks_admin::record_payload(agent, event, &input);
     let db = Config::default_config();
     let db = Database::open(&db.db_path).ok();
     let key = automemory_core::locking::hook_key(agent, event, &input);

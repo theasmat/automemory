@@ -179,3 +179,55 @@ pub fn set_field(id: &str, f: impl FnOnce(&mut HandlerSpec)) -> Result<()> {
     println!("✓ hooks.toml updated: {id} ({})", path.display());
     Ok(())
 }
+
+// ── Recording real hook payloads ────────────────────────────────────────────────────
+const RECORD_CAP: usize = 200;
+
+fn record_paths() -> (PathBuf, PathBuf) {
+    let home = Config::default_config().home_dir;
+    (home.join("record-hooks"), home.join("recorded-hooks"))
+}
+
+/// `hooks record on|off|status`: while on, every hook call's payload is saved (secrets removed, at most 200 per agent)
+/// so contract fixtures can come from real use. Off by default.
+pub fn record(mode: &str) -> Result<()> {
+    let (flag, dir) = record_paths();
+    match mode {
+        "on" => {
+            std::fs::create_dir_all(&dir)?;
+            std::fs::write(&flag, "")?;
+            println!("✓ Recording hook payloads to {} (secrets removed, 200 per agent). Use your agents normally, then:\n  python3 tests/contract/record_to_fixture.py <agent>", dir.display());
+        }
+        "off" => {
+            let _ = std::fs::remove_file(&flag);
+            println!("✓ Recording off. Saved payloads stay in {}.", dir.display());
+        }
+        "status" => {
+            println!("Recording is {}.", if flag.exists() { "ON" } else { "off" });
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let n = std::fs::read_to_string(e.path()).map(|t| t.lines().count()).unwrap_or(0);
+                println!("  {}: {n} payload(s)", e.file_name().to_string_lossy());
+            }
+        }
+        other => return Err(anyhow!("use on, off or status (got '{other}')")),
+    }
+    Ok(())
+}
+
+/// Called by every hook run; costs one `exists()` check while recording is off.
+pub fn record_payload(agent: &str, event: &str, input: &str) {
+    let (flag, dir) = record_paths();
+    if !flag.exists() || input.trim().is_empty() || !agent.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return;
+    }
+    let file = dir.join(format!("{agent}.jsonl"));
+    if std::fs::read_to_string(&file).map(|t| t.lines().count()).unwrap_or(0) >= RECORD_CAP {
+        return;
+    }
+    let redacted = automemory_core::redaction::redact_text(input);
+    let payload = serde_json::from_str::<Value>(&redacted).unwrap_or(Value::String(redacted));
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+        let _ = writeln!(f, "{}", json!({ "event": event, "payload": payload }));
+    }
+}

@@ -169,14 +169,7 @@ pub async fn api_tool_graph_index(State(state): State<AppState>) -> Response {
 pub async fn api_tool_backup(State(state): State<AppState>) -> Response {
     let db = Arc::clone(&state.db);
     started(jobs::start(&state, "backup", "Back up the database", move |_| {
-        let dir = automemory_core::Config::default_config().home_dir.join("backups");
-        std::fs::create_dir_all(&dir)?;
-        let dest = dir.join(format!("automemory-{}.db", chrono::Utc::now().format("%Y%m%d-%H%M%S")));
-        db.backup_to(&dest)?;
-        // Safe to repeat, so cap the disk it can use: keep the newest 10.
-        let mut old: Vec<_> = std::fs::read_dir(&dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "db")).collect();
-        old.sort();
-        for p in old.iter().rev().skip(10) { let _ = std::fs::remove_file(p); }
+        let dest = automemory_core::backup::create(&db, &automemory_core::Config::default_config().home_dir)?;
         Ok(format!("Saved {}", dest.display()))
     }))
 }

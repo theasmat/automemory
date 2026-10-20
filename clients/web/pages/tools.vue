@@ -131,7 +131,7 @@ const tools = [
   { kind: 'docs', title: 'Rescan documents', text: 'Finds specs and decision records in the project again.', button: 'Rescan', url: '/api/tools/docs-rescan' },
   { kind: 'graph', title: 'Index the code graph', text: 'Maps files and symbols so agents see what a change touches.', button: 'Index', url: '/api/tools/graph-index' },
   { kind: 'eval', title: 'Run the checks', text: 'Runs the built-in quality checks for search, locks and speed.', button: 'Run', url: '/api/tools/eval' },
-  { kind: 'backup', title: 'Back up the database', text: 'Saves a copy in ~/.automemory/backups.', button: 'Back up', url: '/api/tools/backup' },
+  { kind: 'backup', title: 'Back up the database', text: 'Saves a copy in ~/.automemory/backups (newest 10 kept). To go back to one, run automemory backup restore in a terminal.', button: 'Back up', url: '/api/tools/backup' },
 ];
 
 async function run(t: { url: string; title: string }) {
