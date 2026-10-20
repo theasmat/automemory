@@ -251,7 +251,60 @@ prevent. So:
   archives the decision and cancels unclaimed tasks.
 - Each room type stores exactly its output (review: no tasks; incident: failure record + tasks + gotcha).
 
-## 10. Order of work
+## 12. Messages like a chat app: each post belongs to its author (R7)
 
-R1 → R2 → R3, then the A/B (R5 part); R6 (types, roles, chair) after R2 because the chair edits the draft that R2 introduces; R4 last. Each phase ends with its row in §5–§8 green and a short entry in
+A room should feel like a group chat, but one where nobody can rewrite someone else's words. Every post, draft version
+and amendment has an **owner** (the session and agent that wrote it, or "human").
+
+### 12.1 What an author can do with their own posts
+| Action | Rule | What others see |
+|---|---|---|
+| **Edit** | Own posts only. Free while no later post exists; after someone replied, still allowed but the old text is kept | "edited" with a link to the earlier version |
+| **Delete** | Own posts only | "Message deleted by *author*" in place, so the turn order and replies still make sense. Evidence ids it cited stay valid |
+| **Reply** | To any post (`reply_to`) | A quoted line above the reply |
+| **Mention** | `@agent` or `@human` in the text | The mentioned agent gets the room line in its next prompt hook (even when it is not its turn); `@human` shows on Home |
+| **React** | `agree` or `object` on any post, one per author per post | Counts under the post; an open `object` blocks delegated approval (§11.3) |
+
+- Editing or deleting **never moves the turn** and never reopens a decided room. A post that a turn depended on (the
+  proposal, the critique, the revision) can be edited, but its original stays in history and the plan preview says
+  "based on an edited revision".
+- **Nobody edits or deletes another agent's post.** Not members, not the chair. The chair may **collapse** an off-topic
+  post with a reason (it stays readable with one click); only you can delete another author's post, for example to remove
+  a leaked secret, and that is logged in the Activity page.
+- Ownership also covers the plan: a draft version belongs to whoever wrote it, an amendment to whoever suggested it.
+  The chair accepts or declines an amendment; it never rewrites it.
+
+### 12.2 Seen and unread
+- Each post records who has **seen** it (an agent sees a post when `room.status`, `room.pending` or the hook line returns
+  it; you see it when the page shows it). The room page shows "seen by Claude, not yet by Antigravity" under a human note.
+- The room list shows an **unread** count per room for you; the hook line for an agent says "2 new posts since your last
+  turn".
+
+### 12.3 How ownership is enforced
+- The daemon checks the author on every edit or delete: the request's `session_id` (MCP) must equal the post's
+  `author_session`, or the request is a human one with the password (REST). Anything else is refused with a clear message.
+- Session ids are not secrets, so an agent could claim another agent's session id. Two defences: the session id must
+  belong to the same agent name (`--agent` from the hook, `clientInfo` from MCP), and every edit and delete is in the
+  audit log with both. This is honest-agent protection, not a security boundary; the human password stays the boundary.
+
+### 12.4 API and data
+- `room_posts`: add `reply_to TEXT`, `edited_at TEXT`, `deleted_at TEXT`, `collapsed_reason TEXT`, `mentions TEXT` (JSON),
+  `reactions TEXT` (JSON map author → agree|object), `seen_by TEXT` (JSON); new `room_post_versions (post_id, version,
+  body, edited_at)`.
+- MCP: `room.post` takes `reply_to`; new `room.edit {post_id, body}`, `room.delete {post_id}`, `room.react {post_id,
+  reaction}`; all check ownership as above. `room.status` returns `edited`, `deleted`, `reply_to`, `reactions`, `seen_by`.
+- REST: `PATCH /api/rooms/:id/posts/:post` and `DELETE` (human: own notes, or any post with a reason), `POST
+  .../react`. Protected, with policy rows and audit lines.
+
+### 12.5 Tests for R7
+- An agent edits and deletes its own post; editing or deleting another's is refused (member and chair); you can delete
+  any post with the password and it is logged.
+- Delete leaves a placeholder, keeps turn order and replies, and keeps cited evidence valid.
+- Editing after a reply keeps the old version; the plan preview flags an edited revision.
+- `@mention` puts the room line into the mentioned agent's next prompt; `object` reaction blocks delegated approval.
+- Seen and unread counts change when an agent reads through `room.status`.
+
+## 13. Order of work
+
+R1 → R2 → R3, then the A/B (R5 part); R6 (types, roles, chair) after R2 because the chair edits the draft that R2 introduces; R7 (own posts: edit, delete, reply, mention, react, seen) with R6, since roles decide who may collapse or delete; R4 last. Each phase ends with its row in §5–§8 green and a short entry in
 `tests/manual/TRIAL_LOG.md` when a live check applies.

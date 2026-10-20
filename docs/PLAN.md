@@ -403,6 +403,7 @@ and hides who decided what.
 | R4 | Rounds 1–3, multi-critic order, turn timeout + skip/end; WebSocket room events | A three-agent, two-round room finishes; a timed-out turn shows on Home |
 | R5 | Markdown decision record export, value-report counts, the A/B on R1–R3 | A/B result recorded in FEATURES; drop or keep R4 based on it |
 | R6 | Room types (decision, plan, review, incident, retro), roles (chair, member, observer), versioned draft agents can edit, amendments, deep link by id, opt-in delegated approval by the chair for chosen types | Stored decisions change only through Revise; delegation off by default and never for superseding or pinned decisions |
+| R7 | Posts owned like a chat app: authors edit and delete their own (history and "deleted" placeholder kept), replies, @mentions that reach the agent's next prompt, agree/object reactions, seen and unread; nobody edits or deletes another's post (the chair can only collapse; you can delete with the password) | Ownership enforced by the daemon on every edit and delete, logged |
 
-Order: R1 and R2 first (they remove the copy-paste and give the human real control), then R3 and R6; R4 only if the A/B shows
+Order: R1 and R2 first (they remove the copy-paste and give the human real control), then R3, R6 and R7; R4 only if the A/B shows
 rooms beat one agent plus tests.
