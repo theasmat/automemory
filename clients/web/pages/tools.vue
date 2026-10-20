@@ -87,9 +87,9 @@
             <input v-model="llmForm.allow_network" type="checkbox" /> Allow sending note text to a service outside this computer
           </label>
           <div class="flex flex-wrap gap-2">
-            <Button size="sm" variant="primary" @click="saveLlm">{{ llm.on ? 'Save' : 'Turn on' }}</Button>
+            <Button size="sm" variant="primary" lock="/api/llm" @click="saveLlm">{{ llm.on ? 'Save' : 'Turn on' }}</Button>
             <Button v-if="llm.on" size="sm" variant="secondary" @click="saveLlm(true)">Turn off</Button>
-            <Button size="sm" variant="secondary" @click="setLlmKey">{{ llm.key.set ? 'Replace API key' : 'Set API key' }}</Button>
+            <Button size="sm" variant="secondary" lock="/api/llm/key" @click="setLlmKey">{{ llm.key.set ? 'Replace API key' : 'Set API key' }}</Button>
           </div>
           <p v-if="llm.key.set" class="text-xs text-text-muted">API key stored in: {{ llm.key.where }}. It is never shown again.</p>
           <div v-if="llm.on" class="rounded-xl bg-surface-2/60 px-4 py-3 space-y-2">

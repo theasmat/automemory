@@ -95,7 +95,7 @@
             <span>After each shell command, check which files it changed and report the ones nobody had locked</span>
           </label>
           <div class="flex items-center gap-3">
-            <Button size="sm" variant="primary" :loading="busy === 'locks'" @click="saveLocks">Save</Button>
+            <Button size="sm" variant="primary" lock="/api/settings/locks" :loading="busy === 'locks'" @click="saveLocks">Save</Button>
             <span class="text-xs text-text-muted">Asks for your password.</span>
           </div>
         </div>

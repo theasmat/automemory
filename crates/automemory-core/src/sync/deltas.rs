@@ -257,6 +257,9 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
         }
         let Some(wire) = to_transport(db, &mut cache, value) else { return };
         let mut op = make_op(kind, id, updated_at, device_id, wire);
+        if get_kv(db, &format!("clamped:{}", op.id)).ok().flatten().as_deref() == Some(op.fingerprint.as_str()) {
+            return; // our toned-down copy of a teammate's pin is not an edit of ours
+        }
         op.author = Some(me.clone()); // in the envelope, not the payload: fingerprints stay equal on every machine
         if applied.get(&op.id).map(|fp| fp == &op.fingerprint) != Some(true) {
             ops.push(op);
@@ -516,7 +519,52 @@ fn apply_op(
     }
     match op.kind.as_str() {
         "memory" => {
-            let applied_now = apply_kind!(Memory, get_memory_by_id, save_memory_direct, updated_at)?;
+            let mut record: Memory = serde_json::from_value(payload)?;
+            let local = db.get_memory_by_id(&op.id)?;
+            let (mut fp, updated) = match &local {
+                Some(l) => (Some(local_fp(db, cache, l)), Some(l.updated_at)),
+                None => (None, None),
+            };
+            // A copy we toned down (see below) and have not edited since counts as unmodified.
+            let clamp_key = format!("clamped:{}", op.id);
+            if let (Some(f), Some(k)) = (&fp, get_kv(db, &clamp_key)?) {
+                if *f == k {
+                    fp = applied.get(&op.id).cloned();
+                }
+            }
+            // Trust overlay: a teammate's pin does not pin here until a human here approves it. The note arrives
+            // active (still useful), and the exact record is kept so approving restores it with no sync conflict.
+            let from_other = wire.author.as_ref().is_some_and(|a| *a != person(db));
+            let clamp = from_other && record.status == MemoryStatus::Pinned;
+            let original = serde_json::to_string(&record)?;
+            if clamp {
+                record.status = MemoryStatus::Active;
+                record.set_trust_tier(TrustTier::UserStatement);
+            }
+            let applied_now = merge_one(db, applied, seen, &op, fp, updated, || db.save_memory_direct(&record), report)?;
+            if applied_now.is_some() {
+                if clamp {
+                    set_kv(db, &clamp_key, &local_fp(db, cache, &record))?;
+                    set_kv(db, &format!("teampin:{}", op.id), &original)?;
+                    let pid = format!("team-pin-{}", op.id);
+                    if db.get_proposal_by_id(&pid)?.is_none() {
+                        db.save_proposal(&ReviewProposal {
+                            id: pid,
+                            project_id: record.project_id.clone(),
+                            proposal_type: "team_pin".into(),
+                            target_id: op.id.clone(),
+                            description: format!("{} pinned this note as a team rule: \"{}\". Pin it here too?", wire.author.as_deref().unwrap_or("A teammate"), record.summary),
+                            suggested_action: "Approve to pin on this machine, reject to keep it as an ordinary note".into(),
+                            status: "pending".into(),
+                            created_at: Utc::now(),
+                            decided_at: None,
+                        })?;
+                    }
+                } else {
+                    set_kv(db, &clamp_key, "")?;
+                    set_kv(db, &format!("teampin:{}", op.id), "")?;
+                }
+            }
             if let (Some(_), Some(author)) = (&applied_now, wire.author.as_ref()) {
                 if *author != person(db) {
                     set_kv(db, &format!("author:{}", op.id), author)?;
@@ -961,6 +1009,48 @@ mod tests {
         // Bob's next cycle does not send Alice's notes back as if they were his edits, and nothing conflicts.
         assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().conflicts, 0);
         assert_eq!(sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap().conflicts, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_teammates_pin_arrives_as_a_request_and_approving_it_causes_no_conflict() {
+        let dir = test_vault("teampin");
+        let (alice, bob) = (test_db(), test_db());
+        set_kv(&alice, "person", "Alice").unwrap();
+        set_kv(&bob, "person", "Bob").unwrap();
+        register_project(&alice, "pa", "shop", Some("git:github.com/team/shop"));
+        let mut rule = memory_in(Some("pa"), "m-rule", "Never store card numbers");
+        rule.status = MemoryStatus::Pinned;
+        alice.save_memory_direct(&rule).unwrap();
+        let key = [5u8; 32];
+        sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap();
+        sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap();
+
+        // Bob has the note, but not as a pinned invariant, and a request to pin it.
+        assert!(bob.get_memory_by_id("m-rule").unwrap().unwrap().status == MemoryStatus::Active);
+        let req = bob.list_pending_proposals(None).unwrap().into_iter().find(|p| p.proposal_type == "team_pin").expect("a pin request");
+        assert!(req.description.contains("Alice"));
+
+        // Neither side sees a conflict or a bounced copy, even after Alice edits the pinned note.
+        assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().conflicts, 0);
+        assert_eq!(sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap().conflicts, 0);
+        let mut edited = alice.get_memory_by_id("m-rule").unwrap().unwrap();
+        edited.summary = "Never store card numbers or CVVs".into();
+        edited.updated_at = Utc::now();
+        alice.save_memory_direct(&edited).unwrap();
+        sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap();
+        let r = sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap();
+        assert_eq!(r.conflicts, 0, "an unmodified toned-down copy takes the teammate's update");
+        let b = bob.get_memory_by_id("m-rule").unwrap().unwrap();
+        assert!(b.summary.contains("CVVs") && b.status == MemoryStatus::Active);
+        assert_eq!(collect_deltas(&bob, &device_id(&bob).unwrap()).unwrap().iter().filter(|o| o.id == "m-rule").count(), 0, "Bob never sends the toned-down copy back");
+
+        // Approving pins it for real: Bob now holds Alice's exact record, so nothing flows back.
+        bob.decide_proposal(&req.id, true).unwrap();
+        assert!(bob.get_memory_by_id("m-rule").unwrap().unwrap().status == MemoryStatus::Pinned);
+        sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap();
+        assert_eq!(sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap().conflicts, 0);
+        assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().conflicts, 0);
         let _ = fs::remove_dir_all(&dir);
     }
 

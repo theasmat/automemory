@@ -21,11 +21,16 @@
     </svg>
     <slot name="icon" />
     <slot />
+    <svg v-if="locked" class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="currentColor" role="img" aria-label="Asks for your password">
+      <title>Asks for your password</title>
+      <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v2H5a1 1 0 00-1 1v7a1 1 0 001 1h10a1 1 0 001-1V9a1 1 0 00-1-1h-1V6a4 4 0 00-4-4zm2 6V6a2 2 0 10-4 0v2h4z" clip-rule="evenodd" />
+    </svg>
   </button>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
+import { usePolicy } from '~/composables/usePolicy';
 
 const props = withDefaults(
   defineProps<{
@@ -35,6 +40,8 @@ const props = withDefaults(
     disabled?: boolean;
     loading?: boolean;
     customClass?: string;
+    /** The API path this button calls; a lock shows when the server's policy says it asks for the password. */
+    lock?: string;
   }>(),
   {
     variant: 'secondary',
@@ -44,6 +51,13 @@ const props = withDefaults(
     loading: false,
   }
 );
+
+const { rules, tierOf } = usePolicy();
+const locked = computed(() => !!props.lock && tierOf(props.lock) === 'protected');
+// A path that is not in the policy table is a bug in the page: say so loudly (the browser smoke test fails on it).
+watch(rules, () => {
+  if (props.lock && rules.value.length && tierOf(props.lock) === null) console.error(`Button lock="${props.lock}" is not in /api/policy`);
+}, { immediate: true });
 
 defineEmits<{
   (e: 'click', event: MouseEvent): void;

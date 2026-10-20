@@ -263,6 +263,15 @@ impl Database {
                 }
             }
         }
+        if approved && rows > 0 {
+            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "team_pin") {
+                // Put back the teammate's exact record: identical to theirs, so nothing is sent back or conflicts.
+                if let Some(mem) = self.sync_kv_get(&format!("teampin:{}", p.target_id)).filter(|j| !j.is_empty()).and_then(|j| serde_json::from_str::<crate::models::Memory>(&j).ok()) {
+                    self.save_memory_direct(&mem)?;
+                    self.sync_kv_set(&format!("clamped:{}", p.target_id), "");
+                }
+            }
+        }
         let conn = self.conn();
         if approved && rows > 0 {
             if let Some(p) = proposal {

@@ -87,7 +87,7 @@
     <!-- Guardrail Rules Table -->
     <Card title="Blocking rules">
       <template #actions>
-        <Button size="sm" variant="secondary" @click="isAddRuleOpen = true">
+        <Button size="sm" variant="secondary" lock="/api/guardrails/rules" @click="isAddRuleOpen = true">
           + Add rule
         </Button>
       </template>
@@ -130,7 +130,7 @@
                 </button>
               </td>
               <td class="py-3 px-3 text-right">
-                <Button size="sm" variant="danger" @click="store.deleteGuardrailRule(rule.id)">
+                <Button size="sm" variant="danger" lock="/api/guardrails/rules/:id" @click="store.deleteGuardrailRule(rule.id)">
                   Delete
                 </Button>
               </td>

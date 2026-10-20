@@ -147,7 +147,7 @@
     <Card title="Pause all agents">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-sm text-text-muted max-w-md">Releases every file lock at once, so work in progress stops being protected. Asks for your password.</p>
-        <Button size="sm" variant="danger" @click="stopAll">Release all locks</Button>
+        <Button size="sm" variant="danger" lock="/api/locks/stop" @click="stopAll">Release all locks</Button>
       </div>
     </Card>
 
@@ -162,7 +162,7 @@
             <p class="text-sm text-text-muted">{{ a.native_hooks ? 'Automatic hooks and memory tools' : 'Memory tools only' }} · {{ a.registered_here ? 'Connected here' : 'Not connected' }}</p>
           </div>
           <div class="flex gap-2">
-            <Button v-if="!a.registered_here" size="sm" variant="primary" @click="connectAgent(a.id)">Connect</Button>
+            <Button v-if="!a.registered_here" size="sm" variant="primary" lock="/api/agents/connect" @click="connectAgent(a.id)">Connect</Button>
             <template v-else>
               <Button size="sm" variant="secondary" @click="previewRemove(a.id)">What would be removed?</Button>
               <Button size="sm" variant="ghost" @click="disconnectAgent(a.id)">Remove</Button>
@@ -175,7 +175,7 @@
         <ul class="mt-3 divide-y divide-border/60">
           <li v-for="a in setup.agents.filter((x: any) => !x.native_hooks && !x.registered_here)" :key="a.id" class="py-3 flex items-center justify-between gap-3">
             <span class="text-[15px] text-text">{{ agentName(a.id) }}</span>
-            <Button size="sm" variant="secondary" @click="connectAgent(a.id)">Connect</Button>
+            <Button size="sm" variant="secondary" lock="/api/agents/connect" @click="connectAgent(a.id)">Connect</Button>
           </li>
         </ul>
       </details>

@@ -119,9 +119,9 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 - [x] I1 Value report: `automemory stats`, `/api/value`, Home "Last 7 days" card (figures come from existing rows; sample data excluded)
 - [x] I2 `automemory hooks record on|off|status` saves redacted payloads; `tests/contract/record_to_fixture.py <agent>` turns them into a golden contract fixture. Fixtures for Cursor/Windsurf/Gemini/Copilot still need recordings from real sessions
-- [ ] I3 Trust overlay table for teams (teammate pins arrive as requests)
+- [x] I3 Trust overlay for teams: a teammate's pin arrives active with a `team_pin` request; approving restores their exact record, so no sync conflicts or bounced copies (tested incl. teammate edits). Person name is set by AUTOMEMORY_PERSON or git user.name; no settings UI
 - [x] I4 Browser smoke test (Playwright): 21 pages x light/dark, password prompt; skipped with a message when Playwright is missing
-- [ ] I5 Lock hints from `/api/policy`
+- [x] I5 Lock hints from `/api/policy`: `<Button lock="/api/...">` shows a lock when the server says Protected; a path missing from the table logs an error that the browser smoke test fails on. Placed on the main Protected buttons (11), not every one
 - [x] I6 `automemory backup [create|list|restore]` (restore keeps the old DB as before-restore-*, refuses while in use or for damaged files); doctor shares the backup code (newest 10 kept) and warns about unreadable copies
 - [ ] I7 LLM profile map, native Cohere/Voyage/Gemini embedding adapters
 - [ ] I8 Fuzz hook JSON, shell parser, delta files
@@ -130,7 +130,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 229 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 230 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

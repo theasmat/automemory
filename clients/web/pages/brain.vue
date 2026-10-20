@@ -6,7 +6,7 @@
       :description="`Shared persistent context for ${store.activeProject || 'all agents'}. Every session starts from these notes.`"
     >
       <template #actions>
-        <Button variant="primary" size="sm" @click="isAddModalOpen = true">
+        <Button variant="primary" size="sm" lock="/api/memories" @click="isAddModalOpen = true">
           <template #icon>
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -15,7 +15,7 @@
           + Add note
         </Button>
 
-        <Button variant="secondary" size="sm" @click="openDecision">Record a decision</Button>
+        <Button variant="secondary" size="sm" lock="/api/decisions" @click="openDecision">Record a decision</Button>
 
         <Button variant="secondary" size="sm" @click="previewDrawerOpen = true">
           Preview export &rarr;
@@ -66,7 +66,7 @@
         </label>
         <div class="flex gap-2 pt-2">
           <Button size="sm" variant="secondary" @click="tidyPick = tidy.map((t: any) => t.id)">Select all</Button>
-          <Button size="sm" variant="primary" :disabled="!tidyPick.length" @click="archiveTidy">Archive {{ tidyPick.length }} selected</Button>
+          <Button size="sm" variant="primary" lock="/api/memories/archive_many" :disabled="!tidyPick.length" @click="archiveTidy">Archive {{ tidyPick.length }} selected</Button>
         </div>
       </div>
     </Card>

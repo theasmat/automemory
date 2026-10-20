@@ -63,6 +63,16 @@ def main():
                     rep.check(not problems, f"{theme} {path}: no errors", "; ".join(problems[:3]))
                     rep.check(len(text.strip()) > 40, f"{theme} {path}: renders content", repr(text[:60]))
                 page.close()
+            # Lock icons come from /api/policy: Protected buttons have one, Safe buttons do not.
+            page = browser.new_page()
+            problems = []
+            page.on("console", lambda m: m.type == "error" and problems.append(m.text[:160]))
+            page.goto(base + "/brain", wait_until="networkidle")
+            rep.check(page.get_by_role("button", name="Record a decision").locator("svg[aria-label]").count() == 1, "a Protected button shows the lock")
+            page.goto(base + "/tools", wait_until="networkidle")
+            rep.check(page.get_by_role("button", name="Back up").locator("svg[aria-label]").count() == 0, "a Safe button shows no lock")
+            rep.check(not problems, "every lock path exists in /api/policy", "; ".join(problems))
+            page.close()
             # A Protected action asks for the password before anything is sent.
             page = browser.new_page()
             page.goto(base + "/tools", wait_until="networkidle")
