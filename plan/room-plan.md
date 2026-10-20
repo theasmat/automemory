@@ -1,0 +1,197 @@
+# Planning rooms: spec
+
+Status: plan, not built. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
+another agent needs to build it. Tasks R1–R5 are in [docs/TASKS.md](../docs/TASKS.md).
+
+## 1. Where we are
+
+Built (commit `16ff6e9`):
+- A room is a turn-gated state machine: **propose → critique → revise → decided**, one round, posts need evidence ids
+  (memory, trace or failure) and are capped at 2000 characters (`crates/automemory-core/src/db/queries/rooms.rs`).
+- MCP tools `room.join`, `room.pending`, `room.post` and `room.status` (`crates/automemory-mcp/src/tools.rs`).
+- Human verdict on a decided room: **approve** records one decision (the last critique as dissent, agent `room`) and one
+  task per `- step` / `1. step` line of the final revision; **reject** stores nothing; **another round** reopens the
+  critique. The verdict is kept in `sync_kv` as `room_outcome:<id>`, so a second verdict is refused.
+- `automemory room list|show|approve|reject|again`, `/api/rooms*`, a dashboard **Planning rooms** page, a Home banner
+  when a room waits for you, and a rules paragraph that tells agents how rooms work.
+- Tests: `rooms.rs` unit tests, `tests/scenarios/planning_room.py` (two simulated agents and the human),
+  `tests/ui/smoke.py` (page renders, approve asks the password). Live trial **T11** is written, not run.
+
+What hurts today:
+1. Only an agent can open a room, and you must paste the room id into the other agent by hand.
+2. You can judge the plan, but not shape it: no way to add a constraint mid-discussion or fix one step before approving.
+3. After approval, the plan disappears into a decision and a flat task list. Nobody sees progress, and changing the plan
+   later means starting from nothing.
+4. One fixed round and two agents. A third agent cannot review, a stalled agent blocks the room forever.
+
+## 2. Goals and non-goals
+
+Goals:
+- You can **start** a room in the dashboard and the invited agents **find out by themselves** on their next prompt.
+- You can **steer** (notes) and **correct** (edit the plan) before anything is stored.
+- An approved plan becomes **tracked work** with owners and checks, and can be **revised** without losing history.
+- Rooms stay cheap: turns, a round limit, short posts, evidence for claims.
+
+Non-goals (deliberately):
+- Free chat between agents, votes, or more than three rounds. They burn tokens and blur who decided.
+- Agents approving plans. Only the human verdict (password) stores decisions and tasks.
+- Rooms that run code or edit files. Agents do the work afterwards through tasks, under the normal hooks and locks.
+
+## 3. User flows
+
+### 3.1 Start a room (R1)
+1. Dashboard → Planning rooms → **New room**.
+2. Fill in: topic (short), the question to answer, agents to invite (from Agents: connected ones are listed), and
+   optionally context: notes found by search (they become starting evidence), files or symbols in scope, constraints
+   ("no new services", "must ship this week").
+3. **Create** asks for the password (it creates work for agents) and opens the room page. The first invited agent holds
+   the turn for the proposal.
+4. On that agent's next prompt or session start, the hook adds one line to its context:
+   `Planning room "Cart storage" (room-…) waits for your proposal. Question: … Read it with room.status, answer with room.post.`
+5. The other invited agents get the same line when it is their turn (critique, revise).
+
+### 3.2 Steer and correct (R2)
+- **Note**: a text box on the room page. A note does not take a turn. The next agent sees it in `room.status` as
+  `{"author": "human", "trust_tier": 3, "text": …}`. Notes are never evidence.
+- **Edit before approving**: "If you approve" becomes a form:
+  - Decision: one line (prefilled from the revision's first line).
+  - Steps: add, remove, reorder, reword. Each step can have an owner (an invited agent), files in scope and a check
+    command (for example `pytest tests/cart`).
+  - The edit is a draft (`room_draft:<id>`), saved as you type. **Approve** stores the draft if one exists, else the
+    plan as the agents wrote it. The decision is marked `edited_by_human: true` with the original kept in history.
+
+### 3.3 Follow the work (R3)
+- The room page of an approved room shows: the decision (link to Project brain) and the task list with state:
+  open, claimed by *agent*, done, check passed or failed.
+- Claiming a task (`task.next`) leases its files to the claimer (existing lock machinery), so another agent editing them
+  is told. Submitting runs nothing by itself; the check result comes from the agent's `task.submit` (`result`) and, when
+  hooks are present, from the post-tool event of the check command.
+- **Revise**: a button on an approved room. It opens a new room seeded with the old decision as evidence and a link
+  back. Approving the new room supersedes the old decision (existing `decision.record` supersede) and cancels the old
+  room's tasks that nobody has claimed; claimed ones are flagged for you.
+- **Task actions**: rename, cancel, change owner. All are Protected.
+
+### 3.4 Bigger rooms and stalls (R4)
+- Per room: rounds 1–3 (default 1). With three or more agents, every non-author critiques in a fixed order, then the
+  author revises.
+- Turn timeout (default 30 minutes since the turn started): Home shows "Agent X has not posted in room Y". You can
+  **skip** the turn (the next member gets it) or **end** the room (it is closed without a plan).
+
+### 3.5 Keep and learn (R5)
+- Export: an approved room writes a short decision record (topic, decision, why, objection answered, steps) as Markdown
+  into the repo's docs folder if one is tracked (`docs/adr/` style), on request.
+- The value report (`automemory stats`, Home card) counts rooms opened, plans approved, tasks done.
+- The Planning Room A/B (TASKS) runs on R1–R3 before R4 is built; R4 is dropped if rooms do not beat one agent plus tests.
+
+## 4. Screens
+
+### 4.1 Planning rooms list and detail (exists; extended)
+```
+Planning rooms                                              [ New room ]
+┌ Cart storage ──── Needs you ┐   ┌ Cart storage ───────────── Round 1/1 · Needs you ┐
+│ 3 posts · 2 agents          │   │ Question: Where do we keep the cart?             │
+└─────────────────────────────┘   │ Scope: shop/cart.py  Constraints: no new service  │
+┌ Auth strategy ── Approved ──┐   │ ─ Proposal · claude-code ─────────────────────── │
+│ 3 tasks: 1 done, 1 claimed  │   │   Keep it in a signed cookie …   (2 notes)       │
+└─────────────────────────────┘   │ ─ You (note) ──────────────────────────────────  │
+                                  │   Cart must survive a login.                     │
+                                  │ ─ Critique · antigravity ─────────────────────── │
+                                  │ ─ Revision · claude-code ─────────────────────── │
+                                  │ [ Add a note …                       ] [ Send ]   │
+                                  └───────────────────────────────────────────────────┘
+                                  ┌ If you approve (editable) ───────────────────────┐
+                                  │ Decision [ Store the cart in the database      ] │
+                                  │ Steps                                            │
+                                  │  ⋮ 1 [ Add cart table ]   owner [claude ▾] files │
+                                  │  ⋮ 2 [ Migrate cookie carts ] owner [agy ▾]      │
+                                  │  + Add step                                      │
+                                  │ [ Approve 🔒 ] [ Another round 🔒 ] [ Reject 🔒 ] │
+                                  └───────────────────────────────────────────────────┘
+```
+### 4.2 New room dialog (R1)
+```
+New planning room
+ Topic          [ Cart storage                    ]
+ Question       [ Where do we keep the cart?      ]
+ Agents         [x] Claude Code (connected)  [x] Antigravity (connected)  [ ] Codex
+ Evidence       [ search notes … ]  ✓ "Shop is a single Python process"
+ Scope          [ shop/cart.py, shop/session.py   ]
+ Constraints    [ No new services                 ]
+ Rounds         ( 1 ) 2  3          (R4)
+                                   [ Cancel ]  [ Create 🔒 ]
+```
+### 4.3 Approved room (R3)
+```
+Auth strategy · Approved by you · Decision: Use JWT in a cookie (open in Project brain)
+ Tasks                                    state                 check
+ 1 Add the token table      claude-code   done                  ✓ pytest tests/auth
+ 2 Write the login route    antigravity   claimed 12 min ago    –
+ 3 Add rotation tests       –             open                  –
+ [ Revise this plan ]  [ Export decision record ]
+```
+
+## 5. API
+
+| Method and path | Tier | Body / result |
+|---|---|---|
+| `POST /api/rooms` | Protected | `{topic, question, agents[], evidence[], scope[], constraints[], rounds?}` → room |
+| `POST /api/rooms/:id/note` | Protected | `{text}`; stored as a human post, no turn change |
+| `PUT /api/rooms/:id/draft` | Protected | `{decision, steps:[{title, owner?, files[], check?}]}`; replaces the draft |
+| `POST /api/rooms/:id/approve` | Protected (exists) | uses the draft when present |
+| `POST /api/rooms/:id/skip` · `/end` | Protected | R4 |
+| `POST /api/rooms/:id/revise` | Protected | opens the follow-up room; returns its id |
+| `PATCH /api/tasks/:id` · `DELETE /api/tasks/:id` | Protected | rename, owner; cancel |
+| `GET /api/rooms/:id` | read (exists) | adds `question, scope, constraints, notes, draft, tasks[] with state` |
+
+Every new write route gets a row in `serve/policy.rs` (the route audit test enforces it) and a line in the audit log.
+
+MCP:
+- `room.join` (create) accepts `question`, `scope`, `constraints`, `invite` (session or agent names).
+- `room.status` and `room.pending` return the question, scope, constraints and human notes.
+- `room.post` unchanged. Evidence may also be a decision id (needed for Revise).
+
+## 6. Data
+
+One migration (schema version 15):
+- `rooms`: add `question TEXT`, `scope TEXT` (JSON array), `constraints TEXT` (JSON array), `invited TEXT` (JSON array of
+  agent names), `rounds INTEGER DEFAULT 1`, `parent_room TEXT`, `turn_started_at TEXT`.
+- `room_posts`: `kind` gains `note` (human, never advances the state).
+- `tasks`: add `room_id TEXT`, `position INTEGER`, `owner TEXT`, `files TEXT` (JSON), `check_cmd TEXT`, `check_status TEXT`,
+  `cancelled INTEGER DEFAULT 0`.
+- Drafts and outcomes stay in `sync_kv` (`room_draft:<id>`, `room_outcome:<id>`): they are small and per-machine.
+
+Invited agents are matched to sessions by agent name (the hook knows `--agent`), so "invite Antigravity" means "the next
+Antigravity session in this project".
+
+## 7. Hook change (R1)
+
+In the boot and prompt hooks (`commands/hook.rs`, where `additionalContext` is built today), after the memory context:
+- Look up undecided rooms of this project where this agent (by name, or this session) holds the turn, or was invited and
+  has not joined.
+- Add at most one line per room, at most two rooms, about 60 tokens each. Nothing when there are none.
+- This is the only way an agent learns about a room it did not open; it must stay cheap and never block the hook.
+
+## 8. Tests
+
+- Unit (`rooms.rs`): create with question/scope/constraints; notes do not change the turn; a draft overrides the plan on
+  approve; Revise supersedes and cancels unclaimed tasks only; rounds and multi-critic order; skip and end.
+- Hook contract: an invited agent's prompt hook gets the room line; an uninvited one does not; no line once decided.
+- Scenario `planning_room.py`: extend with dashboard create → simulated agents find it via `room.pending` → human note
+  visible to the next agent → edited draft approved → tasks with owners → claim locks files → Revise.
+- Browser smoke: New room dialog, note, draft edit, approve with the password, task list states.
+- Live trials: **T11** (exists: agent-started room) and **T11b** (dashboard-started room, no id pasted).
+
+## 9. Risks
+
+- **Hook noise**: a room line in every prompt annoys. Mitigation: only when it is this agent's turn or an unanswered
+  invite, at most two rooms, gone once decided.
+- **Token cost**: three rounds × three agents is nine posts. Mitigation: rounds default to 1, posts are capped, R4 waits
+  for the A/B.
+- **Stale plans**: tasks outlive a changed mind. Mitigation: Revise cancels unclaimed tasks and flags claimed ones.
+- **Trust**: human notes could be mistaken for evidence. They are stored as `note`, shown as human, and rejected as
+  evidence ids.
+
+## 10. Order of work
+
+R1 → R2 → R3, then the A/B (R5 part) and only then R4. Each phase ends with its row in §5–§8 green and a short entry in
+`tests/manual/TRIAL_LOG.md` when a live check applies.

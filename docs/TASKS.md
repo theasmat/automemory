@@ -129,7 +129,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] I9 (written, NOT run on Windows): `automemory update` supports Windows (zip, rename-aside swap), Unix-only tests are gated, git post-commit hook path uses forward slashes, test harness knows .exe/USERPROFILE, and CI has an advisory `windows` job (build, cargo test, update/registration/agents_matrix/hook_record/hook_fuzz scenarios). Make it required after its first green run; expect fixes. Known gaps: the `dirs` crate ignores HOME overrides on Windows, hook commands assume the agent runs them through a shell that accepts a quoted path, exec handlers need `sh` (Git for Windows)
 - [x] I10 Cosmetic backlog: decision cards show the title and "Why:" only, Home agents line no longer repeats the number, Activity is its own page (filters, linked from Settings and the Advanced menu); smoke test covers `/activity`
 
-## Planning rooms people use (plan: PLAN §14)
+## Planning rooms people use (plan: PLAN §14, spec: plan/room-plan.md)
 
 - [ ] R1 Start a room from the dashboard (topic, question, invited agents, evidence picker, scope, constraints); hook tells invited agents
 - [ ] R2 Human notes in a room; edit the plan (decision, steps with owner/files/check) before approving

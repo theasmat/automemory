@@ -367,6 +367,8 @@ Not planned: ONNX (see §1 reasons), a hosted service, agent-written trusted mem
 
 ## 14. Planning rooms that people actually use
 
+Detailed spec (flows, screens, API, data, hook change, tests): [plan/room-plan.md](../plan/room-plan.md).
+
 Today a room works only if an agent opens it and every agent is told by hand to join and post. The human can only
 judge the final plan as it is. This section makes the room something you start, steer and correct, while keeping the two
 rules that make it worth having: **turns** (no endless chat, bounded tokens) and **evidence** (claims point at stored notes).
