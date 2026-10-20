@@ -106,7 +106,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 ## Next: quality, proof, reach (plan: PLAN §12)
 
 - [x] N1 Proof: eval harness with/without AutoMemory, published numbers, CI gate
-- [x] N2 Optional LLM helper: conflicts, duplicates, session distill (proposals only; one profile; staleness check not built)
+- [x] N2 Optional LLM helper: conflicts, duplicates, session distill (proposals only; one profile). Staleness without an LLM: Tidy up flags notes that mention files that no longer exist
 - [x] N3 Memory hygiene UI: confidence, last used, never recalled, bulk archive
 - [x] N4 Agent matrix test: 13 agents connect, get their instruction file and disconnect cleanly. Hooks/contract fixtures for Cursor, Windsurf, Gemini CLI, Copilot still need recorded real payloads (they stay experimental, MCP + rules only)
 - [x] N5 Team sync (first step): records carry their author, notes from a teammate show "from <name>", approved notes arrive active and unapproved ones stay candidates (tested with two people on a keyed vault). Not built: per-person trust tiers (a receiver-side overlay is needed; clamping the record itself makes fingerprints diverge and creates false conflicts), person setting UI
@@ -115,9 +115,22 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] N8 Hardening audit of `serve/`, sync and export-rules. Fixed: plaintext sync deltas accepted by a keyed vault (forged trusted memories), `is_loopback` substring bypass (`localhost.evil.com` skipped consent and redaction), export-rules following symlinks out of the repo, unbounded backups, agent name as CLI flag. Not covered: fuzzing the hook JSON parsers
 - [ ] Small leftovers: T10 trial, lock icons from `/api/policy`, richer "recently blocked" view, decision-card wording
 
+## Next improvements (plan: PLAN §13)
+
+- [ ] I1 Value report: `automemory stats` + Home card from audit_log/leases/recalls
+- [ ] I2 `hook --record` to capture real payloads; fixtures for Cursor/Windsurf/Gemini/Copilot
+- [ ] I3 Trust overlay table for teams (teammate pins arrive as requests)
+- [ ] I4 Browser smoke test for every dashboard page
+- [ ] I5 Lock hints from `/api/policy`
+- [ ] I6 `backup restore` + doctor backup check
+- [ ] I7 LLM profile map, native Cohere/Voyage/Gemini embedding adapters
+- [ ] I8 Fuzz hook JSON, shell parser, delta files
+- [ ] I9 Windows CI for update/hooks/connect
+- [ ] I10 Cosmetic backlog
+
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 226 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 227 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

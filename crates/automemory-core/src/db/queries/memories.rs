@@ -349,13 +349,13 @@ impl Database {
     }
 
     /// Active memories with what hygiene needs: age, last recall and confidence.
-    pub fn hygiene_rows(&self, project_id: Option<&str>) -> Result<Vec<(String, String, String, f64, String, Option<String>)>> {
+    pub fn hygiene_rows(&self, project_id: Option<&str>) -> Result<Vec<(String, String, String, f64, String, Option<String>, String)>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, summary, memory_type, confidence, created_at, last_recalled_at FROM memories
+            "SELECT id, summary, memory_type, confidence, created_at, last_recalled_at, content FROM memories
              WHERE status = 'active' AND (?1 IS NULL OR project_id = ?1 OR project_id IS NULL) ORDER BY created_at ASC",
         )?;
-        let rows = stmt.query_map([project_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+        let rows = stmt.query_map([project_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?;
         Ok(rows.flatten().collect())
     }
 

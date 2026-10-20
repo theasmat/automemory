@@ -356,6 +356,7 @@ const tidyLabels: Record<string, string> = {
   never_recalled: 'never used',
   unused_30d: 'not used for 30 days',
   low_confidence: 'low confidence',
+  missing_file: 'mentions a file that no longer exists',
 };
 
 async function loadTidy() {

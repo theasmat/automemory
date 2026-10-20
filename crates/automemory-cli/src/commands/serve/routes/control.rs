@@ -330,7 +330,8 @@ pub async fn api_memory_hygiene(State(state): State<AppState>, axum::extract::Qu
     let now = chrono::Utc::now();
     let days = |s: &str| chrono::DateTime::parse_from_rfc3339(s).map(|t| (now - t.with_timezone(&chrono::Utc)).num_days()).unwrap_or(0);
     let rows = match state.db.hygiene_rows(q.project_id.as_deref()) { Ok(r) => r, Err(e) => return bad(e.to_string()) };
-    let items: Vec<_> = rows.into_iter().filter_map(|(id, summary, kind, confidence, created, recalled)| {
+    let root = project_dir(&state, q.project_id.as_deref()).map(|(_, d)| d);
+    let items: Vec<_> = rows.into_iter().filter_map(|(id, summary, kind, confidence, created, recalled, content)| {
         let age = days(&created);
         let mut flags = Vec::new();
         match recalled.as_deref() {
@@ -339,6 +340,7 @@ pub async fn api_memory_hygiene(State(state): State<AppState>, axum::extract::Qu
             _ => {}
         }
         if confidence < 0.4 { flags.push("low_confidence"); }
+        if root.as_deref().is_some_and(|r| !missing_files(&content, r).is_empty()) { flags.push("missing_file"); }
         (!flags.is_empty()).then(|| json!({ "id": id, "summary": summary, "type": kind, "confidence": confidence, "age_days": age, "last_recalled_at": recalled, "flags": flags }))
     }).collect();
     Json(json!({ "count": items.len(), "items": items })).into_response()
@@ -356,4 +358,31 @@ pub async fn api_memory_archive_many(State(state): State<AppState>, headers: Hea
         if matches!(state.db.archive_memory(id), Ok(true)) { done.push(id.clone()); }
     }
     Json(json!({ "archived": done })).into_response()
+}
+
+/// Repository paths a note mentions (`src/auth/login.rs`) that no longer exist under `root`: a sign the note is stale.
+/// Only relative, slash-containing paths with a known extension count, so `Node.js` or a URL never match.
+pub(crate) fn missing_files(text: &str, root: &std::path::Path) -> Vec<String> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r#"(?:^|[\s`'"(])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.(?:rs|ts|tsx|js|vue|py|go|md|toml|json|ya?ml|sql|swift|kt|java|css|html))\b"#).unwrap());
+    re.captures_iter(text)
+        .map(|c| c[1].to_string())
+        .filter(|p| !p.starts_with('.') && !p.contains(".."))
+        .filter(|p| !root.join(p).exists())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::missing_files;
+
+    #[test]
+    fn notes_naming_deleted_files_are_flagged() {
+        let dir = std::env::temp_dir().join(format!("am-stale-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/live.rs"), "").unwrap();
+        let text = "Login lives in src/auth/login.rs and `src/live.rs`; see https://x.io/docs/a.md and Node.js";
+        assert_eq!(missing_files(text, &dir), vec!["src/auth/login.rs".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

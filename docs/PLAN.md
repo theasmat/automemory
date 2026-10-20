@@ -320,7 +320,7 @@ indexing needs no password.
 
 ## 12. Next: proof, quality, reach
 
-**Status: N1–N8 built to the extent listed in `docs/TASKS.md`.** Open edges: live A/B numbers (N1 needs real agent runs), staleness check (N2), recorded hook payloads for Cursor/Windsurf/Gemini/Copilot (N4), per-person trust tiers (N5), Apple notarisation and the Homebrew tap (N7).
+**Status: N1–N8 built to the extent listed in `docs/TASKS.md`.** Open edges: live A/B numbers (N1 needs real agent runs), recorded hook payloads for Cursor/Windsurf/Gemini/Copilot (N4), per-person trust tiers (N5), Apple notarisation and the Homebrew tap (N7).
 
 Order matters. N1 first (it says whether anything else helps), N8 before N5, N2 after N1 so its effect can be measured.
 
@@ -344,3 +344,23 @@ Update `CLAUDE.md`, ARCHITECTURE and FEATURES when N2 starts, not before.
 - N2 adds cost and a prompt-injection path (memory text is untrusted input to the model): treat output as data, no tool use, strict JSON, length caps, proposals only.
 - N1 results depend on agent versions and variance: report medians and the spread, not one run.
 - N5 widens the attack surface: N8 first.
+
+## 13. Next improvements (after §12)
+
+What the work so far showed is weakest, in order of payoff. Each is small enough to ship alone.
+
+| # | Improvement | Why | Done when |
+|---|---|---|---|
+| I1 | **Value report**: `automemory stats` and a Home card built from data we already keep (audit_log, leases, recalls): collisions prevented, notes recalled, hand-offs picked up, blocks by rule, tokens spent on the LLM helper | Nothing today tells a user the product is working, and N1 needs real usage numbers as well as lab runs | A week of use shows non-zero counts; numbers match the audit rows in a scenario test |
+| I2 | **Record real hook payloads**: `automemory hook --record <dir>` (off by default, secrets redacted) so contract fixtures for Cursor, Windsurf, Gemini CLI and Copilot come from normal use, not guesses | N4 stopped at MCP and rules because hook formats cannot be invented | A fixture per agent passes `tests/contract/run.py`; the agent leaves "experimental" |
+| I3 | **Trust overlay for teams** (N5b): a receiver-side table `trust_overrides(memory_id, tier, set_by)` instead of editing synced records, so a teammate's pin arrives as a request you approve | Clamping the record itself made fingerprints diverge | Teammate's pin shows as a pending request; approve or reject changes only this machine; no sync conflicts |
+| I4 | **UI smoke test in a real browser** (Playwright or the built-in browser driver): every page loads with demo data, no console errors, the tour completes, a Protected action asks for the password | Only colour contrast is tested in the UI today; render crashes were found by hand twice | `tests/run_all.sh` fails when a page throws |
+| I5 | **Lock hints from `/api/policy`**: a small lock icon and "needs your password" caption on every Protected button; Safe buttons say nothing | The tier table exists but the UI only reveals it when the prompt appears | Icons match the table; a test compares the page's buttons to `/api/policy` |
+| I6 | **Restore and verify backups**: `automemory backup restore <file>` (previews counts, keeps the current DB as a copy) and a monthly "backup is readable" check in `doctor` | Backups can be written from the dashboard but there is no tested way back | Restore round trip in a scenario; doctor warns when the newest backup is older than 30 days or unreadable |
+| I7 | **LLM profiles and native adapters** (E5): a map of `[llm.profiles.*]` like embeddings, Cohere/Voyage/Gemini native embedding adapters | Cloud choice is limited to OpenAI-compatible endpoints; one LLM profile only | Switching profiles from the Tools page; adapters covered by mock-server tests |
+| I8 | **Fuzz the parsers**: `cargo fuzz` targets for hook JSON, shell command parsing and delta files, run for a fixed time in CI | Hooks run on every tool call; a panic there blocks an agent | 10 minutes per target with no crash; found crashes become unit tests |
+| I9 | **Windows**: `update`, hooks and `connect` on Windows (the installer already exists) with a CI job | `update` and the matrix tests are macOS/Linux only | Windows CI job runs the scenario subset |
+| I10 | **Cosmetic backlog**: decision card repeats its topic, "1 working now" wording, Activity view as its own page | Noted during the trial, not blocking | Fixed and seen in the browser |
+
+Order: I1 and I4 first (they make every later change safer and prove value), then I2 and I6, then I3, I5, I8, I7, I9, I10.
+Not planned: ONNX (see §1 reasons), a hosted service, agent-written trusted memory.

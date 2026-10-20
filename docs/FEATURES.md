@@ -109,9 +109,9 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Proof
 | Feature | Status | Notes |
 |---|---|---|
-| Optional LLM helper (`automemory llm`, Tools page): conflicts, duplicates, candidate notes from sessions | ✅ | Off by default; local model needs no password, cloud needs consent + key in keychain + daily token cap; output is Inbox proposals only. Staleness check not built |
+| Optional LLM helper (`automemory llm`, Tools page): conflicts, duplicates, candidate notes from sessions | ✅ | Off by default; local model needs no password, cloud needs consent + key in keychain + daily token cap; output is Inbox proposals only. Tidy up also flags notes naming deleted files |
 | Dashboard control (Safe / Protected / Terminal-only tiers, jobs tray, Tools, agent set-up, decisions, lock settings, activity) | ✅ | Every write route has a tier (audit test); Protected asks the password every time |
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 226 Rust tests + 18 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 227 Rust tests + 18 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics
