@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 15;
+const LATEST_SCHEMA_VERSION: i32 = 16;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -454,6 +454,39 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
         step(conn, "PRAGMA user_version = 15", [])?;
+    }
+
+    if version < 16 {
+        step(
+            conn,
+            r#"
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                agent TEXT NOT NULL,
+                native_id TEXT NOT NULL,
+                project_id TEXT,
+                title TEXT,
+                messages INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT,
+                last_at TEXT,
+                cursor TEXT,
+                imported_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                ts TEXT,
+                text TEXT NOT NULL,
+                UNIQUE(session_id, seq)
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(text, tokenize='unicode61');
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_project ON chat_sessions(project_id, last_at DESC);
+            "#,
+            [],
+        )?;
+        step(conn, "PRAGMA user_version = 16", [])?;
     }
     Ok(())
 }

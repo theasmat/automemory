@@ -884,6 +884,33 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "chat.search".to_string(),
+                description: "Search the imported chat history of this project (what was said in earlier sessions with any agent: why something was chosen, what was tried). Returns short snippets with a session id and position; open the exchange with chat.get. Only chats a person allowed AutoMemory to read are there.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Words to look for" },
+                        "agent": { "type": "string", "description": "Only chats with this agent (claude, agy, …)" },
+                        "limit": { "type": "integer", "description": "Default 8, at most 20" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            ToolDefinition {
+                name: "chat.get".to_string(),
+                description: "Read part of one imported chat session, in order, starting at from_seq (use a chat.search hit's session and seq, minus a few messages for context).".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "session": { "type": "string", "description": "Session id from chat.search" },
+                        "from_seq": { "type": "integer", "description": "First message position (default 0)" },
+                        "limit": { "type": "integer", "description": "Default 12, at most 40" }
+                    },
+                    "required": ["session"]
+                }),
+            },
+            ToolDefinition {
                 name: "room.status".to_string(),
                 description: "Fetch a room by id: its topic, members (with agent names), turn, and posts in order, including notes from the human".to_string(),
                 input_schema: json!({
@@ -911,7 +938,7 @@ impl ToolRegistry {
         // A write with no project goes to the project of the folder this server runs in (agents start it in
         // the workspace), so decisions and notes are not saved as "global" and show up in that project's views.
         const PROJECT_WRITES: &[&str] = &[
-            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief",
+            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief", "chat.search",
         ];
         let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
         if missing && PROJECT_WRITES.contains(&name) {
@@ -2488,6 +2515,34 @@ impl ToolRegistry {
                     "items": items.iter().map(|i| json!({ "id": i.id, "kind": i.kind, "text": i.text, "reason": i.reason, "by": i.author, "origin": i.origin, "state": i.state })).collect::<Vec<_>>(),
                     "next_action": if action == "get" { "Add what is missing with action add; confirm or correct anything marked draft." } else { "Saved. The next agent that starts in this project receives it." }
                 }))
+            }
+
+            "chat.search" => {
+                let Some(query) = arguments.get("query").and_then(|v| v.as_str()) else { return ToolCallResult::error("Missing required parameter: query") };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let agent = arguments.get("agent").and_then(|v| v.as_str());
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(8).min(20) as usize;
+                match self.db.chat_search(query, project_id, agent, limit) {
+                    Ok(hits) if hits.is_empty() => ToolCallResult::json(&json!({
+                        "hits": [],
+                        "next_action": if self.db.chat_sessions(project_id, None).map(|s| s.is_empty()).unwrap_or(true) {
+                            "No chat history is imported for this project. A person turns it on with `automemory continuity enable <agent>` and runs `automemory continuity import`. Use continuity.brief meanwhile."
+                        } else { "Nothing matched. Try other words, or continuity.brief for the summary." }
+                    })),
+                    Ok(hits) => ToolCallResult::json(&json!({ "hits": hits, "next_action": "Open an exchange with chat.get (session, from_seq = seq - 2)." })),
+                    Err(e) => ToolCallResult::error(format!("Search failed: {e}")),
+                }
+            }
+
+            "chat.get" => {
+                let Some(session) = arguments.get("session").and_then(|v| v.as_str()) else { return ToolCallResult::error("Missing required parameter: session") };
+                let from = arguments.get("from_seq").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(12).min(40) as usize;
+                match (self.db.chat_session(session), self.db.chat_get(session, from, limit)) {
+                    (Ok(Some(s)), Ok(messages)) => ToolCallResult::json(&json!({ "session": s.id, "agent": s.agent, "title": s.title, "total": s.messages, "messages": messages })),
+                    (Ok(None), _) => ToolCallResult::error("No such session"),
+                    (Err(e), _) | (_, Err(e)) => ToolCallResult::error(format!("Failed: {e}")),
+                }
             }
 
             "room.pending" => {

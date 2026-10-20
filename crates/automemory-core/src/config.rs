@@ -147,6 +147,9 @@ impl Default for LlmSettings {
 pub struct ContinuitySettings {
     #[serde(default = "default_inject_tokens")]
     pub inject_tokens: usize,
+    /// Agents whose chat files AutoMemory may read (opt-in, one by one): `claude`, `agy`, …
+    #[serde(default)]
+    pub read_chats: Vec<String>,
 }
 
 fn default_inject_tokens() -> usize {
@@ -155,7 +158,7 @@ fn default_inject_tokens() -> usize {
 
 impl Default for ContinuitySettings {
     fn default() -> Self {
-        Self { inject_tokens: default_inject_tokens() }
+        Self { inject_tokens: default_inject_tokens(), read_chats: Vec::new() }
     }
 }
 

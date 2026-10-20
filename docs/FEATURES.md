@@ -94,7 +94,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Interfaces
 | Feature | Status | Notes |
 |---|---|---|
-| MCP server (61 tools), CLI | ✅ | |
+| MCP server (63 tools), CLI | ✅ | |
 | Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
 | Guided onboarding (CLI tour + dashboard coachmarks) | ✅ | `automemory tour`, `next`, `learn`, welcome card, 6-stop tour, sample data mode |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
@@ -114,9 +114,9 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Backups (`automemory backup`, restore with a safety copy, doctor check) and hook payload recording (`hooks record`) | ✅ | Restore is terminal-only (replaces the database) |
 | Team trust overlay: a teammate's pin is a request, not a pin | ✅ | Needs a shared vault key; see `sync/deltas.rs` |
 | Native Cohere, Voyage and Gemini embeddings; several LLM profiles | ✅ | Mock-server tests only, not run against the live services |
-| Continuity brief (C1): goal, ruled-out options with reasons, open questions, next steps left by one agent and handed to the next with provenance; `automemory continuity`; syncs between computers | ✅ | Agent-written only so far; transcript readers, search and the dashboard page are C2–C4 (plan/continuity-plan.md) |
+| Continuity brief (C1): goal, ruled-out options with reasons, open questions, next steps left by one agent and handed to the next with provenance; `automemory continuity`; syncs between computers | ✅ | Claude Code chats can be imported (opt-in), searched and opened by agents; Antigravity reader, drafter and the dashboard page are C3–C5 (plan/continuity-plan.md) |
 | Dashboard control (Safe / Protected / Terminal-only tiers, jobs tray, Tools, agent set-up, decisions, lock settings, activity) | ✅ | Every write route has a tier (audit test); Protected asks the password every time |
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 258 Rust tests + 30 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 263 Rust tests + 31 script suites ([tests/README.md](../tests/README.md)) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

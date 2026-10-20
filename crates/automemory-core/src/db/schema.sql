@@ -510,3 +510,28 @@ CREATE TABLE IF NOT EXISTS brief_items (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_brief_project ON brief_items(project_id, status, updated_at DESC);
+
+-- Continuity chat archive (redacted messages of imported agent chats; searchable)
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    agent TEXT NOT NULL,
+    native_id TEXT NOT NULL,
+    project_id TEXT,
+    title TEXT,
+    messages INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT,
+    last_at TEXT,
+    cursor TEXT,
+    imported_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    ts TEXT,
+    text TEXT NOT NULL,
+    UNIQUE(session_id, seq)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(text, tokenize='unicode61');
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_project ON chat_sessions(project_id, last_at DESC);

@@ -1542,6 +1542,12 @@ async fn main() -> Result<()> {
             ContinuityCommands::Remove { id } => commands::brief::set_status(&id, automemory_core::continuity::ItemStatus::Removed)?,
             ContinuityCommands::Confirm { id } => commands::brief::confirm(&id)?,
             ContinuityCommands::Forget { all } => commands::brief::forget(all)?,
+            ContinuityCommands::Sources => commands::brief::sources()?,
+            ContinuityCommands::Enable { agent } => commands::brief::enable(&agent)?,
+            ContinuityCommands::Disable { agent } => commands::brief::disable(&agent)?,
+            ContinuityCommands::Import { agent } => commands::brief::import_chats(agent.as_deref())?,
+            ContinuityCommands::Search { query, agent, limit } => commands::brief::search(&query, agent.as_deref(), limit)?,
+            ContinuityCommands::HistoryForget { agent, all } => commands::brief::history_forget(agent.as_deref(), all)?,
         },
         Commands::Room { command } => match command {
             RoomCommands::List => commands::room::list()?,
@@ -1702,6 +1708,29 @@ enum ContinuityCommands {
     Remove { id: String },
     /// Accept a draft item
     Confirm { id: String },
+    /// Which agents' chat files can be read (all off until you turn one on), where, and what is imported
+    Sources,
+    /// Allow reading one agent's chats for your registered projects (secrets removed; stays on this computer)
+    Enable { agent: String },
+    /// Stop reading one agent's chats
+    Disable { agent: String },
+    /// Import new chat messages of this project from every enabled agent (or one)
+    Import { agent: Option<String> },
+    /// Search the imported chat history of this project
+    Search {
+        query: String,
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+    },
+    /// Delete imported chat history (this project, or --all)
+    HistoryForget {
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        all: bool,
+    },
     /// Delete the whole brief of this project
     Forget {
         /// Every project, not only this folder's
