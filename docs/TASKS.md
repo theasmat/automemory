@@ -152,6 +152,17 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] X9 Hook adapters for Cursor, Windsurf, Gemini CLI, Copilot from recorded payloads
 - [ ] X10 Rooms R2/R3 only if X3 shows value
 
+## Continuity (plan: PLAN §16, spec: plan/continuity-plan.md)
+
+- [ ] C1 Brief store + `continuity.brief` tool + hook injection + rules text + CLI + brief sync
+- [ ] C2 Reader trait/registry/testkit + Claude Code reader + archive + `chat.search`/`chat.get`
+- [ ] C3 Antigravity reader (conversations db, summaries db, brain files)
+- [ ] C4 Dashboard Continuity page (opt-in, import, brief editor, preview, Hand off now)
+- [ ] C5 Deterministic drafter + confirm flow
+- [ ] C6 Automatic triggers + manual history sync
+- [ ] C7 Per-agent research and readers (Codex, Gemini CLI, Command Code, Z code, Cursor)
+- [ ] C8 Continuity eval + live trial T12 + optional LLM drafting
+
 ## Docs hygiene
 
 - [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 249 Rust tests at last check)

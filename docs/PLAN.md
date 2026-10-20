@@ -446,3 +446,21 @@ Order: X1 and X7/X8 first (cheap, visible, fix real defects), X2 before the next
 - Agent-to-agent chat beyond rooms, voting, or LLM-judged consensus: cost and blurred responsibility.
 - Auto-approving anything an agent proposes: the human verdict is the product's trust boundary.
 - Cloud sync service before X1 (a bloated store would sync bloat).
+
+## 16. Continuity: the same understanding in any agent
+
+Detailed spec: [plan/continuity-plan.md](../plan/continuity-plan.md). Decided with the maintainer: brief plus rejected ideas plus
+searchable history; captured both by the agent and by reading local transcripts (opt-in per agent, secrets removed, local only);
+refreshed automatically and on demand; brief syncs automatically, chat history only when asked; agent-written brief for agents we
+cannot read yet, readers added per agent later; code modular (one reader file + registry line + fixtures per agent).
+
+| Phase | Scope | Done when |
+|---|---|---|
+| C1 | Brief store with provenance, `continuity.brief` MCP tool, hook injection, rules text, CLI, brief sync | Any agent updates it; a different agent receives it |
+| C2 | Reader trait + testkit, Claude Code reader, searchable archive, `chat.search`/`chat.get` | Long Claude session imported incrementally and searchable |
+| C3 | Antigravity reader (conversation db, summaries, brain files) | Same for Antigravity |
+| C4 | Dashboard Continuity page: opt-in, import, brief editor, preview, Hand off now | Human controls everything from the page |
+| C5 | Deterministic drafter and confirm flow | Fixture transcript yields the expected items |
+| C6 | Automatic triggers (Stop, SessionEnd, PreCompact), manual history sync | Mid-task switch needs no manual step |
+| C7 | Research and readers for Codex, Gemini CLI, Command Code, Z code, Cursor, … | Each passes the testkit |
+| C8 | Continuity eval, live trial T12, optional LLM drafting | Eval recorded; T12 passes |

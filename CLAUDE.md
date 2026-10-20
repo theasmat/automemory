@@ -12,10 +12,11 @@ Local-first Rust daemon (SQLite WAL, MCP server, CLI, Nuxt dashboard) giving cod
 - [plan/ui-ux.md](plan/ui-ux.md) — dashboard UI/UX redesign spec (information architecture, screens, design system, light theme, first-run tour)
 - [plan/onboarding-tour-brief.md](plan/onboarding-tour-brief.md) — self-contained brief for building the first-run tour (CLI + dashboard)
 - [plan/room-plan.md](plan/room-plan.md) — Planning rooms spec: start from the dashboard, human notes and plan edits, tracked tasks, revise (R1–R5)
+- [plan/continuity-plan.md](plan/continuity-plan.md) — Continuity spec: carry a long chat between agents (brief, rejected ideas, searchable history, transcript readers, modular per-agent code; C1–C8)
 
 Tests and how to run them: [tests/README.md](tests/README.md) (`tests/run_all.sh`); live-agent checks in `tests/manual/`, eval harness in `tests/eval/`.
 
-Only these four docs, `docs/research/` and the three files in `plan/` exist. Update them in place; do not add new top-level doc files. Keep counts (tools, tests) in sync with code.
+Only these four docs, `docs/research/` and the four files in `plan/` exist. Update them in place; do not add new top-level doc files. Keep counts (tools, tests) in sync with code.
 
 ## Rules
 
