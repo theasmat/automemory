@@ -163,6 +163,21 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Agents keep their MCP server running for days. After an upgrade it is still the old code (found in trial T11b:
+    // Antigravity's server from the day before ignored new turn rules). Say which ones to restart.
+    {
+        print!("Checking running MCP servers... ");
+        let stale = stale_mcp_servers();
+        if stale.is_empty() {
+            println!("✓ none older than this binary");
+        } else {
+            println!("⚠ {} started before this binary was installed; restart the agent that owns each:", stale.len());
+            for (pid, age_hours) in stale {
+                println!("    pid {pid} (running {age_hours} h), started by {}", parent_name(pid));
+            }
+        }
+    }
+
     // Backups: every saved copy should open (a damaged one is no use when it is needed).
     {
         print!("Checking backups... ");
@@ -215,4 +230,60 @@ pub fn execute() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// `automemory mcp` processes of this very binary that started before the binary file was last replaced.
+/// Returns (pid, hours running). Unix only (needs `ps`); elsewhere it reports nothing.
+fn stale_mcp_servers() -> Vec<(u32, u64)> {
+    let Ok(exe) = std::env::current_exe() else { return vec![] };
+    let Some(modified) = std::fs::metadata(&exe).ok().and_then(|m| m.modified().ok()) else { return vec![] };
+    let installed_ago = std::time::SystemTime::now().duration_since(modified).map(|d| d.as_secs()).unwrap_or(0);
+    let Ok(out) = std::process::Command::new("ps").args(["-axo", "pid=,etime=,command="]).output() else { return vec![] };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let (pid, etime, bin, sub) = (it.next()?, it.next()?, it.next()?, it.next()?);
+            let same = std::path::Path::new(bin).canonicalize().ok().as_deref() == Some(exe.as_path()) || std::path::Path::new(bin) == exe.as_path();
+            if !same || sub != "mcp" {
+                return None;
+            }
+            let running = parse_etime(etime)?;
+            // Started before the file was replaced (a few seconds of slack for clock rounding).
+            if running > installed_ago + 5 { Some((pid.parse().ok()?, running / 3600)) } else { None }
+        })
+        .collect()
+}
+
+/// What launched a process, for the message ("Antigravity", "claude"): the parent's program name.
+fn parent_name(pid: u32) -> String {
+    let ps = |args: &[&str]| std::process::Command::new("ps").args(args).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    ps(&["-o", "ppid=", "-p", &pid.to_string()])
+        .and_then(|ppid| ps(&["-o", "comm=", "-p", &ppid]))
+        .map(|c| c.rsplit('/').next().unwrap_or(&c).to_string())
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| "an unknown program".to_string())
+}
+
+/// `ps` elapsed time: `[[dd-]hh:]mm:ss` in seconds.
+fn parse_etime(s: &str) -> Option<u64> {
+    let (days, rest) = s.split_once('-').map_or((0, s), |(d, r)| (d.parse().unwrap_or(0), r));
+    let parts: Vec<u64> = rest.split(':').map(|p| p.parse().ok()).collect::<Option<_>>()?;
+    let secs = match parts.as_slice() {
+        [m, s] => m * 60 + s,
+        [h, m, s] => h * 3600 + m * 60 + s,
+        _ => return None,
+    };
+    Some(days * 86400 + secs)
+}
+
+#[cfg(test)]
+mod etime_tests {
+    #[test]
+    fn ps_elapsed_time_parses() {
+        assert_eq!(super::parse_etime("05:07"), Some(307));
+        assert_eq!(super::parse_etime("03:05:07"), Some(11107));
+        assert_eq!(super::parse_etime("2-03:05:07"), Some(2 * 86400 + 11107));
+        assert_eq!(super::parse_etime("junk"), None);
+    }
 }

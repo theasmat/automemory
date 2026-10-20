@@ -168,6 +168,17 @@ Pass when the checker prints PASS: T11b, and neither agent asked you for a room 
 - For this live room: add a note naming the risks (double refund, replayed webhooks, stock) and let Claude revise, or press Another
   round after it is decided so Antigravity can critique properly.
 
+#### 2026-10-20 T11b run with "Order cancellation v2": 7 of 8 checks pass; the failure was a stale MCP server, now detected
+- Antigravity proposed, Claude Code critiqued (a real critique), your note, Antigravity revised with steps; room decided. Checker: only
+  "hooks told two different agent sessions" failed: Claude was not told by its hook.
+- Cause: after Antigravity proposed, the room kept the turn on the proposer (the OLD rotation), so Claude's hook had nothing to say
+  (Claude found the room anyway through `room.pending` and `room.join`, which hands a stuck turn to the joiner). Antigravity's MCP
+  server (pid 87461, started Oct 19 02:34, under its language server) was still running a day-old binary, so it kept applying the old
+  turn rule and the old "no length minimum" (explains the "test" critique too). Hosts keep MCP servers alive across upgrades.
+- Fix: `automemory doctor` now lists MCP servers that started before the installed binary was replaced and who launched them
+  (`Checking running MCP servers... ⚠ pid 87461 (running 44 h), started by language_server`); scenario `stale_mcp.py`.
+  Action for the tester: restart Antigravity (and any Claude Code session older than the last install) after every install.
+
 #### 2026-10-20 T11b steps 4-5: PASS (`t11b_check.py` prints PASS: T11b)
 - Both agents were told by their hooks at their own turns (`room_told` keys: Claude at open and at revise, Antigravity at critique) and
   took them with a narrow prompt ("only planning rooms"). Order proposal -> your note -> critique -> revision; room decided.
