@@ -34,6 +34,38 @@ jobs:
       - name: Workspace Tests
         run: cargo test --workspace --verbose
 
+  windows:
+    # Advisory until it has been green once: nobody has run these on Windows yet (see docs/TASKS.md I9).
+    name: Windows (build, tests, update/connect/hooks scenarios)
+    runs-on: windows-latest
+    continue-on-error: true
+    env:
+      AUTOMEMORY_BIN: ${{ github.workspace }}\target\release\automemory.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Workspace Tests
+        run: cargo test --workspace
+
+      - name: Scenarios that touch Windows-specific code
+        shell: bash
+        run: |
+          set -e
+          python tests/scenarios/update.py
+          python tests/scenarios/registration.py
+          python tests/scenarios/agents_matrix.py
+          python tests/scenarios/hook_record.py
+          HOOK_FUZZ_N=50 python tests/scenarios/hook_fuzz.py
+
   worker-check-and-test:
     name: Cloudflare Worker Gateway
     runs-on: ubuntu-latest

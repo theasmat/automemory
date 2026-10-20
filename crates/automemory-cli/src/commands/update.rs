@@ -18,10 +18,18 @@ fn triple() -> Result<String> {
     let os = match std::env::consts::OS {
         "macos" => "apple-darwin",
         "linux" => "unknown-linux-gnu",
-        other => bail!("`update` supports macOS and Linux; on {other} use the install script"),
+        "windows" => "pc-windows-msvc",
+        other => bail!("`update` supports macOS, Linux and Windows; on {other} use the install script"),
     };
     Ok(format!("{arch}-{os}"))
 }
+
+/// Windows releases are zip files holding `automemory.exe`; the others are tar.gz holding `automemory`.
+fn archive_name() -> Result<String> {
+    Ok(format!("automemory-{}.{}", triple()?, if cfg!(windows) { "zip" } else { "tar.gz" }))
+}
+
+const BIN_FILE: &str = if cfg!(windows) { "automemory.exe" } else { "automemory" };
 
 /// `0.1.10` > `0.1.9`: numeric, left to right. Anything that is not a plain version counts as not newer.
 pub fn is_newer(latest: &str, current: &str) -> bool {
@@ -62,12 +70,13 @@ pub fn run(check: bool, yes: bool) -> Result<()> {
         println!("Run `automemory update` to install it.");
         return Ok(());
     }
-    let archive = format!("automemory-{}.tar.gz", triple()?);
+    let archive = archive_name()?;
     let asset = |name: &str| release["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"] == name)).and_then(|x| x["browser_download_url"].as_str()).map(String::from);
     let (Some(archive_url), Some(sum_url)) = (asset(&archive), asset(&format!("{archive}.sha256"))) else {
         bail!("release {tag} has no {archive} with a .sha256 file; not installing an unchecked download");
     };
     let exe = std::env::current_exe()?.canonicalize()?;
+    let _ = std::fs::remove_file(exe.with_extension("old")); // left by an earlier Windows update
     if !yes {
         print!("Replace {} with {tag}? [y/N] ", exe.display());
         std::io::stdout().flush()?;
@@ -95,12 +104,14 @@ pub fn run(check: bool, yes: bool) -> Result<()> {
 }
 
 fn install(archive: &[u8], work: &Path, exe: &Path) -> Result<()> {
-    let tar = work.join("a.tar.gz");
+    let tar = work.join(if cfg!(windows) { "a.zip" } else { "a.tar.gz" });
     std::fs::write(&tar, archive)?;
-    let ok = std::process::Command::new("tar").arg("-xzf").arg(&tar).arg("-C").arg(work).status()?.success();
-    let new = work.join("automemory");
+    // `tar` ships with macOS, Linux and Windows 10+ (bsdtar reads zip files too).
+    let flags = if cfg!(windows) { "-xf" } else { "-xzf" };
+    let ok = std::process::Command::new("tar").arg(flags).arg(&tar).arg("-C").arg(work).status()?.success();
+    let new = work.join(BIN_FILE);
     if !ok || !new.is_file() {
-        bail!("the archive did not contain an `automemory` binary");
+        bail!("the archive did not contain `{BIN_FILE}`");
     }
     #[cfg(unix)]
     {
@@ -113,6 +124,17 @@ fn install(archive: &[u8], work: &Path, exe: &Path) -> Result<()> {
     if cfg!(target_os = "macos") {
         let _ = std::process::Command::new("codesign").args(["-s", "-", "-f"]).arg(&staged).output();
         let _ = std::process::Command::new("xattr").args(["-d", "com.apple.quarantine"]).arg(&staged).output();
+    }
+    if cfg!(windows) {
+        // A running .exe cannot be overwritten but can be renamed; the old copy is deleted on the next update.
+        let old = exe.with_extension("old");
+        let _ = std::fs::remove_file(&old);
+        std::fs::rename(exe, &old)?;
+        if let Err(e) = std::fs::rename(&staged, exe) {
+            let _ = std::fs::rename(&old, exe); // put the working binary back
+            return Err(e.into());
+        }
+        return Ok(());
     }
     std::fs::rename(&staged, exe)?;
     Ok(())

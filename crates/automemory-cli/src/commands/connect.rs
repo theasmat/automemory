@@ -1272,6 +1272,7 @@ pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str
     let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(()) };
     fs::create_dir_all(&hooks_dir)?;
     let path = hooks_dir.join("post-commit");
+    let exe_path = &exe_path.replace('\\', "/"); // the hook is a sh script (Git for Windows runs it): no backslashes
     let block = format!(
         "{GIT_HOOK_BEGIN}\nAUTOMEMORY_EXE=\"{exe_path}\"\nif [ -x \"$AUTOMEMORY_EXE\" ]; then\n    \"$AUTOMEMORY_EXE\" hook --agent git --event post-commit --project auto >/dev/null 2>&1 || true\nfi\n{GIT_HOOK_END}\n"
     );

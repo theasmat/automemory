@@ -766,6 +766,7 @@ mod tests {
         assert!(PRESETS.iter().filter(|p| matches!(p.provider, "cohere" | "voyage" | "gemini")).count() >= 4);
     }
 
+    #[cfg(unix)] // the stand-in provider is a sh one-liner
     #[test]
     fn exec_provider_talks_json_over_stdio() {
         let p = provider_from_settings(&EmbeddingSettings {

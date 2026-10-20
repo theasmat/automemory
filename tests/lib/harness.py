@@ -19,9 +19,10 @@ REPO = Path(__file__).resolve().parents[2]
 
 def find_binary() -> str:
     """AUTOMEMORY_BIN, then the repo's release build, then debug, then PATH."""
+    exe = ".exe" if os.name == "nt" else ""
     candidates = [os.environ.get("AUTOMEMORY_BIN"),
-                  REPO / "target/release/automemory",
-                  REPO / "target/debug/automemory",
+                  REPO / f"target/release/automemory{exe}",
+                  REPO / f"target/debug/automemory{exe}",
                   shutil.which("automemory")]
     for c in candidates:
         if c and Path(c).is_file():
@@ -39,7 +40,8 @@ class Sandbox:
         self.project = self.root / "project"
         self.home.mkdir()
         self.project.mkdir()
-        self.env = {**os.environ, "HOME": str(self.home), "AUTOMEMORY_PASSWORD": ""}
+        # Windows reads USERPROFILE (and the `dirs` crate asks the OS, which ignores both), so scenarios there run in a CI VM.
+        self.env = {**os.environ, "HOME": str(self.home), "USERPROFILE": str(self.home), "AUTOMEMORY_PASSWORD": ""}
         self._git("init", "-q", "-b", "main")
         (self.project / "README.md").write_text("# sandbox\n")
         self._git("add", "-A")

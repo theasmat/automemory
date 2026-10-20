@@ -895,6 +895,7 @@ mod tests {
         assert!(g.shadow);
     }
 
+    #[cfg(unix)] // the handler is a printf one-liner run by sh
     #[test]
     fn exec_handler_json_roundtrip() {
         let specs = vec![HandlerSpec {

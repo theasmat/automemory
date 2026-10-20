@@ -239,7 +239,7 @@ pub fn code_intel_for<'a>(db: &'a Database, project_root: &Path) -> Box<dyn Code
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))] // the stand-in engine is a shell script
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;

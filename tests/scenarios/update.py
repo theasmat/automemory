@@ -2,6 +2,7 @@
 """`automemory update` against a mock release server: reports, asks, verifies the checksum, replaces atomically,
 and refuses an unchecked or tampered download. Runs on a COPY of the binary, never the real one."""
 import hashlib
+import os
 import io
 import json
 import platform
@@ -9,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import zipfile
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -17,14 +19,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 from harness import Report, find_binary  # noqa: E402
 
-arch = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64"}[platform.machine()]
-osn = {"Darwin": "apple-darwin", "Linux": "unknown-linux-gnu"}[platform.system()]
-ARCHIVE = f"automemory-{arch}-{osn}.tar.gz"
+WIN = platform.system() == "Windows"
+arch = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64", "AMD64": "x86_64"}[platform.machine()]
+osn = {"Darwin": "apple-darwin", "Linux": "unknown-linux-gnu", "Windows": "pc-windows-msvc"}[platform.system()]
+ARCHIVE = f"automemory-{arch}-{osn}." + ("zip" if WIN else "tar.gz")
+BIN = "automemory.exe" if WIN else "automemory"
 STATE = {"tag": "v9.9.9", "tamper": False, "with_sum": True}
 
 
 def make_archive():
     buf = io.BytesIO()
+    if WIN:  # releases are zip files holding automemory.exe
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr(BIN, b"MZ-fake NEW-BINARY")
+        return buf.getvalue()
     with tarfile.open(fileobj=buf, mode="w:gz") as t:
         data = b"#!/bin/sh\necho NEW-BINARY\n"
         info = tarfile.TarInfo("automemory")
@@ -62,9 +70,11 @@ def main():
     srv = HTTPServer(("127.0.0.1", 0), Api)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     tmp = Path(tempfile.mkdtemp(prefix="am-update-"))
-    exe = tmp / "automemory"
+    exe = tmp / BIN
     shutil.copy(find_binary(), exe)
     env = {"AUTOMEMORY_UPDATE_API": f"http://127.0.0.1:{srv.server_port}/latest", "PATH": "/usr/bin:/bin"}
+    if WIN:  # tar.exe lives under System32 and the process needs SystemRoot
+        env = {**os.environ, **{k: v for k, v in env.items() if k != "PATH"}}
     run = lambda *a: subprocess.run([str(exe), "update", *a], capture_output=True, text=True, env=env, input="n\n")
     original = exe.read_bytes()
     try:
@@ -80,9 +90,8 @@ def main():
         rep.check(r.returncode != 0 and ".sha256" in r.stderr and exe.read_bytes() == original, "a release without a checksum is refused", r.stderr[-200:])
         STATE["with_sum"] = True
         r = run("--yes")
-        out = subprocess.run([str(exe)], capture_output=True, text=True).stdout
-        rep.check(r.returncode == 0 and "NEW-BINARY" in out, "a verified download replaces the binary", r.stdout + r.stderr)
-        rep.check(not list(tmp.glob(".automemory-update-*")) and not (tmp / "automemory.new").exists(), "no temporary files are left")
+        rep.check(r.returncode == 0 and b"NEW-BINARY" in exe.read_bytes(), "a verified download replaces the binary", r.stdout + r.stderr)
+        rep.check(not list(tmp.glob(".automemory-update-*")) and not list(tmp.glob("*.new")), "no temporary files are left")
         STATE["tag"] = "v0.0.1"
         shutil.copy(find_binary(), exe)
         r = run("--check")
