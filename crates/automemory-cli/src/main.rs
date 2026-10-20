@@ -245,6 +245,13 @@ enum Commands {
         command: LlmCommands,
     },
 
+    /// The brief the next agent is handed: goal, ruled-out options, open questions, next steps
+    #[command(next_help_heading = "Daily")]
+    Continuity {
+        #[command(subcommand)]
+        command: ContinuityCommands,
+    },
+
     /// Planning rooms: see what agents agreed and approve, reject or send it back
     #[command(next_help_heading = "Daily")]
     Room {
@@ -1527,6 +1534,15 @@ async fn main() -> Result<()> {
             },
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Continuity { command } => match command {
+            ContinuityCommands::Show { all } => commands::brief::show(all)?,
+            ContinuityCommands::Add { kind, text, reason } => commands::brief::add(&kind, &text, reason)?,
+            ContinuityCommands::Edit { id, text, reason } => commands::brief::edit(&id, &text, reason)?,
+            ContinuityCommands::Resolve { id } => commands::brief::set_status(&id, automemory_core::continuity::ItemStatus::Resolved)?,
+            ContinuityCommands::Remove { id } => commands::brief::set_status(&id, automemory_core::continuity::ItemStatus::Removed)?,
+            ContinuityCommands::Confirm { id } => commands::brief::confirm(&id)?,
+            ContinuityCommands::Forget { all } => commands::brief::forget(all)?,
+        },
         Commands::Room { command } => match command {
             RoomCommands::List => commands::room::list()?,
             RoomCommands::Show { id } => commands::room::show(&id)?,
@@ -1655,6 +1671,43 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum ContinuityCommands {
+    /// What the next session will be told, with item ids
+    Show {
+        /// Include resolved and removed items
+        #[arg(long)]
+        all: bool,
+    },
+    /// Add an item: goal, status, constraint, decision, rejected, open, next, file, glossary, preference
+    Add {
+        kind: String,
+        text: String,
+        /// Why (for ruled-out options and decisions)
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Change an item's wording (agents can no longer change it)
+    Edit {
+        id: String,
+        text: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// An open question answered or a step done
+    Resolve { id: String },
+    /// Delete an item
+    Remove { id: String },
+    /// Accept a draft item
+    Confirm { id: String },
+    /// Delete the whole brief of this project
+    Forget {
+        /// Every project, not only this folder's
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand)]

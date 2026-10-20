@@ -149,13 +149,17 @@ pub fn prompt_secure(prompt: &str) -> Option<String> {
     }
 }
 
-/// Reads the configured password hash, if any. Returns None when no human
-/// password is set (fresh installs) or config is unreadable.
+/// Stands in for the hash when config.toml exists but cannot be read: a broken file must lock the gate, not open it
+/// (appending a stray line to the config used to switch the password off). It matches no password.
+pub const UNREADABLE_CONFIG: &str = "!unreadable-config";
+
+/// Reads the configured password hash, if any. None only when no human password is set (fresh installs, no config file).
 pub fn stored_password_hash() -> Option<String> {
-    crate::config::GlobalConfig::load()
-        .ok()
-        .and_then(|g| g.security.password_hash)
-        .filter(|h| !h.trim().is_empty())
+    match crate::config::GlobalConfig::load() {
+        Ok(g) => g.security.password_hash.filter(|h| !h.trim().is_empty()),
+        Err(_) if crate::config::GlobalConfig::config_path().exists() => Some(UNREADABLE_CONFIG.to_string()),
+        Err(_) => None,
+    }
 }
 
 /// Interactive password setup: prompts twice (no echo) and returns the
@@ -190,6 +194,9 @@ pub fn require_human(stored_hash: Option<&str>, action: &str) -> Result<()> {
         );
         return Ok(());
     };
+    if hash == UNREADABLE_CONFIG {
+        anyhow::bail!("config.toml cannot be read, so the human password cannot be checked: '{action}' refused. Fix the file (see `automemory doctor`).");
+    }
     if let Ok(pw) = std::env::var(PASSWORD_ENV_VAR) {
         if !pw.is_empty() && verify_password(&pw, hash) {
             return Ok(());
@@ -215,6 +222,13 @@ pub fn require_human(stored_hash: Option<&str>, action: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unreadable_config_locks_the_gate_instead_of_opening_it() {
+        let e = require_human(Some(UNREADABLE_CONFIG), "do it").unwrap_err().to_string();
+        assert!(e.contains("cannot be read") && e.contains("refused"), "{e}");
+        assert!(!verify_password("anything", UNREADABLE_CONFIG));
+    }
 
     #[test]
     fn known_answer_against_python_hashlib() {

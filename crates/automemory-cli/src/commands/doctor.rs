@@ -163,6 +163,18 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // A config.toml that does not parse is not "no password": every gate refuses until it is fixed.
+    {
+        print!("Checking config.toml... ");
+        match automemory_core::config::GlobalConfig::load() {
+            Ok(_) => println!("✓ readable"),
+            Err(e) => {
+                println!("✗ {e:#}\n    The human password cannot be checked, so actions that need you are refused until this is fixed.");
+                all_passed = false;
+            }
+        }
+    }
+
     // Agents keep their MCP server running for days. After an upgrade it is still the old code (found in trial T11b:
     // Antigravity's server from the day before ignored new turn rules). Say which ones to restart.
     {

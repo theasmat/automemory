@@ -862,6 +862,28 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "continuity.brief".to_string(),
+                description: "The brief other sessions left for this project (goal, decisions, what was ruled out and why, open questions, next steps) and how you add to it. Call action get at the start of a task; call action add before you stop, before a compaction, and whenever the human says \"hand off\". Confirm or correct items marked draft. Items from a person cannot be changed by agents.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "enum": ["get", "add", "confirm", "correct", "resolve", "remove"], "description": "get (default): the brief and its item ids; add: items to record; confirm: you agree with an item; correct: change an item's wording (id, text, reason); resolve: an open question answered or a step done; remove: delete your own item" },
+                        "items": { "type": "array", "description": "For add: one entry per fact", "items": { "type": "object", "properties": {
+                            "kind": { "type": "string", "enum": ["goal", "status", "constraint", "decision", "rejected", "open", "next", "file", "glossary", "preference"], "description": "rejected = an option you ruled out (put the reason in reason); open = an unanswered question; next = what to do next" },
+                            "text": { "type": "string", "description": "One short sentence (max 400 characters)" },
+                            "reason": { "type": "string", "description": "Why (max 300 characters)" },
+                            "ref_id": { "type": "string", "description": "A decision, note or file this points at" }
+                        }, "required": ["kind", "text"] } },
+                        "id": { "type": "string", "description": "Item id for confirm, correct, resolve, remove" },
+                        "text": { "type": "string", "description": "New wording for correct" },
+                        "reason": { "type": "string", "description": "New reason for correct" },
+                        "agent": { "type": "string", "description": "Your agent name (claude-code, antigravity, codex, …)" },
+                        "session_id": { "type": "string", "description": "Your session id" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    }
+                }),
+            },
+            ToolDefinition {
                 name: "room.status".to_string(),
                 description: "Fetch a room by id: its topic, members (with agent names), turn, and posts in order, including notes from the human".to_string(),
                 input_schema: json!({
@@ -889,7 +911,7 @@ impl ToolRegistry {
         // A write with no project goes to the project of the folder this server runs in (agents start it in
         // the workspace), so decisions and notes are not saved as "global" and show up in that project's views.
         const PROJECT_WRITES: &[&str] = &[
-            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass",
+            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief",
         ];
         let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
         if missing && PROJECT_WRITES.contains(&name) {
@@ -2386,6 +2408,86 @@ impl ToolRegistry {
                     ),
                     Err(e) => ToolCallResult::error(format!("Failed to post review: {}", e)),
                 }
+            }
+
+            "continuity.brief" => {
+                use automemory_core::continuity::{store::may_change, ItemKind, NewItem, Origin};
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
+                let session = arguments.get("session_id").and_then(|v| v.as_str()).map(String::from);
+                let agent = arguments
+                    .get("agent")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .or_else(|| session.as_ref().and_then(|s| self.db.sync_kv_get(&format!("session_agent:{s}"))))
+                    .unwrap_or_else(|| "agent".to_string());
+                if let (Some(s), Some(a)) = (&session, arguments.get("agent").and_then(|v| v.as_str()).filter(|a| !a.trim().is_empty())) {
+                    self.db.sync_kv_set(&format!("session_agent:{s}"), &a.chars().take(40).collect::<String>());
+                }
+                let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("get");
+                let id = arguments.get("id").and_then(|v| v.as_str());
+                let mut changed = Vec::new();
+                // Agents change only what they may: never a person's words or a person-edited item.
+                let editable = |db: &automemory_core::db::Database, id: Option<&str>| -> Result<automemory_core::continuity::BriefItem, String> {
+                    let id = id.ok_or("Missing required parameter: id")?;
+                    let item = db.brief_get(id).map_err(|e| e.to_string())?.ok_or("No such item")?;
+                    if may_change(&item, false) { Ok(item) } else { Err("That item was written or edited by a person; agents cannot change it".into()) }
+                };
+                match action {
+                    "get" => {}
+                    "add" => {
+                        let items = arguments.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        if items.is_empty() {
+                            return ToolCallResult::error("add needs items: [{kind, text, reason?}]");
+                        }
+                        for it in items.iter().take(30) {
+                            let kind = match it.get("kind").and_then(|v| v.as_str()).map(str::parse::<ItemKind>) {
+                                Some(Ok(k)) => k,
+                                Some(Err(e)) => return ToolCallResult::error(e),
+                                None => return ToolCallResult::error("each item needs a kind"),
+                            };
+                            let Some(text) = it.get("text").and_then(|v| v.as_str()) else { return ToolCallResult::error("each item needs text") };
+                            let new = NewItem {
+                                project_id: project_id.clone(), kind, text: text.to_string(),
+                                reason: it.get("reason").and_then(|v| v.as_str()).map(String::from),
+                                ref_id: it.get("ref_id").and_then(|v| v.as_str()).map(String::from),
+                                origin: Origin::Agent, author: agent.clone(), session: session.clone(),
+                            };
+                            match self.db.brief_add(new) {
+                                Ok((item, created)) => changed.push(json!({ "id": item.id, "kind": item.kind, "created": created })),
+                                Err(e) => return ToolCallResult::error(e.to_string()),
+                            }
+                        }
+                    }
+                    "confirm" => match editable(&self.db, id).and_then(|i| self.db.brief_confirm(&i.id).map_err(|e| e.to_string())) {
+                        Ok(i) => changed.push(json!({ "id": i.id, "state": i.state })),
+                        Err(e) => return ToolCallResult::error(e),
+                    },
+                    "correct" => {
+                        let Some(text) = arguments.get("text").and_then(|v| v.as_str()) else { return ToolCallResult::error("correct needs text") };
+                        match editable(&self.db, id).and_then(|i| self.db.brief_correct(&i.id, text, arguments.get("reason").and_then(|v| v.as_str()), false, &agent).map_err(|e| e.to_string())) {
+                            Ok(i) => changed.push(json!({ "id": i.id, "state": i.state })),
+                            Err(e) => return ToolCallResult::error(e),
+                        }
+                    }
+                    "resolve" | "remove" => {
+                        let status = if action == "resolve" { automemory_core::continuity::ItemStatus::Resolved } else { automemory_core::continuity::ItemStatus::Removed };
+                        // Anyone may resolve (a question answered, a step done); only the owner side may remove.
+                        let allowed = if action == "resolve" { id.ok_or("Missing required parameter: id").and_then(|i| self.db.brief_get(i).ok().flatten().map(|_| ()).ok_or("No such item")).map_err(String::from) } else { editable(&self.db, id).map(|_| ()) };
+                        match allowed.and_then(|_| self.db.brief_set_status(id.unwrap_or_default(), status).map_err(|e| e.to_string())) {
+                            Ok(_) => changed.push(json!({ "id": id, "status": status })),
+                            Err(e) => return ToolCallResult::error(e),
+                        }
+                    }
+                    other => return ToolCallResult::error(format!("Unknown action: {other}")),
+                }
+                let items = self.db.brief_list(project_id.as_deref(), false).unwrap_or_default();
+                let tokens = automemory_core::config::GlobalConfig::load().map(|g| g.continuity.inject_tokens).unwrap_or(automemory_core::continuity::deliver::DEFAULT_INJECT_TOKENS);
+                ToolCallResult::json(&json!({
+                    "changed": changed,
+                    "brief": automemory_core::continuity::deliver::render_core(&self.db, project_id.as_deref(), tokens.max(6000)),
+                    "items": items.iter().map(|i| json!({ "id": i.id, "kind": i.kind, "text": i.text, "reason": i.reason, "by": i.author, "origin": i.origin, "state": i.state })).collect::<Vec<_>>(),
+                    "next_action": if action == "get" { "Add what is missing with action add; confirm or correct anything marked draft." } else { "Saved. The next agent that starts in this project receives it." }
+                }))
             }
 
             "room.pending" => {

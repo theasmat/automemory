@@ -1,0 +1,7 @@
+//! Continuity: what a long chat with one agent hands to the next. C1: the brief (store, delivery); readers and the
+//! chat archive come in later phases (plan/continuity-plan.md).
+pub mod deliver;
+pub mod model;
+pub mod store;
+
+pub use model::{BriefItem, ItemKind, ItemState, ItemStatus, NewItem, Origin};

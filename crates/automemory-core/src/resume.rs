@@ -158,13 +158,23 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
         lines.push(format!("Decisions in force: {}", items.join("; ")));
     }
 
-    if lines.is_empty() {
+    // What the earlier sessions worked out (goal, ruled-out options, open questions, next steps): its own size budget.
+    let brief = crate::continuity::deliver::render_core(
+        db,
+        project_id,
+        crate::config::GlobalConfig::load().map(|g| g.continuity.inject_tokens).unwrap_or(crate::continuity::deliver::DEFAULT_INJECT_TOKENS),
+    );
+    if lines.is_empty() && brief.is_none() {
         return None;
     }
     if let Some(state) = git_state(cwd) {
         lines.push(format!("Now: {state}"));
     }
-    Some(clip(&format!("Resuming this project.\n{}", lines.join("\n")), RESUME_CHAR_BUDGET))
+    let pack = clip(&format!("Resuming this project.\n{}", lines.join("\n")), RESUME_CHAR_BUDGET);
+    Some(match brief {
+        Some(b) => format!("{pack}\n\n{b}"),
+        None => pack,
+    })
 }
 
 /// A short, deterministic digest of what is *verified* about a project, for writing into the

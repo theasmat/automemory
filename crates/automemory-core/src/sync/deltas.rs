@@ -284,6 +284,9 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
     for b in db.list_batons(ALL_ROWS)? {
         consider("baton", b.id.clone(), b.created_at, json_of(&b));
     }
+    for i in db.brief_list(None, true)? {
+        consider("brief", i.id.clone(), i.updated_at, json_of(&i));
+    }
 
     ops.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     Ok(ops)
@@ -565,6 +568,16 @@ fn apply_op(
                     set_kv(db, &format!("teampin:{}", op.id), "")?;
                 }
             }
+            if let (Some(_), Some(author)) = (&applied_now, wire.author.as_ref()) {
+                if *author != person(db) {
+                    set_kv(db, &format!("author:{}", op.id), author)?;
+                }
+            }
+            Ok(applied_now)
+        }
+        "brief" => {
+            let applied_now = apply_kind!(crate::continuity::BriefItem, brief_get, brief_save_ref, updated_at)?;
+            // Say where an item came from on a device that did not write it (labels in the brief, no change to the record).
             if let (Some(_), Some(author)) = (&applied_now, wire.author.as_ref()) {
                 if *author != person(db) {
                     set_kv(db, &format!("author:{}", op.id), author)?;
@@ -1051,6 +1064,35 @@ mod tests {
         sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap();
         assert_eq!(sync_cycle_keyed(&alice, &dir, Some(&key)).unwrap().conflicts, 0);
         assert_eq!(sync_cycle_keyed(&bob, &dir, Some(&key)).unwrap().conflicts, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_brief_travels_between_computers_and_says_who_wrote_it() {
+        use crate::continuity::{ItemKind, NewItem, Origin};
+        let dir = test_vault("brief");
+        let (laptop, desktop) = (test_db(), test_db());
+        set_kv(&laptop, "person", "Asmat").unwrap();
+        set_kv(&desktop, "person", "Asmat-desktop").unwrap();
+        register_project(&laptop, "pa", "shop", Some("git:github.com/team/shop"));
+        let (item, _) = laptop
+            .brief_add(NewItem { project_id: Some("pa".into()), kind: ItemKind::Rejected, text: "Server-side sessions".into(), reason: Some("no sticky routing".into()), ref_id: None, origin: Origin::Agent, author: "antigravity".into(), session: None })
+            .unwrap();
+        let key = [4u8; 32];
+        sync_cycle_keyed(&laptop, &dir, Some(&key)).unwrap();
+        assert_eq!(sync_cycle_keyed(&desktop, &dir, Some(&key)).unwrap().applied, 1);
+        let pid = desktop.project_id_for_key("git:github.com/team/shop").unwrap();
+        let there = desktop.brief_list(Some(&pid), false).unwrap();
+        assert_eq!(there.len(), 1);
+        assert_eq!((there[0].text.as_str(), there[0].reason.as_deref()), ("Server-side sessions", Some("no sticky routing")));
+        assert!(crate::continuity::deliver::render_core(&desktop, Some(&pid), 3000).unwrap().contains("from Asmat"), "the label says it came from the other device");
+
+        // Resolving it on the desktop travels back without a conflict.
+        desktop.brief_set_status(&item.id, crate::continuity::ItemStatus::Resolved).unwrap();
+        sync_cycle_keyed(&desktop, &dir, Some(&key)).unwrap();
+        let r = sync_cycle_keyed(&laptop, &dir, Some(&key)).unwrap();
+        assert_eq!(r.conflicts, 0);
+        assert!(laptop.brief_list(Some("pa"), false).unwrap().is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 

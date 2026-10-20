@@ -39,6 +39,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Room CLI | `python3 tests/scenarios/room_cli.py` | list/show/approve/reject/again, each verdict behind the password, results match the preview |
 | Guideline refresh | `python3 tests/scenarios/guidelines_refresh.py` | `connect` updates an AutoMemory-written CLAUDE.md, keeps the memory block, never touches the user's own file |
 | Stale MCP servers | `python3 tests/scenarios/stale_mcp.py` | `doctor` names MCP servers started before the binary was replaced (about 10 s; Unix) |
+| Continuity brief | `python3 tests/scenarios/continuity.py` | An agent leaves a brief by MCP; another agent's hook hands it over with provenance; no duplicates, secrets removed, a person's words protected, CLI behind the password, token budget, broken config fails closed |
 | Planning room | `python3 tests/scenarios/planning_room.py` | Two simulated agents + human: turn and evidence rules, no self-approval, approve stores one decision + a task per step, another round, task claimed by a third agent |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |

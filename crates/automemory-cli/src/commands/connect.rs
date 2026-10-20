@@ -1214,6 +1214,12 @@ For a design choice worth a second opinion, open a room with `room.join` (topic,
 stored notes from `memory.search`). End the revision with a short list of steps (`- step`). A human then approves it: that
 records the decision and creates the tasks, so do not call `decision.record` for it. Claim tasks with `task.next`.
 
+## 4. Continuity
+Another agent (or you, later) may pick this project up. Call `continuity.brief` (action `get`) at the start of a task. Before you
+stop, before a context compaction, and whenever the human says "hand off", call it with action `add`: the goal, what was
+decided, **what you ruled out and why** (kind `rejected`), open questions, and next steps. Items marked draft need your
+`confirm` or `correct`. Do not repeat what is already there; items written by a person are theirs to change.
+
 ---
 
 ## 3. Autonomous Architectural Decisions & Checkpoints
@@ -1273,6 +1279,7 @@ This workspace is integrated with **AutoMemory**.
 - **Architectural Policy**: Record non-trivial architectural decisions with `decision.record` so all parallel agents see them with 0ms latency.
 - **Handoffs**: Pass context to peer workers using `baton.pass`.
 - **Planning rooms**: For a design choice worth a second opinion, `room.join` a room, take turns with `room.post` (propose, critique, revise; evidence required), end with steps as `- step` lines. A human approves it; then claim the tasks with `task.next`.
+- **Continuity**: `continuity.brief` (action `get` at the start of a task; action `add` before you stop, before a compaction, or when the human says "hand off": goal, decisions, what you ruled out and why, open questions, next steps). Confirm or correct items marked draft.
 - **Pre-Tool Safety**: Pre-tool hooks intercept destructive operations (e.g. recursive root deletions, force pushes). Never attempt raw destructive shell commands.
 "#
 }

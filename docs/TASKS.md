@@ -154,7 +154,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Continuity (plan: PLAN §16, spec: plan/continuity-plan.md)
 
-- [ ] C1 Brief store + `continuity.brief` tool + hook injection + rules text + CLI + brief sync
+- [x] C1 Brief store (schema v15) + `continuity.brief` tool + injection in the resume pack (token budget `[continuity] inject_tokens`) + rules text + `automemory continuity` + brief sync with "from <device>" labels. Also fixed: a config.toml that does not parse now locks the human gate (it used to switch the password off) and `doctor` reports it
 - [ ] C2 Reader trait/registry/testkit + Claude Code reader + archive + `chat.search`/`chat.get`
 - [ ] C3 Antigravity reader (conversations db, summaries db, brain files)
 - [ ] C4 Dashboard Continuity page (opt-in, import, brief editor, preview, Hand off now)
@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 249 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (61 MCP tools, 258 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

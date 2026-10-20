@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod embeddings;
 pub mod llm;
 pub mod backup;
+pub mod brief;
 pub mod room;
 pub mod stats;
 pub mod update;

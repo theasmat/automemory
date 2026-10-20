@@ -34,6 +34,7 @@ run "planning room (two agents + human)" python3 tests/scenarios/planning_room.p
 run "planning room edge cases"        python3 tests/scenarios/room_edges.py
 run "room CLI"                        python3 tests/scenarios/room_cli.py
 run "stale MCP servers (doctor)"      python3 tests/scenarios/stale_mcp.py
+run "continuity brief"                python3 tests/scenarios/continuity.py
 run "guideline refresh on connect"    python3 tests/scenarios/guidelines_refresh.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
 run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py

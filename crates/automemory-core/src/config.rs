@@ -24,6 +24,8 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub llm: LlmSettings,
     #[serde(default)]
+    pub continuity: ContinuitySettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
 }
 
@@ -137,6 +139,23 @@ impl Default for LlmSettings {
             profiles: Default::default(),
             active: String::new(),
         }
+    }
+}
+
+/// `[continuity]`: how much of the brief a new session is given at start (the rest is one tool call away).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinuitySettings {
+    #[serde(default = "default_inject_tokens")]
+    pub inject_tokens: usize,
+}
+
+fn default_inject_tokens() -> usize {
+    3000
+}
+
+impl Default for ContinuitySettings {
+    fn default() -> Self {
+        Self { inject_tokens: default_inject_tokens() }
     }
 }
 
@@ -342,6 +361,7 @@ impl Default for GlobalConfig {
             retrieval: RetrievalSettings::default(),
             embeddings: EmbeddingSettings::default(),
             llm: LlmSettings::default(),
+            continuity: ContinuitySettings::default(),
             projects: Vec::new(),
         }
     }

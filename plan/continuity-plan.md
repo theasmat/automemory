@@ -1,6 +1,6 @@
 # Continuity: carry a long chat from one agent to another
 
-Status: plan, not built. Summary and phases are in [docs/PLAN.md §16](../docs/PLAN.md); tasks C1–C8 are in
+Status: C1 built (Oct 2026); C2–C8 are plan. Summary and phases are in [docs/PLAN.md §16](../docs/PLAN.md); tasks C1–C8 are in
 [docs/TASKS.md](../docs/TASKS.md).
 
 ## 1. The problem and the target

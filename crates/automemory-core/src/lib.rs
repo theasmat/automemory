@@ -4,6 +4,7 @@ pub mod codeintel;
 pub mod baton;
 pub mod bip39;
 pub mod config;
+pub mod continuity;
 pub mod crypto;
 pub mod db;
 pub mod docs;

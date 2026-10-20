@@ -492,3 +492,21 @@ CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Continuity: what previous sessions worked out (goal, ruled-out options, open questions, next steps)
+CREATE TABLE IF NOT EXISTS brief_items (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    reason TEXT,
+    ref_id TEXT,
+    origin TEXT NOT NULL,
+    author TEXT NOT NULL,
+    session TEXT,
+    state TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_brief_project ON brief_items(project_id, status, updated_at DESC);
