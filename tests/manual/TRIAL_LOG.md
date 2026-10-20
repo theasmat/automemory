@@ -132,6 +132,19 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
   not single old lines; (4) `add` rejects quantities that are not whole numbers >= 1. The first test run of the original probe
   (forged cookie opens user-42's cart, adds of 1+1 store 1, active cart loses a line, qty -5 accepted) now shows all four closed.
 
+### T11b Room started in the dashboard, agents find it without an id
+Goal: you start a room; the two invited agents learn about it from their own hooks, and take their turns with nothing pasted.
+Pre-checked (maintainer): the trial folder has Claude's `UserPromptSubmit` hook and Antigravity's `PreInvocation` hook registered with the
+installed binary; the daemon on :4545 runs the build with R1; `/api/rooms` answers.
+Steps
+1. Fresh Claude Code and Antigravity sessions in the trial folder.
+2. Dashboard > Planning rooms > New room: topic, question, tick both agents, optional evidence/scope/constraints, Create (password).
+3. To Claude Code, without naming the room: "Is anything waiting for you in this project? If so, handle it and tell me what you did."
+4. Same to Antigravity. 5. Same to Claude Code again (it should revise).
+6. Run `python3 tests/manual/t11b_check.py` (in the AutoMemory repo) and paste its output with the agents' replies.
+Pass when the checker prints PASS: T11b, and neither agent asked you for a room id. The checker is read-only; it was verified on a
+simulated run in a sandbox database.
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).
