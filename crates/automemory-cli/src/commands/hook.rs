@@ -475,7 +475,13 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     // Stop is blocked when work is owed, in which case the stop is blocked (PRD §7.2) and the human is
     // told why through the Notifier port.
     if canonical == Some(CanonicalEvent::Stop) {
-        if let Some(owed) = pending_work_nudge(&db, effective_project_id, &session_id) {
+        // Remind once per piece of owed work, then let the agent stop: a person may have told it to wait, and
+        // blocking every Stop traps it in a loop of acknowledgements (seen in trial T11).
+        let owed = pending_work_nudge(&db, effective_project_id, &session_id);
+        let reminded_key = format!("stop_reminded:{session_id}");
+        let already = owed.is_some() && db.sync_kv_get(&reminded_key) == owed;
+        if let Some(owed) = owed.filter(|_| !already) {
+            db.sync_kv_set(&reminded_key, &owed);
             active_notifier().notify("stop blocked", &owed);
             if agy_style(agent) {
                 // Antigravity: "continue" keeps the agent running, anything else lets it stop.

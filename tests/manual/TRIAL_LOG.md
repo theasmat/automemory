@@ -26,7 +26,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T8 | Dashboard: pages show real data, tour and Settings work | PASS | 2026-10-19 |
 | T9 | Human password gate | PASS | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
-| T11 | Planning room: two real agents agree a plan, the human approves it | PENDING | |
+| T11 | Planning room: two real agents agree a plan, the human approves it | PASS (3 fixes) | 2026-10-20 |
 
 ## Test cases
 
@@ -99,6 +99,15 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
 - Earlier in the same session it tried to read the AutoMemory database with `sqlite3`: the Zero-SQL guardrail denied it
   (`hook.deny`, "Raw SQLite Access to Internal AutoMemory Database", 09:03 UTC) and queued a review proposal in the Inbox.
 - Agents reading AutoMemory's own source is a trial artefact (the source is on this machine); normal users will not see it.
+
+#### 2026-10-20 T11 steps 4–5 (human verdict, task claimed): PASS, one bug found and fixed
+- The tester approved in the dashboard; the decision was recorded and the steps became tasks. Antigravity's `task.next` then claimed
+  task 1 ("Define cart_items table … with 30-day abandoned cart cleanup"), with the room's topic and decision as its spec, and stopped
+  as asked.
+- **Bug**: the Stop hook blocked every Stop while the session held a claimed task ("Pending work: claimed task …"), so Antigravity,
+  told to wait, was re-prompted again and again and kept answering "I acknowledge the Stop hook reminder" (a token-burning loop).
+  Fixed: the reminder is given once per piece of owed work; later Stops are let through and the claim stays. Covered in
+  `planning_room.py`; installed.
 
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.

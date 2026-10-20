@@ -95,6 +95,10 @@ def main():
         # Another agent claims the first task.
         t = j(sb.mcp("task.next", session_id="agent-c", project_id="app"))
         rep.check(t.get("task", {}).get("title") == "Add the token table", "another agent claims the first step", json.dumps(t)[:160])
+        # Holding a claimed task: the first Stop is reminded, later ones are let through (no reminder loop, seen in T11).
+        first = sb.hook("claude", "stop", {"session_id": "agent-c", "hook_event_name": "Stop"})[1]
+        second = sb.hook("claude", "stop", {"session_id": "agent-c", "hook_event_name": "Stop"})[1]
+        rep.check('"block"' in first and "claimed task" in first and '"block"' not in second, "a claimed task is reminded once at Stop, not every time", f"{first[:100]} | {second[:100]}")
 
         # A lone proposer does not keep the turn; the human can note and decide at any stage; agents show by name.
         r3 = j(sb.mcp("room.join", session_id="agent-x", agent="claude-code", topic="cart storage", project_id="app"))["room"]["id"]
