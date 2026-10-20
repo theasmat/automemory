@@ -93,7 +93,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] E2 profiles + preset catalog, `embeddings profile add|list|use|remove`, `embeddings models` (lists installed Ollama models); the flat fields stay as the `default` profile
 - [x] E3 `/api/recall*` (all writes behind the human password, keys write-only) and a real Recall settings page
 - [x] E4 indexing with progress, retries, daily token cap and cost estimate, cancel, unused-vector cleanup (`embeddings reindex|clean`, `/api/recall/index`)
-- [ ] E5 native Cohere/Voyage/Gemini adapters, ONNX feature (not started; the OpenAI-compatible adapter covers most services)
+- [x] E5 native Cohere/Voyage/Gemini adapters (see I7). ONNX stays out (PLAN §1)
 
 ## Control everything safe from the dashboard (plan: PLAN §11)
 
@@ -123,14 +123,14 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] I4 Browser smoke test (Playwright): 21 pages x light/dark, password prompt; skipped with a message when Playwright is missing
 - [x] I5 Lock hints from `/api/policy`: `<Button lock="/api/...">` shows a lock when the server says Protected; a path missing from the table logs an error that the browser smoke test fails on. Placed on the main Protected buttons (11), not every one
 - [x] I6 `automemory backup [create|list|restore]` (restore keeps the old DB as before-restore-*, refuses while in use or for damaged files); doctor shares the backup code (newest 10 kept) and warns about unreadable copies
-- [ ] I7 LLM profile map, native Cohere/Voyage/Gemini embedding adapters
+- [x] I7 `[llm.profiles.*]` (CLI `llm profile add|use|list|remove`, `key-set --profile`, `/api/llm` profiles, Tools card with a setup picker; keys under `llm.<name>`) and native Cohere/Voyage/Gemini embedding adapters (query vs document input types, presets). Request shapes follow each vendor's published API and are tested against mock servers only; not run against the live services
 - [x] I8 Seeded mutation fuzzing on stable (no nightly/cargo-fuzz here): `crates/automemory-core/tests/fuzz_like.rs` (shell parser, write-target prediction, guardrails, redaction, LLM JSON, delta files) and `tests/scenarios/hook_fuzz.py` (garbage into the real hook). Found and fixed: ~8000 nested `$((` overflowed the stack and aborted the hook (commands after it went uninspected), 60000 nested made the hook hang for 30 s+. Now cut off at depth 40 and blocked. Not done: coverage-guided cargo-fuzz in CI
 - [ ] I9 Windows CI for update/hooks/connect
 - [ ] I10 Cosmetic backlog
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 233 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 238 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

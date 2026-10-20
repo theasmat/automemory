@@ -146,6 +146,115 @@ impl EmbeddingProvider for OpenAiProvider {
     }
 }
 
+// ── Native cloud APIs ───────────────────────────────────────────────────────────────
+#[derive(Clone, Copy, PartialEq)]
+enum Native {
+    Cohere,
+    Voyage,
+    Gemini,
+}
+
+/// Cohere (`/v2/embed`), Voyage (`/embeddings` with `input_type`) and Gemini (`:batchEmbedContents`): the three
+/// services whose own API tells queries from documents, which improves search over the OpenAI-style call.
+/// `embed` (one text) is the query side; `embed_batch` (indexing) is the document side.
+pub struct NativeProvider {
+    kind: Native,
+    endpoint: String,
+    model: String,
+    key: Option<String>,
+    dimensions: Option<usize>,
+    timeout: Duration,
+}
+
+impl NativeProvider {
+    fn call(&self, texts: &[String], query: bool) -> Result<Vec<Vec<f32>>> {
+        let safe: Vec<String> = if self.is_local() { texts.to_vec() } else { texts.iter().map(|t| redact_text(t)).collect() };
+        let base = self.endpoint.trim_end_matches('/').to_string();
+        let (url, body, header) = match self.kind {
+            Native::Cohere => (
+                format!("{base}/embed"),
+                json!({ "model": self.model, "texts": safe, "input_type": if query { "search_query" } else { "search_document" }, "embedding_types": ["float"] }),
+                "authorization",
+            ),
+            Native::Voyage => {
+                let mut b = json!({ "model": self.model, "input": safe, "input_type": if query { "query" } else { "document" } });
+                if let Some(d) = self.dimensions {
+                    b["output_dimension"] = json!(d);
+                }
+                (format!("{base}/embeddings"), b, "authorization")
+            }
+            Native::Gemini => {
+                let task = if query { "RETRIEVAL_QUERY" } else { "RETRIEVAL_DOCUMENT" };
+                let reqs: Vec<Value> = safe
+                    .iter()
+                    .map(|t| {
+                        let mut r = json!({ "model": format!("models/{}", self.model), "content": { "parts": [{ "text": t }] }, "taskType": task });
+                        if let Some(d) = self.dimensions {
+                            r["outputDimensionality"] = json!(d);
+                        }
+                        r
+                    })
+                    .collect();
+                (format!("{base}/models/{}:batchEmbedContents", self.model), json!({ "requests": reqs }), "x-goog-api-key")
+            }
+        };
+        let (key, timeout, n, kind) = (self.key.clone(), self.timeout, texts.len(), self.kind);
+        off_runtime(move || {
+            let client = reqwest::blocking::Client::builder().timeout(timeout).build()?;
+            let mut req = client.post(&url).json(&body);
+            if let Some(k) = key {
+                req = if header == "authorization" { req.bearer_auth(k) } else { req.header(header, k) };
+            }
+            let resp = req.send().with_context(|| format!("cannot reach {url}"))?;
+            if !resp.status().is_success() {
+                bail!("{} answered {}: {}", url, resp.status(), resp.text().unwrap_or_default().chars().take(300).collect::<String>());
+            }
+            let v = resp.json::<Value>()?;
+            let rows: Vec<Value> = match kind {
+                Native::Cohere => v["embeddings"]["float"].as_array().cloned().unwrap_or_default(),
+                Native::Voyage => {
+                    let mut d = v["data"].as_array().cloned().unwrap_or_default();
+                    d.sort_by_key(|r| r["index"].as_u64().unwrap_or(0));
+                    d.into_iter().map(|r| r["embedding"].clone()).collect()
+                }
+                Native::Gemini => v["embeddings"].as_array().map(|a| a.iter().map(|e| e["values"].clone()).collect()).unwrap_or_default(),
+            };
+            vectors_from(&json!({ "v": rows }), "v", n)
+        })
+    }
+}
+
+impl EmbeddingProvider for NativeProvider {
+    fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        self.call(&[text.to_string()], true).map(|mut v| v.remove(0))
+    }
+
+    fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        // Cohere accepts 96 texts per call, Gemini 100, Voyage 128: stay under the smallest.
+        let mut out = Vec::with_capacity(texts.len());
+        for chunk in texts.chunks(96) {
+            out.extend(self.call(chunk, false)?);
+        }
+        Ok(out)
+    }
+
+    fn model_id(&self) -> String {
+        let name = match self.kind {
+            Native::Cohere => "cohere",
+            Native::Voyage => "voyage",
+            Native::Gemini => "gemini",
+        };
+        match self.dimensions {
+            Some(d) => format!("{name}:{}/{d}", self.model),
+            None => format!("{name}:{}", self.model),
+        }
+    }
+
+    fn is_local(&self) -> bool {
+        is_loopback(&self.endpoint)
+    }
+}
+
 // ── Any command ─────────────────────────────────────────────────────────────────────
 /// The escape hatch: `{"texts": [...]}` on stdin, `{"vectors": [[...]]}` on stdout.
 pub struct ExecProvider {
@@ -236,6 +345,25 @@ pub fn provider_from_settings(settings: &EmbeddingSettings) -> Result<Box<dyn Em
                 timeout,
             }))
         }
+        "cohere" | "voyage" | "gemini" => {
+            let (kind, default_endpoint) = match s.provider.to_ascii_lowercase().as_str() {
+                "cohere" => (Native::Cohere, "https://api.cohere.com/v2"),
+                "voyage" => (Native::Voyage, "https://api.voyageai.com/v1"),
+                _ => (Native::Gemini, "https://generativelanguage.googleapis.com/v1beta"),
+            };
+            if s.model.is_empty() {
+                bail!("[embeddings] model is required for {} (for example {})", s.provider, match kind { Native::Cohere => "embed-v4.0", Native::Voyage => "voyage-3.5", Native::Gemini => "gemini-embedding-001" });
+            }
+            let endpoint = if s.endpoint.is_empty() { default_endpoint.to_string() } else { s.endpoint.clone() };
+            if !is_loopback(&endpoint) && !s.allow_network {
+                bail!("{endpoint} would receive memory text: set allow_network = true to allow it");
+            }
+            let key = crate::secrets::resolve(&s.secret_name(), Some(&s.api_key_env));
+            if !is_loopback(&endpoint) && key.is_none() {
+                bail!("no API key for profile '{}': run `automemory embeddings key set {}` (stored in the OS keychain)", s.active, s.active);
+            }
+            Ok(Box::new(NativeProvider { kind, endpoint, model: s.model.clone(), key, dimensions: s.dimensions, timeout }))
+        }
         "exec" => {
             if s.endpoint.trim().is_empty() {
                 bail!("[embeddings] endpoint must hold the command for provider = \"exec\"");
@@ -292,6 +420,10 @@ pub const PRESETS: &[Preset] = &[
     Preset { id: "openai-small", label: "OpenAI: text-embedding-3-small", provider: "openai", model: "text-embedding-3-small", dimensions: Some(1536), endpoint: "https://api.openai.com/v1", local: false, note: "Cloud, low cost; sends memory text to OpenAI" },
     Preset { id: "openai-large", label: "OpenAI: text-embedding-3-large", provider: "openai", model: "text-embedding-3-large", dimensions: Some(3072), endpoint: "https://api.openai.com/v1", local: false, note: "Cloud, best quality of the three; vector size can be shortened" },
     Preset { id: "gemini", label: "Gemini (OpenAI-compatible)", provider: "openai", model: "text-embedding-004", dimensions: Some(768), endpoint: "https://generativelanguage.googleapis.com/v1beta/openai", local: false, note: "Cloud; use a Gemini API key" },
+    Preset { id: "cohere", label: "Cohere: embed-v4.0", provider: "cohere", model: "embed-v4.0", dimensions: Some(1536), endpoint: "https://api.cohere.com/v2", local: false, note: "Cloud; native API separates queries from documents" },
+    Preset { id: "voyage", label: "Voyage: voyage-3.5", provider: "voyage", model: "voyage-3.5", dimensions: Some(1024), endpoint: "https://api.voyageai.com/v1", local: false, note: "Cloud; native API separates queries from documents" },
+    Preset { id: "voyage-code", label: "Voyage: voyage-code-3", provider: "voyage", model: "voyage-code-3", dimensions: Some(1024), endpoint: "https://api.voyageai.com/v1", local: false, note: "Cloud; tuned for source code" },
+    Preset { id: "gemini-native", label: "Gemini: gemini-embedding-001 (native)", provider: "gemini", model: "gemini-embedding-001", dimensions: Some(768), endpoint: "https://generativelanguage.googleapis.com/v1beta", local: false, note: "Cloud; native API separates queries from documents; vector shortened to 768" },
     Preset { id: "mistral", label: "Mistral: mistral-embed", provider: "openai", model: "mistral-embed", dimensions: Some(1024), endpoint: "https://api.mistral.ai/v1", local: false, note: "Cloud" },
     Preset { id: "jina", label: "Jina: jina-embeddings-v3", provider: "openai", model: "jina-embeddings-v3", dimensions: Some(1024), endpoint: "https://api.jina.ai/v1", local: false, note: "Cloud" },
     Preset { id: "lmstudio", label: "LM Studio (local server)", provider: "openai", model: "", endpoint: "http://127.0.0.1:1234/v1", dimensions: None, local: true, note: "Any embedding model loaded in LM Studio; enter its model id" },
@@ -471,7 +603,7 @@ mod tests {
                 }
                 let text = String::from_utf8_lossy(&buf[..total]).to_string();
                 let path = text.split_whitespace().nth(1).unwrap_or("").to_string();
-                let auth = text.lines().find(|l| l.to_ascii_lowercase().starts_with("authorization:")).unwrap_or("").to_string();
+                let auth = text.lines().find(|l| { let l = l.to_ascii_lowercase(); l.starts_with("authorization:") || l.starts_with("x-goog-api-key:") }).unwrap_or("").to_string();
                 let body: Value = text.split("\r\n\r\n").nth(1).and_then(|b| serde_json::from_str(b).ok()).unwrap_or(Value::Null);
                 let (status, resp) = reply(&path, &body);
                 let _ = tx.send((path, auth, body));
@@ -573,6 +705,65 @@ mod tests {
         assert!(!p.is_local());
         let safe = redact_text("config uses OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456");
         assert!(!safe.contains("abcdefghijklmnopqrstuvwxyz123456"), "{safe}");
+    }
+
+    fn native(provider: &str, url: &str, model: &str) -> Box<dyn EmbeddingProvider> {
+        provider_from_settings(&EmbeddingSettings {
+            provider: provider.into(), model: model.into(), endpoint: url.into(), api_key_env: "AM_TEST_NATIVE_KEY".into(),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn cohere_voyage_and_gemini_use_their_own_request_shapes() {
+        std::env::set_var("AM_TEST_NATIVE_KEY", "key-123");
+        // Cohere: bearer auth, query vs document input_type, vectors under embeddings.float.
+        let (url, rx) = mock_server(|path, body| {
+            assert_eq!(path, "/embed");
+            let rows: Vec<Vec<f32>> = (0..body["texts"].as_array().unwrap().len()).map(|i| if i == 0 { vec![1.0, 0.0] } else { vec![0.0, 1.0] }).collect();
+            (200, json!({ "embeddings": { "float": rows } }))
+        });
+        let p = native("cohere", &url, "embed-v4.0");
+        assert_eq!(p.model_id(), "cohere:embed-v4.0");
+        assert_eq!(p.embed_batch(&["a".into(), "b".into()]).unwrap()[1], vec![0.0, 1.0]);
+        let (_, auth, body) = rx.recv().unwrap();
+        assert!(auth.contains("Bearer key-123") && body["input_type"] == "search_document" && body["embedding_types"][0] == "float", "{auth} {body}");
+        p.embed("q").unwrap();
+        assert_eq!(rx.recv().unwrap().2["input_type"], "search_query");
+
+        // Voyage: rows are put in order by index; document vs query.
+        let (url, rx) = mock_server(|path, _| { assert_eq!(path, "/embeddings"); (200, json!({ "data": [ { "index": 1, "embedding": [0.0, 1.0] }, { "index": 0, "embedding": [1.0, 0.0] } ] })) });
+        let p = native("voyage", &url, "voyage-3.5");
+        assert_eq!(p.embed_batch(&["a".into(), "b".into()]).unwrap()[0], vec![1.0, 0.0]);
+        assert_eq!(rx.recv().unwrap().2["input_type"], "document");
+
+        // Gemini: key in x-goog-api-key, model in the path, taskType per side, values under embeddings[].values.
+        let (url, rx) = mock_server(|path, _| { assert_eq!(path, "/models/gemini-embedding-001:batchEmbedContents"); (200, json!({ "embeddings": [ { "values": [3.0, 4.0] } ] })) });
+        let p = provider_from_settings(&EmbeddingSettings {
+            provider: "gemini".into(), model: "gemini-embedding-001".into(), endpoint: url, api_key_env: "AM_TEST_NATIVE_KEY".into(),
+            dimensions: Some(2), ..Default::default()
+        }).unwrap();
+        assert_eq!(p.model_id(), "gemini:gemini-embedding-001/2");
+        let v = p.embed("hello").unwrap();
+        assert!((v[0] - 0.6).abs() < 1e-5 && (v[1] - 0.8).abs() < 1e-5, "normalised: {v:?}");
+        let (_, auth, body) = rx.recv().unwrap();
+        assert!(auth.contains("key-123"), "{auth}");
+        assert_eq!(body["requests"][0]["taskType"], "RETRIEVAL_QUERY");
+        assert_eq!(body["requests"][0]["outputDimensionality"], 2);
+        assert_eq!(body["requests"][0]["model"], "models/gemini-embedding-001");
+    }
+
+    #[test]
+    fn native_providers_refuse_the_cloud_without_consent_or_a_key() {
+        let mk = |provider: &str, net: bool, env: &str| EmbeddingSettings { provider: provider.into(), model: "m".into(), api_key_env: env.into(), allow_network: net, ..Default::default() };
+        for p in ["cohere", "voyage", "gemini"] {
+            let e = |s: EmbeddingSettings| provider_from_settings(&s).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(e(mk(p, false, "AM_TEST_NATIVE_KEY")).contains("allow_network"), "{p}");
+            assert!(e(mk(p, true, "AM_TEST_NO_SUCH_KEY")).contains("no API key"), "{p}");
+            assert!(e(EmbeddingSettings { provider: p.into(), ..Default::default() }).contains("model is required"), "{p}");
+        }
+        assert!(PRESETS.iter().filter(|p| matches!(p.provider, "cohere" | "voyage" | "gemini")).count() >= 4);
     }
 
     #[test]

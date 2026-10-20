@@ -53,6 +53,7 @@ pub fn build_api_router() -> Router<AppState> {
         .route("/api/jobs", get(crate::commands::serve::jobs::api_list))
         .route("/api/jobs/:id/cancel", post(crate::commands::serve::jobs::api_cancel))
         .route("/api/llm", get(llm::api_get).put(llm::api_put))
+        .route("/api/llm/profile/:name", delete(llm::api_profile_delete))
         .route("/api/llm/key", axum::routing::put(llm::api_key_set).delete(llm::api_key_delete))
         .route("/api/llm/run", post(llm::api_run))
         .route("/api/llm/run/cancel", post(llm::api_run_cancel))

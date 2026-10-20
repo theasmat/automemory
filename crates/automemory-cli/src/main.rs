@@ -1510,8 +1510,14 @@ async fn main() -> Result<()> {
             LlmCommands::Status => commands::llm::status()?,
             LlmCommands::Use { model, endpoint, api_key_env, allow_network } => commands::llm::use_model(model, endpoint, api_key_env, allow_network)?,
             LlmCommands::Off => commands::llm::off()?,
-            LlmCommands::KeySet { stdin, from_env } => commands::llm::key_set(stdin, from_env)?,
-            LlmCommands::KeyRemove => commands::llm::key_remove()?,
+            LlmCommands::KeySet { profile, stdin, from_env } => commands::llm::key_set(profile, stdin, from_env)?,
+            LlmCommands::KeyRemove { profile } => commands::llm::key_remove(profile)?,
+            LlmCommands::Profile { command } => match command {
+                LlmProfileCommands::Add { name, model, endpoint, api_key_env, allow_network } => commands::llm::profile_add(name, model, endpoint, api_key_env, allow_network)?,
+                LlmProfileCommands::Use { name } => commands::llm::profile_use(name)?,
+                LlmProfileCommands::List => commands::llm::profile_list()?,
+                LlmProfileCommands::Remove { name } => commands::llm::profile_remove(name)?,
+            },
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
         Commands::Backup { command } => match command.unwrap_or(BackupCommands::Create) {
@@ -1653,6 +1659,28 @@ enum BackupCommands {
 }
 
 #[derive(Subcommand)]
+enum LlmProfileCommands {
+    /// Save a setup under a name
+    Add {
+        name: String,
+        #[arg(long)]
+        model: String,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        api_key_env: Option<String>,
+        #[arg(long)]
+        allow_network: bool,
+    },
+    /// Use a saved setup (`default` is the original one)
+    Use { name: String },
+    /// Show saved setups; * marks the one in use
+    List,
+    /// Delete a setup and its key
+    Remove { name: String },
+}
+
+#[derive(Subcommand)]
 enum LlmCommands {
     /// Whether it is on, where it sends text, today's tokens
     Status,
@@ -1673,13 +1701,24 @@ enum LlmCommands {
     Off,
     /// Store the API key in the OS keychain (hidden prompt, --stdin or --from-env VAR)
     KeySet {
+        /// Profile the key belongs to (default: the active one)
+        #[arg(long)]
+        profile: Option<String>,
         #[arg(long)]
         stdin: bool,
         #[arg(long)]
         from_env: Option<String>,
     },
     /// Remove the stored key
-    KeyRemove,
+    KeyRemove {
+        #[arg(long)]
+        profile: Option<String>,
+    },
+    /// Saved setups (for example a free local model and a cloud one) to switch between
+    Profile {
+        #[command(subcommand)]
+        command: LlmProfileCommands,
+    },
     /// Run a job now: pairs (conflicts and duplicates) or distill (candidate notes from sessions)
     Run { what: String },
 }

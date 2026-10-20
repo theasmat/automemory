@@ -35,6 +35,7 @@ class Chat(BaseHTTPRequestHandler):
 def main():
     rep = Report("optional LLM helper")
     s = Sandbox("llm")
+    s.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "llm-master"})  # never touch the real keychain
     srv = HTTPServer(("127.0.0.1", 0), Chat)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     endpoint = f"http://127.0.0.1:{srv.server_port}/v1"
@@ -75,6 +76,28 @@ def main():
 
         status = s.run("llm", "status").stdout
         rep.check("this machine" in status and "tokens" in status, "status shows it is local and counts tokens", status)
+
+        # Profiles: a local setup and a cloud one side by side.
+        r = s.run("llm", "profile", "add", "cloud", "--model", "gpt-x")
+        rep.check(r.returncode != 0 and "allow_network" in (r.stdout + r.stderr), "a cloud profile is refused without consent", (r.stdout + r.stderr)[:160])
+        r = s.run("llm", "profile", "add", "cloud", "--model", "gpt-x", "--allow-network")
+        rep.check(r.returncode == 0, "a cloud profile with consent is saved", (r.stdout + r.stderr)[:160])
+        planted = "sk-PLANTED-llm-profile-9911"
+        r = s.run("llm", "key-set", "--profile", "cloud", "--stdin", stdin=planted + "\n")
+        rep.check(r.returncode == 0, "its key is stored under its own name", (r.stdout + r.stderr)[:160])
+        s.run("llm", "profile", "use", "cloud")
+        out = s.run("llm", "status").stdout
+        rep.check("profile:  cloud" in out and "off this machine" in out and ("file" in out.lower() or "keychain" in out.lower()), "status shows the cloud profile and where its key is", out)
+        before = len(CALLS)
+        r = s.run("llm", "run", "pairs")
+        rep.check(r.returncode != 0 or len(CALLS) == before, "the cloud profile is not the mock; nothing reached the local mock", r.stdout + r.stderr)
+        s.run("llm", "profile", "use", "default")
+        lst = s.run("llm", "profile", "list").stdout
+        rep.check("* default" in lst and "cloud" in lst, "list marks the one in use", lst)
+        leaked = [str(f) for f in s.home.rglob("*") if f.is_file() and planted.encode() in f.read_bytes()]
+        rep.check(not leaked, "the key is in no file under the home folder", str(leaked))
+        s.run("llm", "profile", "remove", "cloud")
+        rep.check("cloud" not in s.run("llm", "profile", "list").stdout, "removing a profile removes it")
     finally:
         srv.shutdown()
         s.cleanup()

@@ -55,6 +55,7 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/cloud/sync", Tier::Protected, "cloud sync (test endpoint)"),
     ("/api/cloud/projects/:id/manifest", Tier::Protected, "cloud manifest (test endpoint)"),
     ("/api/llm", Tier::Protected, "LLM helper settings"),
+    ("/api/llm/profile/:name", Tier::Protected, "remove an LLM profile"),
     ("/api/llm/key", Tier::Protected, "store or remove the LLM API key"),
     ("/api/llm/run", Tier::Effect, "run an LLM suggestion job (cloud sends text)"),
     ("/api/llm/run/cancel", Tier::Safe, "stop the LLM job"),

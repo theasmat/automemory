@@ -1,0 +1,1 @@
+import{j as e,a1 as t,c as a,o}from"./CMxrKeth.js";const r={class:"p-8 text-center text-text-muted text-sm"},m=e({__name:"memories",setup(n){return t("/brain",{replace:!0}),(c,s)=>(o(),a("div",r,"Redirecting to Project brain..."))}});export{m as default};

@@ -34,6 +34,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Hook recording | `python3 tests/scenarios/hook_record.py` | Off by default; payloads saved with secrets removed; converter makes a fixture |
 | Backup and restore | `python3 tests/scenarios/backup.py` | create, list, restore with `--yes`, old DB kept, damaged file refused, doctor warns about unreadable copies |
 | Hook fuzz | `python3 tests/scenarios/hook_fuzz.py` | Garbage JSON into the real hook: always exit 0 and one JSON object; a command nested 60000 deep is denied (`HOOK_FUZZ_N=2000` harder) |
+| Native embedding adapters | `python3 tests/scenarios/embeddings_native.py` | Cohere, Voyage and Gemini profiles reindex through a mock server speaking each API's shape |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
 | Guided tour and demo | `python3 tests/scenarios/tour.py` | `automemory tour --auto` 8 sandbox steps, collision prevention, learn topics, demo seed and remove |

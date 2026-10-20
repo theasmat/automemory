@@ -53,8 +53,8 @@ impl RetrievalSettings {
 }
 
 /// `[llm]`: an optional model that only *suggests* (conflicts, duplicates, candidate notes). Off while `model` is empty.
-/// Any OpenAI-compatible chat endpoint, including Ollama's `/v1`. The key lives in the keychain under `llm`.
-// shortcut: one profile, add a map like [embeddings.profiles] when someone needs two.
+/// Any OpenAI-compatible chat endpoint, including Ollama's `/v1`. The flat fields are the `default` profile
+/// (key in the keychain under `llm`); more setups live under `[llm.profiles.<name>]` (key under `llm.<name>`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmSettings {
     #[serde(default)]
@@ -71,6 +71,50 @@ pub struct LlmSettings {
     pub timeout_secs: u64,
     #[serde(default = "default_llm_tokens")]
     pub max_tokens_per_day: u64,
+    /// Saved alternatives; `active` names the one in use (empty = the flat `default` fields).
+    #[serde(default)]
+    pub profiles: std::collections::BTreeMap<String, LlmProfile>,
+    #[serde(default)]
+    pub active: String,
+}
+
+/// One saved LLM setup. The API key is never part of it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LlmProfile {
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub api_key_env: String,
+    #[serde(default)]
+    pub allow_network: bool,
+    #[serde(default = "default_llm_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl LlmSettings {
+    /// The profile in use, as flat settings (no `profiles`, `active` set to its name).
+    pub fn resolved(&self) -> LlmSettings {
+        let base = LlmSettings { profiles: Default::default(), ..self.clone() };
+        match self.profiles.get(&self.active).filter(|_| !self.active.is_empty()) {
+            Some(p) => LlmSettings {
+                model: p.model.clone(), endpoint: p.endpoint.clone(), api_key_env: p.api_key_env.clone(),
+                allow_network: p.allow_network, timeout_secs: p.timeout_secs, ..base
+            },
+            None => LlmSettings { active: String::new(), ..base },
+        }
+    }
+
+    /// The keychain name for a profile (`default` or empty = the original `llm`).
+    pub fn secret_for(profile: &str) -> String {
+        if profile.is_empty() || profile == "default" { "llm".to_string() } else { format!("llm.{profile}") }
+    }
+
+    /// Where the active profile's API key lives (`llm` for the default one, so existing keys keep working).
+    pub fn secret_name(&self) -> String {
+        Self::secret_for(&self.active)
+    }
 }
 
 fn default_llm_timeout() -> u64 {
@@ -90,6 +134,8 @@ impl Default for LlmSettings {
             allow_network: false,
             timeout_secs: default_llm_timeout(),
             max_tokens_per_day: default_llm_tokens(),
+            profiles: Default::default(),
+            active: String::new(),
         }
     }
 }

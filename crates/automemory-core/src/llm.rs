@@ -13,7 +13,6 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-pub const SECRET_NAME: &str = "llm";
 const NOTE_CHARS: usize = 600;
 
 pub struct LlmClient {
@@ -25,7 +24,8 @@ pub struct LlmClient {
 }
 
 impl LlmClient {
-    pub fn from_settings(s: &LlmSettings) -> Result<Self> {
+    pub fn from_settings(all: &LlmSettings) -> Result<Self> {
+        let s = &all.resolved();
         if s.model.trim().is_empty() {
             bail!("no LLM configured: set [llm] model (the daemon makes no LLM call until you do)");
         }
@@ -33,9 +33,9 @@ impl LlmClient {
         if !is_loopback(&endpoint) && !s.allow_network {
             bail!("{endpoint} would receive memory text: set allow_network = true to allow it");
         }
-        let key = crate::secrets::resolve(SECRET_NAME, Some(&s.api_key_env));
+        let key = crate::secrets::resolve(&s.secret_name(), Some(&s.api_key_env));
         if !is_loopback(&endpoint) && key.is_none() {
-            bail!("no API key for the LLM: run `automemory llm key set` (stored in the OS keychain)");
+            bail!("no API key for the LLM: run `automemory llm key-set` (stored in the OS keychain)");
         }
         Ok(Self { endpoint, model: s.model.clone(), key, timeout: Duration::from_secs(s.timeout_secs.max(1)), max_tokens_per_day: s.max_tokens_per_day })
     }

@@ -28,6 +28,7 @@ run "session lifecycle"               python3 tests/scenarios/session_lifecycle.
 run "two machines (git vault)"        python3 tests/scenarios/two_machines.py
 run "embeddings modes"                python3 tests/scenarios/embeddings_modes.py
 run "optional LLM helper"             python3 tests/scenarios/llm_helper.py
+run "native embedding adapters"       python3 tests/scenarios/embeddings_native.py
 run "agent matrix"                    python3 tests/scenarios/agents_matrix.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
 run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py
