@@ -364,3 +364,42 @@ What the work so far showed is weakest, in order of payoff. Each is small enough
 
 Order: I1 and I4 first (they make every later change safer and prove value), then I2 and I6, then I3, I5, I8, I7, I9, I10.
 Not planned: ONNX (see §1 reasons), a hosted service, agent-written trusted memory.
+
+## 14. Planning rooms that people actually use
+
+Today a room works only if an agent opens it and every agent is told by hand to join and post. The human can only
+judge the final plan as it is. This section makes the room something you start, steer and correct, while keeping the two
+rules that make it worth having: **turns** (no endless chat, bounded tokens) and **evidence** (claims point at stored notes).
+
+Not planned: free-form chat between agents, more than three rounds, votes, rooms that write code. Each costs tokens
+and hides who decided what.
+
+### 14.1 What the user gets
+| # | Capability | How it works |
+|---|---|---|
+| R1 | **Start a room from the dashboard** | "New room": topic, the question to answer, which agents take part (from Agents), optional context: notes picked by search (become evidence), files/symbols in scope, constraints ("no new services"). Protected (password). |
+| R1 | **Agents are told, not asked** | The prompt/boot hook adds one line to an invited agent's context: "Planning room *topic* waits for your proposal/critique (room id …)". No more pasting room ids. The MCP `room.pending` stays the source. |
+| R2 | **You can speak in the room** | A human note (constraint, answer to a question, "prefer option B") is added without taking a turn and shown to the next agent with its trust tier (human = tier 3). |
+| R2 | **Edit the plan before approving** | "If you approve" becomes editable: decision text, steps (add, remove, reorder, reword), and for each step an owner (agent), files in scope and a check command. Approve stores the edited version and marks it "edited by you". |
+| R3 | **Plans become trackable work** | Tasks carry order, owner, files and a check. The room page shows each task's state (open, claimed by …, done, check passed/failed). Files in a claimed task are locked for its owner. |
+| R3 | **Change it later** | An approved room links to its decision and tasks. "Revise" opens a follow-up room seeded with the old decision; approving it supersedes the decision (existing `decision.record` supersede) and cancels unclaimed tasks it replaces. Tasks can be renamed or cancelled from the page. |
+| R4 | **Rounds and reviewers** | Per room: 1–3 rounds; with three or more agents every non-author critiques in a round (order fixed). Turn timeout (default 30 min): you are told on Home, and can skip the turn or end the room. |
+| R4 | **Live** | Room events go over the existing WebSocket; the page updates without polling. |
+| R5 | **Keep and learn** | Approved rooms export as a short decision record (Markdown, in the repo's docs folder if one is tracked). The value report counts rooms, approvals, tasks done. The Planning Room A/B (TASKS) runs on R1–R3 before R4 is built. |
+
+### 14.2 Rules that stay
+- Agents never approve: only the human verdict (password) stores the decision and tasks. A human note is never evidence.
+- Evidence must resolve (memory, trace, failure, and from R1 a decision id); posts are capped; other agents' text is quoted data.
+- Everything the human does is in the audit log and the Activity page.
+
+### 14.3 Phases
+| Phase | Scope | Done when |
+|---|---|---|
+| R1 | `POST /api/rooms` (topic, question, invited agents, evidence ids, scope, constraints); New room dialog with note search; hook context line for invited agents; `room.join` returns the question and constraints | A room started in the dashboard is joined and proposed in by a real agent with no room id pasted (trial T11b) |
+| R2 | `POST /api/rooms/:id/note`; editable plan (decision, steps with owner/files/check) stored as a draft and used by approve; "edited by you" provenance | Approve after an edit stores exactly the edited text and steps; agents see the human note on their next turn |
+| R3 | Task fields (order, owner, files, check) via a migration; room page task list with live state; claiming a task locks its files; Revise → follow-up room that supersedes on approval; cancel/rename task | Superseding leaves one active decision and no orphan open tasks; a claimed task's files show as locked |
+| R4 | Rounds 1–3, multi-critic order, turn timeout + skip/end; WebSocket room events | A three-agent, two-round room finishes; a timed-out turn shows on Home |
+| R5 | Markdown decision record export, value-report counts, the A/B on R1–R3 | A/B result recorded in FEATURES; drop or keep R4 based on it |
+
+Order: R1 and R2 first (they remove the copy-paste and give the human real control), then R3; R4 only if the A/B shows
+rooms beat one agent plus tests.
