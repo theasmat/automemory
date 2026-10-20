@@ -38,7 +38,7 @@ for k, a, body, ev in posts:
     print(f"   {k:8} by {agents_of.get(a, '?'):7} ({a[:8]}): {body.splitlines()[0][:70] if body else ''}")
 
 kinds = [p[0] for p in posts if p[0] != "note"]
-check(bool(meta.get("question")) and len(meta["invited"]) >= 2, "the room was started in the dashboard with a question and two invited agents", json.dumps(meta)[:120])
+check(len(meta["invited"]) >= 2, "the room was started in the dashboard with two invited agents (the question is optional)", json.dumps(meta)[:120])
 told = conn.execute("select key from sync_kv where key like ?", (f"room_told:%:{rid}:%",)).fetchall()
 told_sessions = {k[0].split(":")[1] for k in told}
 check(len(told_sessions) >= 2, "the hooks told at least two different agent sessions about the room", f"told: {sorted(s[:8] for s in told_sessions)}")
