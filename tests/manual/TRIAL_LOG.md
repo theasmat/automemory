@@ -70,6 +70,18 @@ Findings and fixes (installed, dashboard restarted)
    "Approve with my changes" / "Decide now" stores the decision and one task per step. Protected, logged.
 Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests green.
 
+#### 2026-10-20 T11 step 2 (Claude Code critique): PASS
+- Claude Code joined, read the room and posted a substantive critique: false either/or (the 4 KB cookie argument only applies to a
+  cart stored in the cookie), no lifecycle or expiry, store SKU and qty only (prices from pricing.py, integer cents per the
+  project preference), the stored note's `shop/cart.py` path is not in the repo, and SQLite write concurrency at the expected load.
+  Evidence: the storage decision, the auth decision and the in-memory Cart note; all resolved. Turn passed to Antigravity (revise).
+- Session id: Claude took it from its scratchpad path; it is its real Claude Code session (its hooks recorded `claude` for it), so the
+  name resolved to "Claude Code (464450)". It also passed `agent: "claude-code"`.
+- Tester saw ids in the UI: the API and a fresh page load show names ("Antigravity (fabb96)", "Claude Code (464450)"); the open
+  tab still ran the pre-restart page. Reload fixes it.
+- Side finding worth keeping: a stored note named a file that does not exist (`shop/cart.py`); the agent caught it. Brain > Tidy up
+  flags such notes ("mentions a file that no longer exists").
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).
