@@ -25,7 +25,7 @@ from dashboard import free_port  # noqa: E402
 
 PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/recall", "/safety", "/sync", "/settings", "/memories",
          "/proposals", "/coordination", "/guardrails", "/skills", "/traces", "/replay", "/failures", "/docs",
-         "/constitution", "/graph", "/overview", "/activity", "/rooms"]
+         "/constitution", "/graph", "/overview", "/activity", "/rooms", "/continuity"]
 
 
 def main():

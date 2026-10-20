@@ -1,3 +1,4 @@
+pub mod continuity;
 pub mod control;
 pub mod guardrails;
 pub mod memories;
@@ -27,6 +28,16 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/continuity", get(continuity::api_overview))
+        .route("/api/continuity/search", get(continuity::api_search))
+        .route("/api/continuity/chat", get(continuity::api_chat))
+        .route("/api/continuity/import", post(continuity::api_import))
+        .route("/api/continuity/handoff", post(continuity::api_handoff))
+        .route("/api/continuity/source/:agent", axum::routing::put(continuity::api_source))
+        .route("/api/continuity/history", delete(continuity::api_forget))
+        .route("/api/continuity/items", post(continuity::api_item_add))
+        .route("/api/continuity/items/:id", axum::routing::put(continuity::api_item_edit))
+        .route("/api/continuity/items/:id/:action", post(continuity::api_item_action))
         .route("/api/rooms", get(rooms::api_rooms).post(rooms::api_room_create))
         .route("/api/rooms/:id", get(rooms::api_room))
         .route("/api/rooms/:id/note", post(rooms::api_room_note))
