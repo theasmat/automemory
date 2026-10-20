@@ -440,9 +440,9 @@ mod tests {
         );
         assert!(refused.contains("not your turn"));
 
-        post(54, "a", "propose", "JWT plan");
-        post(55, "b", "critique", "rotation?");
-        let last = post(56, "a", "revise", "JWT plus rotation");
+        post(54, "a", "propose", "JWT plan: sign sessions in an httpOnly cookie");
+        post(55, "b", "critique", "Rotation of signing keys is not covered");
+        let last = post(56, "a", "revise", "JWT plus key rotation every 24 hours");
         assert!(last.contains("decided"));
         assert!(last.contains("decision.record"));
 

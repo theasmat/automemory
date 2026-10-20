@@ -31,19 +31,19 @@ def main():
         def decided_room(topic, revision):
             rid = j(sb.mcp("room.join", session_id="a", agent="claude-code", topic=topic, project_id="app"))["room"]["id"]
             sb.mcp("room.join", session_id="b", agent="antigravity", room_id=rid)
-            for who, kind, body in (("a", "propose", f"{topic}: proposal"), ("b", "critique", f"{topic}: objection"), ("a", "revise", revision)):
+            for who, kind, body in (("a", "propose", f"{topic}: the proposal, with enough detail"), ("b", "critique", f"{topic}: objection, with enough detail"), ("a", "revise", revision)):
                 sb.mcp("room.post", room_id=rid, session_id=who, kind=kind, body=body, evidence=[ev])
             return rid
 
         out = sb.run("room", "list").stdout
         rep.check("No planning rooms yet" in out, "an empty list says how to start", out)
         r1 = decided_room("pagination", "Use keyset pagination\n- Add the cursor column\n- Update the list endpoint\n1. Write the tests")
-        r2 = decided_room("logging", "Structured JSON logs\n- Add the logger")
-        r3 = decided_room("naming", "Rename the module\n- Rename it")
+        r2 = decided_room("logging", "Structured JSON logs for every service\n- Add the logger")
+        r3 = decided_room("naming", "Rename the module to something clear\n- Rename it")
         lst = sb.run("room", "list").stdout
         rep.check(lst.count("WAITING FOR YOUR VERDICT") == 3 and r1 in lst, "list shows all three waiting for a verdict", lst)
         show = sb.run("room", "show", r1).stdout
-        rep.check("pagination: objection" in show and "task: Add the cursor column" in show and "task: Write the tests" in show, "show prints the discussion and the tasks approval would create", show[-400:])
+        rep.check("pagination: objection, with enough detail" in show and "task: Add the cursor column" in show and "task: Write the tests" in show, "show prints the discussion and the tasks approval would create", show[-400:])
         rep.check(sb.run("room", "show", "room-missing").returncode != 0, "show of an unknown room fails")
 
         # Once a human password exists, every verdict is refused without it and nothing changes. (Before one is set the CLI

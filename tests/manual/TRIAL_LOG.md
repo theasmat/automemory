@@ -158,6 +158,16 @@ Pass when the checker prints PASS: T11b, and neither agent asked you for a room 
   (verified on a copy of the database: with the turn open, the agy PreInvocation hook injects the room line). Its hook line will come on
   its next step.
 
+#### 2026-10-20 T11b repeat with a new room ("Order cancellation"): in progress, two findings
+- A new room with a real question, scope and constraints; Claude proposed (webhook-driven refund, idempotent stock restore); you added
+  a note ("prefer store credit"). Antigravity then posted a **critique whose whole body was "test"** (with evidence attached). A room has
+  one round, so that spent Antigravity's only turn on a placeholder. Fix: a post must be at least 25 characters (propose, critique,
+  revise); a short post is refused with a clear message and does not spend the turn (unit test + scenario).
+- The checker crashed with an IndexError while the room was still running. Fixed: it now says which turn the room waits for and exits
+  2 until the room is decided.
+- For this live room: add a note naming the risks (double refund, replayed webhooks, stock) and let Claude revise, or press Another
+  round after it is decided so Antigravity can critique properly.
+
 #### 2026-10-20 T11b steps 4-5: PASS (`t11b_check.py` prints PASS: T11b)
 - Both agents were told by their hooks at their own turns (`room_told` keys: Claude at open and at revise, Antigravity at critique) and
   took them with a narrow prompt ("only planning rooms"). Order proposal -> your note -> critique -> revision; room decided.

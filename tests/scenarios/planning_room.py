@@ -42,13 +42,13 @@ def main():
         j(sb.mcp("room.join", session_id="agent-b", room_id=rid))
         post = lambda who, kind, body, evidence=None: sb.mcp("room.post", room_id=rid, session_id=who, kind=kind, body=body, evidence=[ev] if evidence is None else evidence)
 
-        r = post("agent-b", "propose", "I go first")
+        r = post("agent-b", "propose", "I go first (with enough detail to count)")
         rep.check("refused" in json.dumps(r).lower(), "the wrong agent cannot post out of turn", json.dumps(r)[:140])
-        r = post("agent-a", "propose", "no evidence", evidence=[])
+        r = post("agent-a", "propose", "no evidence (with enough detail to count)", evidence=[])
         rep.check("refused" in json.dumps(r).lower(), "a proposal without evidence is refused", json.dumps(r)[:140])
-        r = post("agent-a", "propose", "fake", evidence=["does-not-exist"])
+        r = post("agent-a", "propose", "fake (with enough detail to count)", evidence=["does-not-exist"])
         rep.check("refused" in json.dumps(r).lower(), "evidence that does not resolve is refused", json.dumps(r)[:140])
-        post("agent-a", "propose", "Use server sessions")
+        post("agent-a", "propose", "Use server sessions (with enough detail to count)")
         post("agent-b", "critique", "Sessions need sticky routing, we have none")
         done = j(post("agent-a", "revise", "Use JWT in an HttpOnly cookie\n1. Add the token table\n2. Write the login route\n3. Add rotation tests"))
         rep.check(done["room"]["state"] == "decided", "after one round the room is decided", json.dumps(done)[:160])
@@ -102,8 +102,8 @@ def main():
 
         # A lone proposer does not keep the turn; the human can note and decide at any stage; agents show by name.
         r3 = j(sb.mcp("room.join", session_id="agent-x", agent="claude-code", topic="cart storage", project_id="app"))["room"]["id"]
-        sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="propose", body="Keep carts in SQLite", evidence=[ev])
-        r = sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="critique", body="self", evidence=[ev])
+        sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="propose", body="Keep carts in SQLite (with enough detail to count)", evidence=[ev])
+        r = sb.mcp("room.post", room_id=r3, session_id="agent-x", kind="critique", body="self (with enough detail to count)", evidence=[ev])
         rep.check("another agent" in json.dumps(r), "an agent cannot critique its own proposal", json.dumps(r)[:140])
         joined = j(sb.mcp("room.join", session_id="agent-y", agent="antigravity", room_id=r3))["room"]
         rep.check(joined["turn_holder"] == "agent-y", "the next agent to join gets the turn", json.dumps(joined)[:140])
@@ -117,7 +117,7 @@ def main():
         rep.check(d3["labels"]["agent-y"].startswith("Antigravity") and d3["labels"]["human"] == "You", "the dashboard gets names, not session ids", json.dumps(d3["labels"]))
         code, body = http(port, f"/api/rooms/{r3}/decide", "POST", PW, {"decision": "Store carts in SQLite", "steps": ["Add cart table", "Migrate cookie carts"]})
         rep.check(code == 200 and len(json.loads(body)["outcome"]["task_ids"]) == 2, "you can decide mid-discussion; steps become tasks", f"{code} {body[:120]}")
-        r = sb.mcp("room.post", room_id=r3, session_id="agent-y", kind="critique", body="late", evidence=[ev])
+        r = sb.mcp("room.post", room_id=r3, session_id="agent-y", kind="critique", body="late (with enough detail to count)", evidence=[ev])
         rep.check("decided" in json.dumps(r), "after your decision the agents cannot post", json.dumps(r)[:120])
 
         # R1: you start a room in the dashboard; invited agents learn about it from their prompt hook, once per turn.
@@ -134,7 +134,7 @@ def main():
         rep.check("checkout retries" not in hook_ctx("codex", "cx-1"), "an agent that was not invited is not told")
         joined = j(sb.mcp("room.join", session_id="cl-1", agent="claude-code", room_id=r4))
         rep.check(joined["room"]["turn_holder"] == "cl-1" and joined["brief"]["constraints"] == ["No new services"], "joining gives the turn and the brief", json.dumps(joined)[:200])
-        sb.mcp("room.post", room_id=r4, session_id="cl-1", kind="propose", body="Retry once after 5 s", evidence=[ev])
+        sb.mcp("room.post", room_id=r4, session_id="cl-1", kind="propose", body="Retry once after 5 s (with enough detail to count)", evidence=[ev])
         agy = hook_ctx("agy", "ag-1")
         rep.check("checkout retries" in agy and "critique" in agy, "the other invited agent is told it is its turn to critique", agy[:240])
 
@@ -142,7 +142,7 @@ def main():
         r2 = j(sb.mcp("room.join", session_id="agent-a", topic="cache", project_id="app"))["room"]["id"]
         j(sb.mcp("room.join", session_id="agent-b", room_id=r2))
         for who, kind in (("agent-a", "propose"), ("agent-b", "critique"), ("agent-a", "revise")):
-            sb.mcp("room.post", room_id=r2, session_id=who, kind=kind, body=f"{kind} - one step", evidence=[ev])
+            sb.mcp("room.post", room_id=r2, session_id=who, kind=kind, body=f"{kind} - one step, written with enough detail", evidence=[ev])
         code, body = http(port, f"/api/rooms/{r2}/another-round", "POST", PW, {})
         room2 = json.loads(body).get("room", {})
         rep.check(code == 200 and room2.get("state") == "critique" and room2.get("turn_holder") == "agent-b", "another round hands the critique to the other agent", f"{code} {body[:140]}")

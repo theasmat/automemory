@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 /// Rationale stays short: stored posts are capped, never raw reasoning.
 pub const ROOM_BODY_BUDGET: usize = 2000;
+/// A turn is spent once (one round per room), so a post must say something: "test" or "lgtm" is refused.
+pub const ROOM_BODY_MIN: usize = 25;
 
 impl Database {
     pub fn create_room(
@@ -154,6 +156,9 @@ impl Database {
             author_session,
             evidence.is_empty(),
         )?;
+        if body.trim().chars().count() < ROOM_BODY_MIN {
+            return Err(anyhow!("a post needs at least {ROOM_BODY_MIN} characters: state your {kind} and the reason, not a placeholder"));
+        }
         let previous = self.room_posts(room_id)?.into_iter().rev().find(|p| p.kind != PostKind::Note);
         if kind == PostKind::Critique && previous.as_ref().is_some_and(|p| p.author_session == author_session) {
             return Err(anyhow!("a critique must come from another agent: wait for one to join"));
@@ -651,7 +656,7 @@ mod tests {
                 &room.id,
                 "sess-b",
                 PostKind::Propose,
-                "x",
+                "x - padded so it passes the minimum length",
                 std::slice::from_ref(&ev)
             )
             .is_err());
@@ -660,7 +665,7 @@ mod tests {
                 &room.id,
                 "sess-a",
                 PostKind::Critique,
-                "x",
+                "x - padded so it passes the minimum length",
                 std::slice::from_ref(&ev)
             )
             .is_err());
@@ -670,20 +675,20 @@ mod tests {
                 &room.id,
                 "sess-a",
                 PostKind::Propose,
-                "x",
+                "x - padded so it passes the minimum length",
                 &["missing".to_string()]
             )
             .is_err());
         // Propose without evidence is refused.
         assert!(db
-            .post_to_room(&room.id, "sess-a", PostKind::Propose, "x", &[])
+            .post_to_room(&room.id, "sess-a", PostKind::Propose, "x - padded so it passes the minimum length", &[])
             .is_err());
 
         db.post_to_room(
             &room.id,
             "sess-a",
             PostKind::Propose,
-            "JWT plan",
+            "JWT plan - padded so it passes the minimum length",
             std::slice::from_ref(&ev),
         )
         .unwrap();
@@ -695,7 +700,7 @@ mod tests {
             &room.id,
             "sess-b",
             PostKind::Critique,
-            "rotation?",
+            "rotation? - padded so it passes the minimum length",
             std::slice::from_ref(&ev),
         )
         .unwrap();
@@ -707,7 +712,7 @@ mod tests {
             &room.id,
             "sess-a",
             PostKind::Revise,
-            "JWT + rotation",
+            "JWT + rotation - padded so it passes the minimum length",
             &[ev],
         )
         .unwrap();
@@ -717,7 +722,7 @@ mod tests {
 
         // Decided rooms reject posts and joins.
         assert!(db
-            .post_to_room(&room.id, "sess-b", PostKind::Critique, "late", &[])
+            .post_to_room(&room.id, "sess-b", PostKind::Critique, "late - padded so it passes the minimum length", &[])
             .is_err());
         assert!(db.join_room(&room.id, "sess-c").is_err());
         assert_eq!(db.room_posts(&room.id).unwrap().len(), 3);
@@ -726,9 +731,9 @@ mod tests {
     fn decided_room(db: &Database, ev: &str, revise: &str) -> String {
         let room = db.create_room(None, "auth strategy", "sess-a").unwrap();
         db.join_room(&room.id, "sess-b").unwrap();
-        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "Use sessions", &[ev.to_string()]).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "Use sessions - padded so it passes the minimum length", &[ev.to_string()]).unwrap();
         db.post_to_room(&room.id, "sess-b", PostKind::Critique, "Sessions need sticky routing", &[ev.to_string()]).unwrap();
-        db.post_to_room(&room.id, "sess-a", PostKind::Revise, revise, &[ev.to_string()]).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Revise, &format!("{revise}\n(agreed by both agents in this room)"), &[ev.to_string()]).unwrap();
         room.id
     }
 
@@ -773,8 +778,8 @@ mod tests {
         let room = db.another_round(&r2).unwrap();
         assert_eq!(room.state, RoomState::Critique);
         assert_eq!(room.turn_holder.as_deref(), Some("sess-b"), "the other agent critiques the revision");
-        db.post_to_room(&r2, "sess-b", PostKind::Critique, "Still unclear", &[ev.clone()]).unwrap();
-        db.post_to_room(&r2, "sess-a", PostKind::Revise, "Plan B2\n- two\n- three", &[ev]).unwrap();
+        db.post_to_room(&r2, "sess-b", PostKind::Critique, "Still unclear - padded so it passes the minimum length", &[ev.clone()]).unwrap();
+        db.post_to_room(&r2, "sess-a", PostKind::Revise, "Plan B2\n- two\n- three - padded so it passes the minimum length", &[ev]).unwrap();
         assert_eq!(db.room_plan(&r2).unwrap().tasks.len(), 2, "the latest revision is the plan");
     }
 
@@ -789,7 +794,7 @@ mod tests {
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0].id, r1.id);
 
-        db.post_to_room(&r2.id, "sess-b", PostKind::Propose, "p", &[ev])
+        db.post_to_room(&r2.id, "sess-b", PostKind::Propose, "p - padded so it passes the minimum length", &[ev])
             .unwrap();
         // r2 now waits on sess-b itself (solo rotation); sess-a sees only r1.
         // Alone after its proposal, sess-b does not keep the turn: r2 is open to whoever joins, so sess-a sees both.
@@ -802,12 +807,12 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let ev = seed_memory(&db);
         let room = db.create_room(None, "cart", "sess-a").unwrap();
-        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         assert_eq!(db.get_room(&room.id).unwrap().unwrap().turn_holder, None);
-        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Critique, "self", std::slice::from_ref(&ev)).is_err());
+        assert!(db.post_to_room(&room.id, "sess-a", PostKind::Critique, "self - padded so it passes the minimum length", std::slice::from_ref(&ev)).is_err());
         let r = db.join_room(&room.id, "sess-b").unwrap().unwrap();
         assert_eq!(r.turn_holder.as_deref(), Some("sess-b"));
-        db.post_to_room(&room.id, "sess-b", PostKind::Critique, "cookie is enough", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(&room.id, "sess-b", PostKind::Critique, "cookie is enough - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         assert_eq!(db.get_room(&room.id).unwrap().unwrap().turn_holder.as_deref(), Some("sess-a"));
     }
 
@@ -816,7 +821,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let ev = seed_memory(&db);
         let room = db.create_room(None, "cart", "sess-a").unwrap();
-        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", &[ev]).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db - padded so it passes the minimum length", &[ev]).unwrap();
         // Rooms made by the old rotation kept the turn on the proposer.
         db.conn().execute("UPDATE rooms SET turn_holder = 'sess-a' WHERE id = ?1", [&room.id]).unwrap();
         assert_eq!(db.join_room(&room.id, "sess-b").unwrap().unwrap().turn_holder.as_deref(), Some("sess-b"));
@@ -839,15 +844,30 @@ mod tests {
 
 
         db.join_room(&room.id, "c1").unwrap();
-        db.post_to_room(&room.id, "c1", PostKind::Propose, "SQLite", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(&room.id, "c1", PostKind::Propose, "SQLite - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         assert!(db.room_lines_for(None, "c1", "claude").is_empty(), "the proposer is not asked to critique itself");
         let agy = db.room_lines_for(None, "g1", "agy");
         assert!(agy.len() == 1 && agy[0].contains("critique"), "{agy:?}");
         db.join_room(&room.id, "g1").unwrap();
-        db.post_to_room(&room.id, "g1", PostKind::Critique, "expiry?", std::slice::from_ref(&ev)).unwrap();
+        db.post_to_room(&room.id, "g1", PostKind::Critique, "expiry? - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         assert!(db.room_lines_for(None, "c1", "claude")[0].contains("revision"), "the proposer is told to revise");
         db.post_to_room(&room.id, "c1", PostKind::Revise, "SQLite with expiry\n- add table", &[ev.clone()]).unwrap();
         assert!(db.room_lines_for(None, "g1", "agy").is_empty() && db.room_plan(&room.id).unwrap().evidence.contains(&ev));
+    }
+
+    #[test]
+    fn a_placeholder_post_is_refused_and_does_not_spend_the_turn() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let room = db.create_room(None, "cart", "sess-a").unwrap();
+        db.join_room(&room.id, "sess-b").unwrap();
+        for junk in ["test", "ok", "lgtm", "   ", "looks fine to me"] {
+            let e = db.post_to_room(&room.id, "sess-a", PostKind::Propose, junk, std::slice::from_ref(&ev)).unwrap_err().to_string();
+            assert!(e.contains("at least"), "{junk:?}: {e}");
+        }
+        let r = db.get_room(&room.id).unwrap().unwrap();
+        assert_eq!((r.state, r.turn_holder.as_deref()), (RoomState::Open, Some("sess-a")), "the turn is still the proposer's");
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "Keep carts in SQLite, keyed by the cart cookie", &[ev]).unwrap();
     }
 
     #[test]
@@ -867,7 +887,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let ev = seed_memory(&db);
         let room = db.create_room(None, "cart", "sess-a").unwrap();
-        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db", &[ev]).unwrap();
+        db.post_to_room(&room.id, "sess-a", PostKind::Propose, "db - padded so it passes the minimum length", &[ev]).unwrap();
         let note = db.add_room_note(&room.id, "It must survive a login").unwrap();
         assert_eq!(note.kind, PostKind::Note);
         assert_eq!(db.get_room(&room.id).unwrap().unwrap().state, RoomState::Critique, "a note changes no state");
@@ -930,13 +950,13 @@ mod tests {
                 &room.id,
                 "sess-b",
                 PostKind::Critique,
-                "lgtm",
+                "lgtm - padded so it passes the minimum length",
                 &[ev],
             )
             .unwrap();
         assert_eq!(post.kind, PostKind::Critique);
         assert!(db
-            .post_to_room_with(&ReviewOnly, &room.id, "sess-b", PostKind::Propose, "x", &[])
+            .post_to_room_with(&ReviewOnly, &room.id, "sess-b", PostKind::Propose, "x - padded so it passes the minimum length", &[])
             .is_err());
     }
 }

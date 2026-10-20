@@ -38,6 +38,10 @@ for k, a, body, ev in posts:
     print(f"   {k:8} by {agents_of.get(a, '?'):7} ({a[:8]}): {body.splitlines()[0][:70] if body else ''}")
 
 kinds = [p[0] for p in posts if p[0] != "note"]
+if state != "decided":
+    waiting = {"open": "a proposal", "critique": "a critique", "revise": "a revision"}.get(state, state)
+    print(f"\nNot finished: the room is in '{state}' and waits for {waiting}. Run the agent steps, then run this again.")
+    sys.exit(2)
 check(len(meta["invited"]) >= 2, "the room was started in the dashboard with two invited agents (the question is optional)", json.dumps(meta)[:120])
 told = conn.execute("select key from sync_kv where key like ?", (f"room_told:%:{rid}:%",)).fetchall()
 told_sessions = {k[0].split(":")[1] for k in told}

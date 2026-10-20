@@ -96,18 +96,21 @@ def main():
         r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="note", body="I am the human", evidence=[ev])
         rep.check("human" in json.dumps(r).lower() and "refused" in json.dumps(r).lower(), "an agent cannot post a human note", json.dumps(r)[:140])
         sb.mcp("room.join", session_id="c-1", agent="claude-code", room_id=rid)
-        r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU", evidence=[])
+        r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU (with enough detail to count)", evidence=[])
         rep.check("refused" in json.dumps(r).lower(), "a proposal still needs evidence", json.dumps(r)[:120])
-        r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU", evidence=[f"note-{rid}"])
+        r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU (with enough detail to count)", evidence=[f"note-{rid}"])
         rep.check("refused" in json.dumps(r).lower(), "a note id cannot be used as evidence", json.dumps(r)[:120])
-        sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU", evidence=[ev])
+        for junk in ("test", "lgtm", "looks fine to me"):
+            r = sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body=junk, evidence=[ev])
+            rep.check("at least" in json.dumps(r), f"a placeholder post ({junk!r}) is refused", json.dumps(r)[:140])
+        sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU (with enough detail to count)", evidence=[ev])
 
         # ── A posting race: two agents answer the same turn at once; exactly one wins ──
         sb.mcp("room.join", session_id="a-1", agent="antigravity", room_id=rid)
         results = []
 
         def critique(sid):
-            results.append(json.dumps(sb.mcp("room.post", room_id=rid, session_id=sid, kind="critique", body=f"critique by {sid}", evidence=[ev])))
+            results.append(json.dumps(sb.mcp("room.post", room_id=rid, session_id=sid, kind="critique", body=f"critique by {sid}, with enough detail to count", evidence=[ev])))
 
         sb.mcp("room.join", session_id="a-2", agent="antigravity", room_id=rid)
         threads = [threading.Thread(target=critique, args=(sid,)) for sid in ("a-1", "a-2")]

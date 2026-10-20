@@ -40,7 +40,7 @@ def main():
     ev = ev.get("id") or ev.get("memory", {}).get("id")
     rid = sb.mcp("room.join", session_id="agent-a", topic="auth strategy", project_id="app")["room"]["id"]
     sb.mcp("room.join", session_id="agent-b", room_id=rid)
-    for who, kind, body in (("agent-a", "propose", "Server sessions"), ("agent-b", "critique", "Needs sticky routing"),
+    for who, kind, body in (("agent-a", "propose", "Server sessions (with enough detail to count)"), ("agent-b", "critique", "Needs sticky routing (with enough detail to count)"),
                             ("agent-a", "revise", "Use JWT in a cookie\n- Add token table\n- Write login route")):
         sb.mcp("room.post", room_id=rid, session_id=who, kind=kind, body=body, evidence=[ev])
     # The password prompt only appears once a human password exists.
