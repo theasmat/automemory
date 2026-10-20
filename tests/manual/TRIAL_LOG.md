@@ -110,6 +110,16 @@ Covered by unit tests and `tests/scenarios/planning_room.py`; 245 Rust tests gre
   Fixed: the reminder is given once per piece of owed work; later Stops are let through and the claim stays. Covered in
   `planning_room.py`; installed.
 
+#### 2026-10-20 T11b attempt 1: room not created; the plan's tasks were carried out instead
+- No room was started in the dashboard (no `room_meta`, no "start a planning room" audit row), so there was nothing for the hook to
+  announce. The New room dialog works on the trial daemon (two agents listed, Create enabled; checked in a browser).
+- Asked "is anything waiting for you? If so, handle it", the **old** Antigravity session (fabb96, still holding task 1) found the four
+  tasks from the cart room through `task.next` and **implemented all of them**: `cart_items` table with 30-day cleanup, cart id from
+  the guest or JWT cookie, SKU+qty only with integer-cent totals, WAL connection; `tests/test_cart.py`; 18 tests pass; each task
+  `task.submit`ted, then `baton.pass`. So room → decision → tasks → implementation → submit works end to end.
+- Note for users: a neutral "handle what is waiting" prompt is enough for an agent to start coding claimed tasks. The trial folder
+  now has these uncommitted changes (shop/*.py, tests/test_cart.py).
+
 ### T0 Baseline
 Goal: prove the machine is clean and registration is local only.
 Steps: see the case message in the chat (commands to run and paste).
