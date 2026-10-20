@@ -27,7 +27,7 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T9 | Human password gate | PASS | 2026-10-19 |
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 | T11 | Planning room: two real agents agree a plan, the human approves it | PASS (3 fixes) | 2026-10-20 |
-| T11b | Room started in the dashboard; invited agents find it with no id pasted | PENDING | |
+| T11b | Room started in the dashboard; invited agents find it with no id pasted | PASS | 2026-10-20 |
 
 ## Test cases
 
@@ -156,7 +156,16 @@ Pass when the checker prints PASS: T11b, and neither agent asked you for a room 
 - Why Antigravity was not told by its hook: when its session started (14:51) Claude had already joined, so the turn was Claude's;
   Antigravity's turn only came after Claude's proposal (15:03), after its session had stopped. Correct per the protocol, not a bug
   (verified on a copy of the database: with the turn open, the agy PreInvocation hook injects the room line). Its hook line will come on
-  its next step. The checker is read-only; it was verified on a
+  its next step.
+
+#### 2026-10-20 T11b steps 4-5: PASS (`t11b_check.py` prints PASS: T11b)
+- Both agents were told by their hooks at their own turns (`room_told` keys: Claude at open and at revise, Antigravity at critique) and
+  took them with a narrow prompt ("only planning rooms"). Order proposal -> your note -> critique -> revision; room decided.
+- **Your note steered the room**: after "plain Python, no web framework, decide storage not an HTTP API", Claude dropped the
+  `/api/carts` design and revised to cookie-keyed `cart_items` with checkout atomicity steps. First real test that agents follow a note.
+- Antigravity's critique checked the repo (cart.py exists on main) and raised enumeration risk of path ids and the missing order
+  creation at checkout. Claude's revision did not verify `shop/cart.py` itself (it said so).
+- Open: the verdict on this room is yours (Approve / Another round / Reject). The checker is read-only; it was verified on a
 simulated run in a sandbox database.
 
 ### T0 Baseline
