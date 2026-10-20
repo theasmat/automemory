@@ -35,6 +35,9 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Backup and restore | `python3 tests/scenarios/backup.py` | create, list, restore with `--yes`, old DB kept, damaged file refused, doctor warns about unreadable copies |
 | Hook fuzz | `python3 tests/scenarios/hook_fuzz.py` | Garbage JSON into the real hook: always exit 0 and one JSON object; a command nested 60000 deep is denied (`HOOK_FUZZ_N=2000` harder) |
 | Native embedding adapters | `python3 tests/scenarios/embeddings_native.py` | Cohere, Voyage and Gemini profiles reindex through a mock server speaking each API's shape |
+| Planning room edge cases | `python3 tests/scenarios/room_edges.py` | Input limits, how Claude and Antigravity are told about a room (and only once), project scoping, MCP rules for agents, a posting race, restart persistence, hook cost with 60+ rooms |
+| Room CLI | `python3 tests/scenarios/room_cli.py` | list/show/approve/reject/again, each verdict behind the password, results match the preview |
+| Guideline refresh | `python3 tests/scenarios/guidelines_refresh.py` | `connect` updates an AutoMemory-written CLAUDE.md, keeps the memory block, never touches the user's own file |
 | Planning room | `python3 tests/scenarios/planning_room.py` | Two simulated agents + human: turn and evidence rules, no self-approval, approve stores one decision + a task per step, another round, task claimed by a third agent |
 | Dashboard API | `python3 tests/scenarios/dashboard.py` | UI is served, live leases appear, foreign Origin / rebinding Host are rejected, password required for decisions |
 | Onboarding checklist | `python3 tests/scenarios/onboarding.py` | `automemory next` step progression, doctor checklist, /api/setup and /api/onboarding REST APIs |
