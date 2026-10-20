@@ -139,6 +139,19 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] R6 Room types, roles (chair/member/observer), versioned draft editable by the chair, `room.amend`, deep link by id, opt-in delegated approval
 - [ ] R7 Chat-style ownership: edit/delete own posts (history, placeholder), reply, @mention via hook, agree/object, seen/unread; others' posts untouchable (chair collapses, human deletes with password)
 
+## What to add next (plan: PLAN §15)
+
+- [ ] X1 Skills/traces write path: update in place, dedupe, `memory prune` for the 6,794 duplicate skills (backup first)
+- [ ] X2 MCP 2026-07-28 compatibility (stateless requests, `resultType`), old handshake kept
+- [ ] X3 Value proof: eval off vs on on 10 real tasks, published medians
+- [ ] X4 `automemory worktree` helper wired to tasks and overlap checks
+- [ ] X5 SKILL.md export of verified knowledge for every agent
+- [ ] X6 `valid_from` / `invalid_at` and a "what changed" view
+- [ ] X7 Banner/`connect` hint when an agent runs an old MCP server
+- [ ] X8 Guidelines: do only what was asked (no commits, baton or failure housekeeping unasked)
+- [ ] X9 Hook adapters for Cursor, Windsurf, Gemini CLI, Copilot from recorded payloads
+- [ ] X10 Rooms R2/R3 only if X3 shows value
+
 ## Docs hygiene
 
 - [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (60 MCP tools, 249 Rust tests at last check)
