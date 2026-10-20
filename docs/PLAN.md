@@ -402,6 +402,7 @@ and hides who decided what.
 | R3 | Task fields (order, owner, files, check) via a migration; room page task list with live state; claiming a task locks its files; Revise → follow-up room that supersedes on approval; cancel/rename task | Superseding leaves one active decision and no orphan open tasks; a claimed task's files show as locked |
 | R4 | Rounds 1–3, multi-critic order, turn timeout + skip/end; WebSocket room events | A three-agent, two-round room finishes; a timed-out turn shows on Home |
 | R5 | Markdown decision record export, value-report counts, the A/B on R1–R3 | A/B result recorded in FEATURES; drop or keep R4 based on it |
+| R6 | Room types (decision, plan, review, incident, retro), roles (chair, member, observer), versioned draft agents can edit, amendments, deep link by id, opt-in delegated approval by the chair for chosen types | Stored decisions change only through Revise; delegation off by default and never for superseding or pinned decisions |
 
-Order: R1 and R2 first (they remove the copy-paste and give the human real control), then R3; R4 only if the A/B shows
+Order: R1 and R2 first (they remove the copy-paste and give the human real control), then R3 and R6; R4 only if the A/B shows
 rooms beat one agent plus tests.

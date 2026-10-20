@@ -191,7 +191,67 @@ In the boot and prompt hooks (`commands/hook.rs`, where `additionalContext` is b
 - **Trust**: human notes could be mistaken for evidence. They are stored as `note`, shown as human, and rejected as
   evidence ids.
 
+## 11. Room types, roles and a chair (R6)
+
+### 11.1 Find a room and know what it is for
+- **By id, everywhere**: `room.status <id>` (MCP, exists), `automemory room show <id>` (exists), and a deep link
+  `/rooms?id=<id>` that the CLI prints and the hook line includes, so you can click from a terminal or chat.
+- **A purpose on every room** (`type`), shown as a badge and returned by `room.status`, `room.pending` and the hook line:
+
+| Type | For | Output on approval | Default rounds |
+|---|---|---|---|
+| `decision` | Choose between options (storage, auth, library) | one decision (+ steps if listed) | 1 |
+| `plan` | Split a feature into ordered tasks with owners | tasks (+ a decision only if the plan states one) | 1 |
+| `review` | Agents review a change or a design doc before you merge | a verdict note on the change; no tasks | 1 |
+| `incident` | Something broke: cause, fix, how to avoid it | a failure record + fix tasks + a "gotcha" note | 1 |
+| `retro` | What went wrong or right in a finished piece of work | lessons as candidate notes (Inbox) | 1 |
+
+  The type fixes what a proposal must contain (a short template the agents are shown) and what approving stores. One
+  generic room engine; types are data (`room_types` in code), not separate state machines.
+
+### 11.2 Roles
+| Role | Can | Cannot |
+|---|---|---|
+| **Chair** (one agent, optional) | Open the room, keep it on topic, write and edit the **draft plan** (`room.draft`), summarise after each round, ask a member for input, propose "ready for verdict" | Approve by default; post a critique of its own draft |
+| **Member** | Post in turn (propose, critique, revise), suggest an **amendment** to the draft (`room.amend`, one step or the decision line) | Edit the draft directly |
+| **Observer** (agent or person) | Read everything, get the final plan in context when it is approved | Post |
+| **Human** (you) | Everything above, notes at any time, edit the draft, the verdict | – |
+
+- Agents **can edit the decision text and steps**, but only the draft: every edit is a version (author, time, diff) shown
+  as history on the room page. The decision stored on approval is the latest draft, with the edit history kept.
+- After approval the decision is changed only through **Revise** (a follow-up room that supersedes it). Agents never
+  rewrite a stored decision in place; this keeps "who decided what, when" true.
+
+### 11.3 Can the chair decide? Delegation, off by default
+A chair that approves its own room would let agents create trusted knowledge without you, which AutoMemory exists to
+prevent. So:
+- **Default**: the chair prepares; you approve.
+- **Delegated approval** (opt-in per project, Protected setting): for room types you pick (sensible: `plan`, `retro`), the
+  chair may approve when every member posted, there is no open objection (no critique without a later revision), and the
+  plan touches no pinned decision. Delegated approvals are marked "approved by chair *agent*", go to the Activity page,
+  and can be undone by you for 24 hours (decision archived, unclaimed tasks cancelled).
+- Never delegable: `decision` rooms that supersede an existing decision, anything touching pinned notes, `incident`
+  rooms (they write failure records).
+
+### 11.4 API and data additions
+- `rooms`: `type TEXT DEFAULT 'decision'`, `chair TEXT`, `observers TEXT` (JSON); `room_posts.kind` gains `amend` and
+  `summary`; `room_drafts` table `(room_id, version, author, decision, steps JSON, created_at)` replaces the `sync_kv`
+  draft so history is kept.
+- MCP: `room.join` takes `type`, `role` (`chair|member|observer`); new `room.draft` (chair: write the draft),
+  `room.amend` (member: suggest one change, the chair or you accept it), `room.get` (alias of `room.status` by id, for
+  clarity). `room.pending` also returns rooms where you are chair and a summary or draft is due.
+- REST: `GET /rooms?id=` deep link; `PUT /api/rooms/:id/draft` (you) records a version; `POST /api/settings/rooms`
+  (Protected) for delegation per type.
+- Hook line includes the type and your role: `Planning room "Cart storage" (plan, you chair) needs a draft …`.
+
+### 11.5 Tests for R6
+- A member's `room.draft` is refused; the chair's is versioned; `room.amend` accepted by the chair becomes a new version.
+- Approval stores the latest draft and keeps the history; a stored decision cannot be edited except by Revise.
+- Delegation: refused when off; allowed only for chosen types and only when every rule in 11.3 holds; undo within 24 h
+  archives the decision and cancels unclaimed tasks.
+- Each room type stores exactly its output (review: no tasks; incident: failure record + tasks + gotcha).
+
 ## 10. Order of work
 
-R1 → R2 → R3, then the A/B (R5 part) and only then R4. Each phase ends with its row in §5–§8 green and a short entry in
+R1 → R2 → R3, then the A/B (R5 part); R6 (types, roles, chair) after R2 because the chair edits the draft that R2 introduces; R4 last. Each phase ends with its row in §5–§8 green and a short entry in
 `tests/manual/TRIAL_LOG.md` when a live check applies.

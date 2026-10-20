@@ -136,6 +136,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [ ] R3 Tasks with order/owner/files/check and live state on the room page; claiming locks files; Revise → follow-up room supersedes
 - [ ] R4 1–3 rounds, multi-critic, turn timeout; WebSocket updates (only if the A/B favours rooms)
 - [ ] R5 Decision-record export, value-report counts, Planning Room A/B on R1–R3
+- [ ] R6 Room types, roles (chair/member/observer), versioned draft editable by the chair, `room.amend`, deep link by id, opt-in delegated approval
 
 ## Docs hygiene
 
