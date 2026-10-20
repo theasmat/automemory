@@ -149,6 +149,18 @@ pub fn import_chats(only: Option<&str>) -> Result<()> {
         let rep = import::import_project(&db, r.as_ref(), &home, project.as_deref(), &root)?;
         println!("✓ {}: {} session(s) with new messages, {} new message(s) stored.", r.label(), rep.sessions, rep.new_messages);
     }
+    draft_from_chats(&db, project.as_deref())
+}
+
+/// Proposes unconfirmed brief items from the imported chats (no model; you or the next agent confirm them).
+pub fn draft() -> Result<()> {
+    let (db, project) = open()?;
+    draft_from_chats(&db, project.as_deref())
+}
+
+fn draft_from_chats(db: &automemory_core::db::Database, project: Option<&str>) -> Result<()> {
+    let r = automemory_core::continuity::drafter::draft_project(db, project)?;
+    println!("✓ Drafted {} new brief item(s) from the chats ({} already there, {} skipped because you removed them). They are marked draft: review with `automemory continuity show`, accept with `confirm`.", r.added, r.already_there, r.skipped_removed);
     Ok(())
 }
 

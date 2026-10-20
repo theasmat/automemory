@@ -2,6 +2,7 @@
 //! chat archive come in later phases (plan/continuity-plan.md).
 pub mod archive;
 pub mod deliver;
+pub mod drafter;
 pub mod model;
 pub mod readers;
 pub mod store;

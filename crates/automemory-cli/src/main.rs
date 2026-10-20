@@ -1546,6 +1546,7 @@ async fn main() -> Result<()> {
             ContinuityCommands::Enable { agent } => commands::brief::enable(&agent)?,
             ContinuityCommands::Disable { agent } => commands::brief::disable(&agent)?,
             ContinuityCommands::Import { agent } => commands::brief::import_chats(agent.as_deref())?,
+            ContinuityCommands::Draft => commands::brief::draft()?,
             ContinuityCommands::Search { query, agent, limit } => commands::brief::search(&query, agent.as_deref(), limit)?,
             ContinuityCommands::HistoryForget { agent, all } => commands::brief::history_forget(agent.as_deref(), all)?,
         },
@@ -1716,6 +1717,8 @@ enum ContinuityCommands {
     Disable { agent: String },
     /// Import new chat messages of this project from every enabled agent (or one)
     Import { agent: Option<String> },
+    /// Propose unconfirmed brief items (goal, constraints, ruled-out options, decisions, next steps, open questions) from the imported chats
+    Draft,
     /// Search the imported chat history of this project
     Search {
         query: String,

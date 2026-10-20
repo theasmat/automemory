@@ -158,14 +158,14 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] C2 Reader trait + registry + `testkit` contract, Claude Code reader (jsonl, incremental by byte offset, thinking/tool output/side chains never kept), archive with FTS5 (schema v16), importer (secrets and home folder removed, 4000-char clip), `chat.search`/`chat.get`, `automemory continuity sources|enable|disable|import|search|history-forget`; opt-in per agent in `[continuity] read_chats`. Checked on a copy of the real chats: 13 sessions, 234 messages, no secrets found
 - [x] C3 Antigravity reader: conversation databases (protobuf steps decoded by path), workspace match, title from annotations, the agent's own plan files as artifacts, tool-call notes searchable only through chat.get. Checked read-only on your real chats: 9 conversations found, 8 imported (2,082 messages). Format notes in docs/research/antigravity_chat_format.md
 - [x] C4 Dashboard Continuity page (opt-in, import, brief editor, preview, Hand off now)
-- [ ] C5 Deterministic drafter + confirm flow
+- [x] C5 Deterministic drafter + confirm flow
 - [ ] C6 Automatic triggers + manual history sync
 - [ ] C7 Per-agent research and readers (Codex, Gemini CLI, Command Code, Z code, Cursor)
 - [ ] C8 Continuity eval + live trial T12 + optional LLM drafting
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 266 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 268 Rust tests at last check)
 
 ## Later (after v1 passes its gates)
 

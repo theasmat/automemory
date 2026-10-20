@@ -76,6 +76,18 @@ def main():
                 break
             time.sleep(0.25)
         rep.check(next(s for s in o["sources"] if s["id"] == "claude")["messages"] >= 5, "the job imported the chat", json.dumps(o["sources"])[:200])
+        for _ in range(40):  # drafting runs right after the import finishes
+            drafts = [i for i in json.loads(http(port, "/api/continuity")[1])["items"] if "draft" in i["label"]]
+            if any(i["kind"] == "rejected" for i in drafts):
+                break
+            time.sleep(0.25)
+        rep.check(any(i["kind"] == "goal" for i in drafts) and any(i["kind"] == "rejected" and "sticky" in i["text"] for i in drafts),
+                  "the import drafted a goal and a ruled-out option, marked as drafts", json.dumps([(i["kind"], i["text"][:40]) for i in drafts]))
+        code, _ = http(port, f"/api/continuity/items/{drafts[0]['id']}/confirm", "POST", PW, {})
+        after = json.loads(http(port, "/api/continuity")[1])["items"]
+        rep.check(code == 200 and "draft" not in next(i for i in after if i["id"] == drafts[0]["id"])["label"], "confirming a draft makes it confirmed")
+        out = sb.run("continuity", "draft").stdout
+        rep.check("0 new brief item" in out, "drafting again adds nothing", out)
         code, body = http(port, "/api/continuity/search?q=sticky")
         hits = json.loads(body)["hits"]
         rep.check(code == 200 and hits, "search finds the imported chat", body[:160])

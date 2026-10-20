@@ -5,7 +5,7 @@ use super::control::{bad, project_dir_pub, protected};
 use crate::commands::serve::jobs;
 use crate::commands::serve::state::AppState;
 use automemory_core::config::GlobalConfig;
-use automemory_core::continuity::{deliver, import, readers, ItemKind, ItemStatus, NewItem, Origin};
+use automemory_core::continuity::{deliver, drafter, import, readers, ItemKind, ItemStatus, NewItem, Origin};
 use axum::{extract::{Path, Query, State}, http::HeaderMap, response::{IntoResponse, Response}, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -88,6 +88,8 @@ fn import_enabled(state: &AppState, pid: Option<&str>, root: &std::path::Path, o
         let rep = import::import_project(&state.db, r.as_ref(), &home, pid, root).map_err(|e| e.to_string())?;
         out.push(json!({ "agent": a, "label": r.label(), "sessions": rep.sessions, "new_messages": rep.new_messages }));
     }
+    // Unconfirmed drafts from what was just read; a person or the next agent confirms them.
+    drafter::draft_project(&state.db, pid).map_err(|e| e.to_string())?;
     Ok(out)
 }
 
