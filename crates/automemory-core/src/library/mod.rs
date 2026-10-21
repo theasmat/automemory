@@ -6,6 +6,7 @@ pub mod store;
 pub mod tiers;
 
 pub use model::{LibraryFile, NewFile, Origin, PutOutcome};
+pub use store::LibraryRecord;
 
 /// Tokens (4 chars each) the session-start index may use.
 pub const INDEX_TOKENS: usize = 600;

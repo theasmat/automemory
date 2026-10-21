@@ -71,12 +71,54 @@ fn secret_line(content: &str) -> Option<usize> {
     content.lines().position(contains_secrets).map(|i| i + 1)
 }
 
+/// A library file as it travels between computers: no machine-local fields (revision count, summaries), so its fingerprint is the same everywhere.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct LibraryRecord {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub path: String,
+    pub origin: String,
+    pub author: String,
+    pub linked: bool,
+    /// `active` or `removed` (a removal travels like any other change).
+    pub status: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// The same file has the same id on every computer: derived from the project's identity and the path (a random one when the project has no identity).
+fn file_id(project_key: Option<&str>, path: &str) -> String {
+    match project_key {
+        Some(k) => format!("lib-{}", &format!("{:x}", Sha256::digest(format!("{k}\0{path}").as_bytes()))[..24]),
+        None => format!("lib-{}", Uuid::now_v7().simple()),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct LibraryHit {
     pub path: String,
     pub l0: String,
     pub heading: String,
     pub snippet: String,
+}
+
+fn clear_pieces(tx: &rusqlite::Transaction, file_id: &str) -> Result<()> {
+    let old: Vec<i64> = tx.prepare("SELECT id FROM library_chunks WHERE file_id = ?1")?.query_map([file_id], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+    for cid in old {
+        tx.execute("DELETE FROM library_fts WHERE rowid = ?1", [cid])?;
+    }
+    tx.execute("DELETE FROM library_chunks WHERE file_id = ?1", [file_id])?;
+    Ok(())
+}
+
+fn add_pieces(tx: &rusqlite::Transaction, file_id: &str, content: &str) -> Result<()> {
+    for (i, (heading, text)) in tiers::chunks(content).iter().enumerate() {
+        tx.execute("INSERT INTO library_chunks (file_id, seq, heading, text) VALUES (?1, ?2, ?3, ?4)", params![file_id, i as i64, heading, text])?;
+        let cid = tx.last_insert_rowid();
+        tx.execute("INSERT INTO library_fts (rowid, text) VALUES (?1, ?2)", params![cid, format!("{heading}\n{text}")])?;
+    }
+    Ok(())
 }
 
 fn fts_query(q: &str) -> String {
@@ -123,7 +165,7 @@ impl Database {
         let now = Utc::now().to_rfc3339();
         let (l0, l1) = (tiers::l0(&path, &new.content), tiers::l1(&new.content));
         let scope = if new.personal { "personal" } else { "project" };
-        let id = existing.as_ref().map(|e| e.id.clone()).unwrap_or_else(|| format!("lib-{}", Uuid::now_v7().simple()));
+        let id = existing.as_ref().map(|e| e.id.clone()).unwrap_or_else(|| file_id(new.project_id.as_deref().and_then(|p| self.project_key_of(p)).as_deref(), &path));
         let created = existing.as_ref().map(|e| e.created_at.to_rfc3339()).unwrap_or_else(|| now.clone());
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -135,17 +177,8 @@ impl Database {
         tx.execute("INSERT INTO library_revisions (file_id, rev, sha256, content, author, origin, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, rev, sha, new.content, new.author, new.origin.as_str(), now])?;
         tx.execute("DELETE FROM library_revisions WHERE file_id = ?1 AND rev <= ?2", params![id, rev - REVISIONS_KEPT as i64])?;
-        // Search pieces: replace the old ones.
-        let old: Vec<i64> = tx.prepare("SELECT id FROM library_chunks WHERE file_id = ?1")?.query_map([&id], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
-        for cid in old {
-            tx.execute("DELETE FROM library_fts WHERE rowid = ?1", [cid])?;
-        }
-        tx.execute("DELETE FROM library_chunks WHERE file_id = ?1", [&id])?;
-        for (i, (heading, text)) in tiers::chunks(&new.content).iter().enumerate() {
-            tx.execute("INSERT INTO library_chunks (file_id, seq, heading, text) VALUES (?1, ?2, ?3, ?4)", params![id, i as i64, heading, text])?;
-            let cid = tx.last_insert_rowid();
-            tx.execute("INSERT INTO library_fts (rowid, text) VALUES (?1, ?2)", params![cid, format!("{heading}\n{text}")])?;
-        }
+        clear_pieces(&tx, &id)?;
+        add_pieces(&tx, &id, &new.content)?;
         tx.commit()?;
         drop(conn);
         let file = self.library_get(new.project_id.as_deref(), &path)?.expect("just written");
@@ -175,20 +208,65 @@ impl Database {
         Ok(rows.into_iter().filter(|f| prefix.as_ref().is_none_or(|p| f.path.starts_with(p.as_str()))).collect())
     }
 
-    /// Removes a file from the library (its revisions go too).
+    /// Removes a file from the library. The row stays as a removal marker so the removal reaches your other computers (and a pull cannot bring the file back).
     pub fn library_remove(&self, project_id: Option<&str>, path: &str) -> Result<bool> {
         let Some(f) = self.library_get(project_id, path)? else { return Ok(false) };
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let old: Vec<i64> = tx.prepare("SELECT id FROM library_chunks WHERE file_id = ?1")?.query_map([&f.id], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
-        for cid in old {
-            tx.execute("DELETE FROM library_fts WHERE rowid = ?1", [cid])?;
-        }
-        tx.execute("DELETE FROM library_chunks WHERE file_id = ?1", [&f.id])?;
+        clear_pieces(&tx, &f.id)?;
         tx.execute("DELETE FROM library_revisions WHERE file_id = ?1", [&f.id])?;
-        tx.execute("DELETE FROM library_files WHERE id = ?1", [&f.id])?;
+        tx.execute("UPDATE library_files SET status = 'removed', content = '', size = 0, l0 = '', l1 = '', sha256 = '', updated_at = ?2 WHERE id = ?1", params![f.id, Utc::now().to_rfc3339()])?;
         tx.commit()?;
         Ok(true)
+    }
+
+    /// Every file of every project (removal markers included) that may leave this computer: personal files do not.
+    pub fn library_records(&self) -> Result<Vec<LibraryRecord>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id, project_id, path, origin, author, link, status, content, created_at, updated_at FROM library_files WHERE scope != 'personal'")?;
+        let rows = stmt.query_map([], |r| Ok(LibraryRecord {
+            id: r.get(0)?, project_id: r.get(1)?, path: r.get(2)?, origin: r.get(3)?, author: r.get(4)?, linked: r.get::<_, i64>(5)? != 0,
+            status: r.get(6)?, content: r.get(7)?, created_at: when(r.get(8)?), updated_at: when(r.get(9)?),
+        }))?.collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn library_record(&self, id: &str) -> Result<Option<LibraryRecord>> {
+        Ok(self.library_records()?.into_iter().find(|r| r.id == id))
+    }
+
+    /// Stores a record exactly as it arrived (sync): row, a revision when the text changed, search pieces. A removal clears the text.
+    pub fn library_apply(&self, r: &LibraryRecord) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        // Another row of this project may already hold the path (made before ids were shared): the incoming one replaces it.
+        tx.execute("DELETE FROM library_files WHERE project_id IS ?1 AND path = ?2 AND id != ?3", params![r.project_id, r.path, r.id])?;
+        clear_pieces(&tx, &r.id)?;
+        if r.status != "active" {
+            tx.execute("DELETE FROM library_revisions WHERE file_id = ?1", [&r.id])?;
+            tx.execute(
+                &format!("INSERT OR REPLACE INTO library_files ({COLS}, status) VALUES (?1, ?2, ?3, ?4, ?5, 'project', 0, '', '', '', '', ?6, ?7, ?8, 'removed')"),
+                params![r.id, r.project_id, r.path, r.origin, r.author, r.created_at.to_rfc3339(), r.updated_at.to_rfc3339(), r.linked as i64],
+            )?;
+            tx.commit()?;
+            return Ok(());
+        }
+        let sha = format!("{:x}", Sha256::digest(r.content.as_bytes()));
+        let (l0, l1) = (tiers::l0(&r.path, &r.content), tiers::l1(&r.content));
+        tx.execute(
+            &format!("INSERT OR REPLACE INTO library_files ({COLS}, status) VALUES (?1, ?2, ?3, ?4, ?5, 'project', ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'active')"),
+            params![r.id, r.project_id, r.path, r.origin, r.author, r.content.len() as i64, sha, r.content, l0, l1, r.created_at.to_rfc3339(), r.updated_at.to_rfc3339(), r.linked as i64],
+        )?;
+        let last: Option<(i64, String)> = tx.query_row("SELECT rev, sha256 FROM library_revisions WHERE file_id = ?1 ORDER BY rev DESC LIMIT 1", [&r.id], |x| Ok((x.get(0)?, x.get(1)?))).optional()?;
+        if last.as_ref().map(|l| l.1 != sha).unwrap_or(true) {
+            let rev = last.map(|l| l.0).unwrap_or(0) + 1;
+            tx.execute("INSERT INTO library_revisions (file_id, rev, sha256, content, author, origin, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![r.id, rev, sha, r.content, r.author, r.origin, r.updated_at.to_rfc3339()])?;
+            tx.execute("DELETE FROM library_revisions WHERE file_id = ?1 AND rev <= ?2", params![r.id, rev - REVISIONS_KEPT as i64])?;
+        }
+        add_pieces(&tx, &r.id, &r.content)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn library_search(&self, project_id: Option<&str>, query: &str, limit: usize) -> Result<Vec<LibraryHit>> {

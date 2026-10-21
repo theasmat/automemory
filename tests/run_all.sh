@@ -40,6 +40,7 @@ run "continuity dashboard"            python3 tests/scenarios/continuity_dashboa
 run "continuity triggers + history sync" python3 tests/scenarios/continuity_triggers.py
 run "continuity eval (golden chats)"   python3 tests/eval/continuity_eval.py
 run "project library"                  python3 tests/scenarios/library.py
+run "project library sync"             python3 tests/scenarios/library_sync.py
 run "guideline refresh on connect"    python3 tests/scenarios/guidelines_refresh.py
 run "hook recording"                  python3 tests/scenarios/hook_record.py
 run "hook fuzz (garbage in)"          python3 tests/scenarios/hook_fuzz.py

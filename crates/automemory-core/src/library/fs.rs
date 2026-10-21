@@ -39,6 +39,11 @@ fn kv_key(project_id: &str, path: &str) -> String {
     format!("libfs:{project_id}:{path}")
 }
 
+/// Last agreed version of a file kept in place (a separate prefix: copies are cleaned up by the `libfs:` prefix).
+fn kv_link_key(project_id: &str, path: &str) -> String {
+    format!("liblink:{project_id}:{path}")
+}
+
 fn read_text(p: &Path) -> Option<String> {
     let meta = std::fs::metadata(p).ok()?;
     if !meta.is_file() || meta.len() as usize > FILE_MAX {
@@ -138,18 +143,93 @@ fn expand(root: &Path, patterns: &[String]) -> Vec<(String, PathBuf)> {
     out
 }
 
-/// Reads the configured files in place into the library (new or changed ones become revisions).
+fn write_in_place(target: &Path, text: &str) -> Result<()> {
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = target.with_extension(format!("tmp{}", std::process::id()));
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, target)?;
+    Ok(())
+}
+
+fn park_incoming(root: &Path, path: &str, text: &str) -> Result<()> {
+    let target = folder(root).join("_incoming").join(path);
+    write_in_place(&target, text)
+}
+
+/// Files kept in place. New ones named by the config are read into the library; for every file already there the disk, the library and the
+/// last agreed version are compared: a local edit becomes a revision, an edit that arrived from another computer is written to disk, a missing file
+/// is restored, and when both sides changed the disk file is kept and the other version is parked in `_incoming/` with an Inbox item.
 fn link(db: &Database, project_id: &str, root: &Path, patterns: &[String], rep: &mut SyncReport) {
-    {
-        for (rel, p) in expand(root, patterns) {
-            let Some(text) = read_text(&p) else {
-                rep.skipped.push(format!("{rel}: not a text file under {} KB", FILE_MAX / 1024));
-                continue;
-            };
-            match db.library_put(NewFile { project_id: Some(project_id.into()), path: rel.clone(), content: text, origin: Origin::Human, author: "linked".into(), personal: false, allow_secrets: false, linked: true }) {
-                Ok((_, PutOutcome::Unchanged)) => {}
-                Ok(_) => rep.linked += 1,
-                Err(e) => rep.skipped.push(format!("{rel}: {e}")),
+    let put = |rel: &str, text: String| db.library_put(NewFile { project_id: Some(project_id.into()), path: rel.to_string(), content: text, origin: Origin::Human, author: "linked".into(), personal: false, allow_secrets: false, linked: true });
+    for (rel, p) in expand(root, patterns) {
+        if db.library_get(Some(project_id), &rel).ok().flatten().is_some_and(|f| f.linked) {
+            continue; // handled below
+        }
+        let Some(text) = read_text(&p) else {
+            rep.skipped.push(format!("{rel}: not a text file under {} KB", FILE_MAX / 1024));
+            continue;
+        };
+        let h = sha(&text);
+        match put(&rel, text) {
+            Ok(_) => {
+                db.sync_kv_set(&kv_link_key(project_id, &rel), &h);
+                rep.linked += 1;
+            }
+            Err(e) => rep.skipped.push(format!("{rel}: {e}")),
+        }
+    }
+    for f in db.library_list(Some(project_id), None).unwrap_or_default().into_iter().filter(|f| f.linked) {
+        let target = root.join(&f.path);
+        let key = kv_link_key(project_id, &f.path);
+        let last = db.sync_kv_get(&key);
+        match read_text(&target).map(|t| (sha(&t), t)) {
+            None if target.exists() => rep.skipped.push(format!("{}: not a text file under {} KB", f.path, FILE_MAX / 1024)),
+            None if last.is_some() => {
+                // It was here and is gone: a deliberate delete is not undone. It stays in the library (`library rm` removes it everywhere).
+            }
+            None => {
+                // Never on this computer (it arrived from another one): write it where the other computer keeps it.
+                if write_in_place(&target, &f.content).is_ok() {
+                    db.sync_kv_set(&key, &f.sha256);
+                    rep.linked += 1;
+                }
+            }
+            Some((d, _)) if d == f.sha256 => db.sync_kv_set(&key, &d),
+            Some((d, text)) if last.as_deref() == Some(f.sha256.as_str()) => {
+                // Only this disk changed since the last agreement: a new revision.
+                match put(&f.path, text) {
+                    Ok(_) => {
+                        db.sync_kv_set(&key, &d);
+                        rep.linked += 1;
+                    }
+                    Err(e) => rep.skipped.push(format!("{}: {e}", f.path)),
+                }
+            }
+            Some((d, _)) if last.as_deref() == Some(d.as_str()) => {
+                // Only the library changed (it arrived from another computer): update the file.
+                if write_in_place(&target, &f.content).is_ok() {
+                    db.sync_kv_set(&key, &f.sha256);
+                    rep.linked += 1;
+                }
+            }
+            Some((d, text)) => {
+                // Both changed (or never agreed and different): the disk file wins here, the other version is parked.
+                if park_incoming(root, &f.path, &f.content).is_ok() {
+                    let pid = format!("libconf-{}", &sha(&format!("{project_id}{}", f.path))[..16]);
+                    if db.get_proposal_by_id(&pid).ok().flatten().is_none() {
+                        let _ = db.save_proposal(&crate::models::ReviewProposal {
+                            id: pid, project_id: Some(project_id.into()), proposal_type: "sync_conflict".into(), target_id: format!("library:{}", f.path),
+                            description: format!("{} differs between your computers. The file here is kept; the other version is in .automemory/library/_incoming/{}.", f.path, f.path),
+                            suggested_action: "keep_local".into(), status: "pending".into(), created_at: chrono::Utc::now(), decided_at: None,
+                        });
+                    }
+                    rep.skipped.push(format!("{}: differs from the version on another computer; yours kept, theirs in _incoming/", f.path));
+                }
+                if put(&f.path, text).is_ok() {
+                    db.sync_kv_set(&key, &d);
+                }
             }
         }
     }
@@ -204,6 +284,21 @@ fn materialize(db: &Database, project_id: &str, root: &Path, rep: &mut SyncRepor
         if read_text(&target).map(|t| sha(&t)).as_deref() == Some(h.as_str()) {
             let _ = std::fs::remove_file(&target);
             rep.removed += 1;
+        }
+        db.conn().execute("DELETE FROM sync_kv WHERE key = ?1", [&key])?;
+    }
+    // Versions that lost a conflict on a copied file are parked next to the others, never in the file itself.
+    let inc_prefix = format!("libincoming:{project_id}:");
+    let parked: Vec<(String, String)> = {
+        let conn = db.conn();
+        let mut st = conn.prepare("SELECT key, value FROM sync_kv WHERE key LIKE ?1")?;
+        let rows = st.query_map([format!("{inc_prefix}%")], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<Vec<_>, _>>()?;
+        rows
+    };
+    for (key, text) in parked {
+        let rel = key[inc_prefix.len()..].to_string();
+        if park_incoming(root, &rel, &text).is_ok() {
+            rep.skipped.push(format!("{rel}: also changed on another computer; yours kept, theirs in _incoming/"));
         }
         db.conn().execute("DELETE FROM sync_kv WHERE key = ?1", [&key])?;
     }
@@ -380,5 +475,122 @@ mod tests {
         assert!(db.library_get(Some("p"), ".notes/api.md").unwrap().is_some());
         assert!(check(&db, "p", "shop", &root, &cfg).iter().any(|p| p.contains(".notes/api.md") && p.contains("missing")));
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    use crate::sync::deltas::sync_cycle_keyed;
+
+    fn machine(slug_key: &str) -> (Database, PathBuf, PathBuf) {
+        let db = Database::open_in_memory().unwrap();
+        let now = chrono::Utc::now();
+        db.save_project(&crate::models::Project {
+            id: "p".into(), slug: "shop".into(), display_name: "shop".into(), created_at: now, updated_at: now,
+            capture_policy: Default::default(), context_budget: Default::default(), document_config: Default::default(), sync_config: Default::default(),
+        }).unwrap();
+        db.set_project_key("p", slug_key).unwrap();
+        let root = std::env::temp_dir().join(format!("am-libsync-{}-{}", std::process::id(), uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&root).unwrap();
+        let vault = root.join("vault");
+        (db, root, vault)
+    }
+
+    fn add(db: &Database, path: &str, text: &str, personal: bool) {
+        db.library_put(NewFile { project_id: Some("p".into()), path: path.into(), content: text.into(), origin: Origin::Human, author: "human".into(), personal, allow_secrets: false, linked: false }).unwrap();
+    }
+
+    #[test]
+    fn files_travel_removals_travel_personal_files_stay_and_conflicts_keep_both() {
+        let key = [5u8; 32];
+        let k = "git:github.com/me/shop";
+        let (a, root_a, vault) = machine(k);
+        let (b, root_b, _) = machine(k);
+        let cfg = LibrarySettings::default();
+        add(&a, "plans/prd.md", "# PRD\n\nCarts expire after 30 days.\n", false);
+        add(&a, "mine.md", "# Mine\n\nOnly on this computer.\n", true);
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        let r = sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        assert_eq!(r.applied, 1, "only the shared file travelled");
+        assert!(b.library_get(Some("p"), "plans/prd.md").unwrap().is_some() && b.library_get(Some("p"), "mine.md").unwrap().is_none());
+        // It lands in B's folder on B's next sync, and searches there.
+        sync_project(&b, "p", "shop", &root_b, &cfg).unwrap();
+        assert!(folder(&root_b).join("plans/prd.md").exists());
+        assert_eq!(b.library_search(Some("p"), "expire", 3).unwrap().len(), 1);
+        // An edit on B comes back to A without a conflict.
+        add(&b, "plans/prd.md", "# PRD\n\nCarts expire after 90 days.\n", false);
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        let r = sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        assert_eq!((r.applied, r.conflicts), (1, 0));
+        assert!(a.library_get(Some("p"), "plans/prd.md").unwrap().unwrap().content.contains("90 days"));
+        // Both change it: each keeps its own, a conflict is filed, the other version is parked in _incoming.
+        add(&a, "plans/prd.md", "# PRD\n\nA says 10 days.\n", false);
+        add(&b, "plans/prd.md", "# PRD\n\nB says 20 days.\n", false);
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        let r = sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        assert_eq!(r.conflicts, 1, "{r:?}");
+        assert!(b.library_get(Some("p"), "plans/prd.md").unwrap().unwrap().content.contains("B says 20"));
+        sync_project(&b, "p", "shop", &root_b, &cfg).unwrap();
+        assert!(std::fs::read_to_string(folder(&root_b).join("_incoming/plans/prd.md")).unwrap().contains("A says 10"));
+        assert!(b.list_pending_proposals(None).unwrap().iter().any(|p| p.proposal_type == "sync_conflict" && p.description.contains("plans/prd.md")));
+        // A removal reaches the other computer and takes the untouched copy with it.
+        add(&a, "notes.md", "# Notes\n\nShort lived.\n", false);
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        sync_project(&b, "p", "shop", &root_b, &cfg).unwrap();
+        assert!(folder(&root_b).join("notes.md").exists());
+        a.library_remove(Some("p"), "notes.md").unwrap();
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        assert!(b.library_get(Some("p"), "notes.md").unwrap().is_none(), "the removal travelled");
+        assert_eq!(sync_project(&b, "p", "shop", &root_b, &cfg).unwrap().removed, 1);
+        assert!(!folder(&root_b).join("notes.md").exists(), "and took the untouched copy");
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        assert!(b.library_get(Some("p"), "notes.md").unwrap().is_none() && a.library_get(Some("p"), "notes.md").unwrap().is_none(), "later pulls do not bring it back");
+        // Vault holds ciphertext only.
+        for f in std::fs::read_dir(vault.join("deltas")).unwrap().flatten() {
+            let t = std::fs::read(f.path()).unwrap();
+            assert!(!String::from_utf8_lossy(&t).contains("Carts expire") && f.path().extension().unwrap() == "enc");
+        }
+        let _ = std::fs::remove_dir_all(&root_a);
+        let _ = std::fs::remove_dir_all(&root_b);
+    }
+
+    #[test]
+    fn a_file_kept_in_place_arrives_in_place_and_never_overwrites_a_different_local_file() {
+        let key = [6u8; 32];
+        let k = "git:github.com/me/shop";
+        let (a, root_a, vault) = machine(k);
+        let (b, root_b, _) = machine(k);
+        let mut cfg = LibrarySettings::default();
+        cfg.files = vec!["PRD-private.md".into()];
+        cfg.exclude_from_git = false;
+        std::fs::write(root_a.join("PRD-private.md"), "# Private\n\nFrom A.\n").unwrap();
+        sync_project(&a, "p", "shop", &root_a, &cfg).unwrap();
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        // B has no pattern and no file: the file is written where A keeps it.
+        sync_project(&b, "p", "shop", &root_b, &LibrarySettings::default()).unwrap();
+        assert_eq!(std::fs::read_to_string(root_b.join("PRD-private.md")).unwrap(), "# Private\n\nFrom A.\n");
+        // A changes it; B's next sync updates the file (B had not touched it).
+        std::fs::write(root_a.join("PRD-private.md"), "# Private\n\nFrom A, v2.\n").unwrap();
+        sync_project(&a, "p", "shop", &root_a, &cfg).unwrap();
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        sync_project(&b, "p", "shop", &root_b, &LibrarySettings::default()).unwrap();
+        assert!(std::fs::read_to_string(root_b.join("PRD-private.md")).unwrap().contains("v2"));
+        // Both edit: each keeps its own file; the other version is parked.
+        std::fs::write(root_a.join("PRD-private.md"), "# Private\n\nA v3.\n").unwrap();
+        std::fs::write(root_b.join("PRD-private.md"), "# Private\n\nB v3.\n").unwrap();
+        sync_project(&a, "p", "shop", &root_a, &cfg).unwrap();
+        sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
+        sync_cycle_keyed(&b, &vault, Some(&key)).unwrap();
+        let r = sync_project(&b, "p", "shop", &root_b, &LibrarySettings::default()).unwrap();
+        assert!(std::fs::read_to_string(root_b.join("PRD-private.md")).unwrap().contains("B v3"), "the local file was not overwritten: {:?}", r.skipped);
+        assert!(std::fs::read_to_string(folder(&root_b).join("_incoming/PRD-private.md")).unwrap().contains("A v3"));
+        let _ = std::fs::remove_dir_all(&root_a);
+        let _ = std::fs::remove_dir_all(&root_b);
     }
 }

@@ -287,6 +287,9 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
     for i in db.brief_list(None, true)? {
         consider("brief", i.id.clone(), i.updated_at, json_of(&i));
     }
+    for f in db.library_records()? {
+        consider("library", f.id.clone(), f.updated_at, json_of(&f));
+    }
 
     ops.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     Ok(ops)
@@ -407,7 +410,10 @@ fn conflict_proposal(op: &DeltaOp, local_updated: DateTime<Utc>) -> ReviewPropos
         project_id: op.project_id.clone(),
         proposal_type: "sync_conflict".to_string(),
         target_id: format!("{}:{}", op.kind, op.id),
-        description: format!(
+        description: if op.kind == "library" {
+            format!("The library file {} was changed on two computers (this one and device {}). Your version is kept; the other one is saved under .automemory/library/_incoming/. Compare them, keep what you want with `automemory library`.",
+                op.payload.get("path").and_then(|p| p.as_str()).unwrap_or("?"), op.device_id)
+        } else { format!(
             "Concurrent edit of {} {}: local version from {} vs {} version from {} (device {}). Local copy kept; resolve manually, then push.",
             op.kind,
             op.id,
@@ -415,7 +421,7 @@ fn conflict_proposal(op: &DeltaOp, local_updated: DateTime<Utc>) -> ReviewPropos
             op.kind,
             op.updated_at,
             op.device_id
-        ),
+        ) },
         suggested_action: "keep_local".to_string(),
         status: "pending".to_string(),
         created_at: Utc::now(),
@@ -581,6 +587,19 @@ fn apply_op(
             if let (Some(_), Some(author)) = (&applied_now, wire.author.as_ref()) {
                 if *author != person(db) {
                     set_kv(db, &format!("author:{}", op.id), author)?;
+                }
+            }
+            Ok(applied_now)
+        }
+        "library" => {
+            let before = report.conflicts;
+            let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let applied_now = apply_kind!(crate::library::LibraryRecord, library_record, library_apply, updated_at)?;
+            // Both computers changed the same file: ours is kept; theirs is parked so `automemory library sync` can put it in .automemory/library/_incoming/.
+            if report.conflicts > before {
+                if let Some(pid) = &op.project_id {
+                    set_kv(db, &format!("libincoming:{pid}:{path}"), &content)?;
                 }
             }
             Ok(applied_now)
