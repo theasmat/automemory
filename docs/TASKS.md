@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 291 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 296 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -178,7 +178,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Consolidation (PLAN §18; evidence in docs/research/consolidation_audit.md; nothing started)
 
-- [ ] K1 One approve/reject path for Inbox items (fixes approve-all), shared reader helper, one spawn helper, one `clip`, remove 5 redirect pages and the empty `sessions`/`session_notes` tables
+- [x] K1 One approve/reject path for Inbox items (fixes approve-all), shared reader helper, one spawn helper, one `clip`, remove 5 redirect pages (the two empty tables stay: `sessions` is written by the demo data and `session_notes` is a short-lived lock-note buffer, empty between sessions)
 - [ ] K2 `memory.search {scope}`, `memory.list {view}`, baton folded into the brief and resume, rules text generated from the tool list
 - [ ] K3 Skills/traces write-path fix (X1), one Activity page, one Providers screen
 - [ ] K4 Reviews as one-round rooms; drop own `graph.*` tools and the Graph page (codebase-memory-mcp covers symbols)

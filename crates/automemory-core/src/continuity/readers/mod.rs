@@ -10,6 +10,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod command_code;
 pub mod cursor;
+pub mod util;
 #[cfg(test)]
 pub mod testkit;
 

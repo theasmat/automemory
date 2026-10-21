@@ -30,6 +30,7 @@ pub mod retrieval;
 pub mod secrets;
 pub mod setup;
 pub mod sync;
+pub mod text;
 pub mod verify;
 
 pub use baton::{build_packet, pass_baton, BATON_CHAR_BUDGET};

@@ -507,13 +507,12 @@ Code symbols are left to the external `codebase-memory-mcp` (already registered 
 | MCP tools | 68 | 51: minus `memory.ask` (alias of recall), `memory.context/topics/digest/constitution/skills` (views of `memory.list`), `chat.search`, `library.search` (scopes of `memory.search`), `baton.pass/pickup`, `review.submit/next/post`, `graph.index/query/neighbors/impact` |
 | Dashboard pages | 25 | 12: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
 | CLI | `doc`, `baton`, `pass`, `pickup`, `sync export/import/restore`, `sync init/status/push/pull` | `library`, `continuity`, `backup restore`; cloud commands hidden until the hosted service exists |
-| Tables | `sessions`, `session_notes` (empty, nothing writes them) | removed |
 
 ### 18.3 Order (each step ships alone, suite green, docs and counts updated)
 
 | Step | What | Size |
 |---|---|---|
-| K1 | Fixes and shared code first: one approve/reject path for every Inbox item (fixes approve-all skipping LLM and team-pin items), shared reader helper, one background-spawn helper, one `clip`, delete the 5 redirect pages and the 2 empty tables | small |
+| K1 | Fixes and shared code first: one approve/reject path for every Inbox item (fixes approve-all skipping LLM and team-pin items), shared reader helper, one background-spawn helper, one `clip`, delete the 5 redirect pages | small |
 | K2 | Notes and Hand-off: `memory.search {scope}`, `memory.list {view}`, baton into the brief, rules text generated from the tool list so it cannot drift | medium |
 | K3 | History and Settings: fix the skills/traces write path (X1), one Activity page, one Providers screen | medium |
 | K4 | Coordination and code symbols: reviews into rooms, drop `graph.*` and the Graph page | medium |

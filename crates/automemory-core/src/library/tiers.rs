@@ -2,10 +2,7 @@
 const L0_CHARS: usize = 400;
 const L1_CHARS: usize = 3200;
 
-fn clip(s: &str, max: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= max { t.to_string() } else { format!("{}...", t.chars().take(max).collect::<String>().trim_end()) }
-}
+use crate::text::clip;
 
 fn heading(line: &str) -> Option<&str> {
     let t = line.trim_start();

@@ -129,9 +129,7 @@ fn when(payload: &[u8]) -> Option<DateTime<Utc>> {
 fn tool_line(call: &[u8]) -> Option<String> {
     let name = pb::text(call, &[2])?;
     let args: Value = pb::text(call, &[3]).and_then(|a| serde_json::from_str(&a).ok()).unwrap_or(Value::Null);
-    let detail = ["CommandLine", "Path", "AbsolutePath", "TargetFile", "SearchPath", "Query", "Url", "Pattern"].iter().find_map(|k| args.get(*k).and_then(|v| v.as_str())).unwrap_or("");
-    let detail: String = detail.lines().next().unwrap_or("").chars().take(100).collect();
-    Some(format!("→ {name} {detail}").trim_end().to_string())
+    Some(super::util::tool_note(&name, &super::util::arg_detail(&args, &["CommandLine", "Path", "AbsolutePath", "TargetFile", "SearchPath", "Query", "Url", "Pattern"])))
 }
 
 fn app_dir(db_path: &Path) -> Option<&Path> {

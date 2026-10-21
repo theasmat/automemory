@@ -327,10 +327,7 @@ pub struct RoomOutcome {
     pub at: String,
 }
 
-fn clip(s: &str, max: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= max { t.to_string() } else { format!("{}…", t.chars().take(max).collect::<String>().trim_end()) }
-}
+use crate::text::clip;
 
 /// Steps of a plan: bullet or numbered lines, at most 10.
 pub fn extract_steps(body: &str) -> Vec<String> {

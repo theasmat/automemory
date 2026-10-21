@@ -205,11 +205,6 @@ const advancedNav = [
 ];
 
 function isActive(path: string): boolean {
-  if (path === '/') return route.path === '/' || route.path === '/overview';
-  if (path === '/brain') return route.path === '/brain' || route.path === '/memories';
-  if (path === '/agents') return route.path === '/agents' || route.path === '/coordination';
-  if (path === '/inbox') return route.path === '/inbox' || route.path === '/proposals';
-  if (path === '/safety') return route.path === '/safety' || route.path === '/guardrails';
   return route.path === path;
 }
 </script>

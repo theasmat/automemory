@@ -5,7 +5,7 @@
 //! maintainer's machine: the field handling below is tolerant guesswork, **unverified against a real file** (docs/research/command_code_chat_format.md).
 use super::*;
 use serde_json::Value;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 
 pub struct CommandCode;
 
@@ -29,11 +29,6 @@ fn header_cwd(h: &Value) -> Option<String> {
     ["cwd", "workingDirectory", "workingDir", "directory", "projectPath", "projectDir"].iter().find_map(|k| h.get(*k).and_then(|v| v.as_str())).map(String::from)
 }
 
-fn same_project(cwd: &str, root: &Path) -> bool {
-    let (c, r) = (cwd.trim_end_matches('/'), root.to_string_lossy().trim_end_matches('/').to_string());
-    !r.is_empty() && (c == r || c.starts_with(&format!("{r}/")))
-}
-
 fn parts_text(content: &Value) -> String {
     match content {
         Value::String(s) => s.clone(),
@@ -55,9 +50,7 @@ fn tool_lines(content: &Value, out: &mut Vec<RawMessage>, ts: Option<DateTime<Ut
         }
         let name = p.get("name").or_else(|| p.get("toolName")).and_then(|n| n.as_str()).unwrap_or("tool");
         let args = p.get("input").or_else(|| p.get("args")).or_else(|| p.get("arguments")).unwrap_or(&Value::Null);
-        let detail = ["command", "file_path", "path", "pattern", "query", "url"].iter().find_map(|k| args.get(*k).and_then(|v| v.as_str())).unwrap_or("");
-        let detail: String = detail.lines().next().unwrap_or("").chars().take(100).collect();
-        out.push(RawMessage { role: Role::Tool, ts, text: format!("→ {name} {detail}").trim_end().to_string() });
+        out.push(RawMessage { role: Role::Tool, ts, text: util::tool_note(name, &util::arg_detail(args, &["command", "file_path", "path", "pattern", "query", "url"])) });
     }
 }
 
@@ -88,7 +81,7 @@ impl TranscriptReader for CommandCode {
                 }
                 let head = first_line(&path);
                 let ok = match head.as_ref().and_then(header_cwd) {
-                    Some(cwd) => same_project(&cwd, project_root),
+                    Some(cwd) => util::same_project(&cwd, project_root),
                     None => by_name,
                 };
                 if !ok {
@@ -104,16 +97,10 @@ impl TranscriptReader for CommandCode {
     }
 
     fn read(&self, session: &SessionRef, since: Option<&Cursor>) -> Result<ReadResult> {
+        let (lines, cursor) = util::tail_lines(&session.path, since)?;
         let start: u64 = since.and_then(|c| c.0.parse().ok()).unwrap_or(0);
-        let mut file = std::fs::File::open(&session.path)?;
-        let len = file.metadata()?.len();
-        let start = if start > len { 0 } else { start };
-        file.seek(SeekFrom::Start(start))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-        let mut result = ReadResult { cursor: Some(Cursor((start + complete as u64).to_string())), ..Default::default() };
-        for (i, line) in String::from_utf8_lossy(&bytes[..complete]).lines().enumerate() {
+        let mut result = ReadResult { cursor: Some(cursor), ..Default::default() };
+        for (i, line) in lines.iter().enumerate() {
             let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
             if start == 0 && i == 0 && header_cwd(&v).is_some() && v.get("role").is_none() && v.get("message").is_none() {
                 continue; // the header

@@ -236,24 +236,37 @@ impl Database {
         }
     }
 
+    /// Records a person's decision on one proposal and does what that kind of proposal means. Every way of deciding (one, many, CLI, MCP, dashboard) comes through here.
     pub fn decide_proposal(&self, id: &str, approved: bool) -> Result<bool> {
+        Ok(self.decide_proposal_counted(id, approved)?.0)
+    }
+
+    /// (changed, memories archived by this decision)
+    fn decide_proposal_counted(&self, id: &str, approved: bool) -> Result<(bool, usize)> {
         let proposal = self.get_proposal_by_id(id)?;
-        let conn = self.conn();
         let status = if approved { "approved" } else { "rejected" };
-        let now_str = Utc::now().to_rfc3339();
-
-        let rows = conn.execute(
+        let rows = self.conn().execute(
             "UPDATE review_proposals SET status = ?1, decided_at = ?2 WHERE id = ?3",
-            params![status, now_str, id],
+            params![status, Utc::now().to_rfc3339(), id],
         )?;
-
-        drop(conn);
+        let mut archived = 0;
         if rows > 0 {
-            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "library_edit") {
+            if let Some(p) = &proposal {
+                archived = self.apply_decision(p, approved)?;
+            }
+        }
+        Ok((rows > 0, archived))
+    }
+
+    /// The effect of a decision, by proposal type. Returns how many memories it archived.
+    fn apply_decision(&self, p: &crate::models::ReviewProposal, approved: bool) -> Result<usize> {
+        match p.proposal_type.as_str() {
+            // An agent's suggested edit to a library file: applied only when a person approves it.
+            "library_edit" => {
                 if approved { self.library_apply_proposal(&p.id)?; } else { self.library_drop_proposal(&p.id); }
             }
-            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "llm_candidate") {
-                // A note an LLM suggested: a human approval makes it a user-confirmed fact, a rejection shelves it.
+            // A note an LLM suggested: approval makes it a user-confirmed fact, rejection shelves it.
+            "llm_candidate" => {
                 if let Ok(Some(mut m)) = self.get_memory_by_id(&p.target_id) {
                     if approved {
                         m.status = crate::models::MemoryStatus::Active;
@@ -265,111 +278,48 @@ impl Database {
                     self.update_memory(&m, Some("LLM suggestion decided by a human"), &[])?;
                 }
             }
-        }
-        if approved && rows > 0 {
-            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "team_pin") {
-                // Put back the teammate's exact record: identical to theirs, so nothing is sent back or conflicts.
+            // A teammate's pin: approving puts back their exact record, identical to theirs, so nothing is sent back or conflicts.
+            "team_pin" if approved => {
                 if let Some(mem) = self.sync_kv_get(&format!("teampin:{}", p.target_id)).filter(|j| !j.is_empty()).and_then(|j| serde_json::from_str::<crate::models::Memory>(&j).ok()) {
                     self.save_memory_direct(&mem)?;
                     self.sync_kv_set(&format!("clamped:{}", p.target_id), "");
                 }
             }
-        }
-        let conn = self.conn();
-        if approved && rows > 0 {
-            if let Some(p) = proposal {
-                if p.proposal_type == "duplicate_merge" && !p.target_id.is_empty() {
-                    let _ = conn.execute(
-                        "UPDATE memories SET status = 'archived', updated_at = ?1 WHERE id = ?2",
-                        params![now_str, p.target_id],
-                    );
-                }
+            "duplicate_merge" if approved && !p.target_id.is_empty() => {
+                let n = self.conn().execute("UPDATE memories SET status = 'archived', updated_at = ?1 WHERE id = ?2", params![Utc::now().to_rfc3339(), p.target_id])?;
+                return Ok(n);
             }
+            _ => {}
         }
-
-        Ok(rows > 0)
+        Ok(0)
     }
 
+    /// Decides every pending proposal that matches (optionally one project and one type), each through the same path as a single decision.
+    /// Suggested library edits are never approved in bulk: they change a document agents trust, so a person reads each one.
     pub fn decide_all_proposals(
         &self,
         project_id: Option<&str>,
         proposal_type: Option<&str>,
         approved: bool,
     ) -> Result<crate::models::ProposalBatchResult> {
-        let conn = self.conn();
-        let status = if approved { "approved" } else { "rejected" };
-        let now_str = Utc::now().to_rfc3339();
-
-        let mut where_clause = "WHERE status = 'pending'".to_string();
-        if let Some(pid) = project_id {
-            where_clause.push_str(&format!(
-                " AND (project_id IS NULL OR project_id = '{}')",
-                pid.replace('\'', "''")
-            ));
+        let ids: Vec<String> = self
+            .list_pending_proposals(project_id)?
+            .into_iter()
+            .filter(|p| proposal_type.is_none_or(|t| t == "all" || p.proposal_type == t))
+            .filter(|p| !(approved && p.proposal_type == "library_edit"))
+            .map(|p| p.id)
+            .collect();
+        let (mut decided, mut archived) = (0, 0);
+        for id in ids {
+            let (changed, n) = self.decide_proposal_counted(&id, approved)?;
+            decided += changed as usize;
+            archived += n;
         }
-        if let Some(pt) = proposal_type {
-            if pt != "all" {
-                where_clause.push_str(&format!(
-                    " AND proposal_type = '{}'",
-                    pt.replace('\'', "''")
-                ));
-            }
-        }
-
-        // A suggested edit to a library file changes a document the agents trust: a person decides each one, never in bulk.
-        if approved {
-            where_clause.push_str(" AND proposal_type != 'library_edit'");
-        }
-
-        conn.execute("BEGIN TRANSACTION", [])?;
-
-        let update_sql = format!(
-            "UPDATE review_proposals SET status = ?1, decided_at = ?2 {}",
-            where_clause
-        );
-        let decided_count = match conn.execute(&update_sql, params![status, now_str]) {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
-                return Err(e.into());
-            }
-        };
-
-        let mut archived_memories_count = 0;
-        if approved {
-            let archive_sql = format!(
-                r#"
-                UPDATE memories
-                   SET status = 'archived', updated_at = ?1
-                 WHERE id IN (
-                     SELECT DISTINCT target_id
-                       FROM review_proposals
-                      {}
-                        AND decided_at = ?1
-                        AND proposal_type = 'duplicate_merge'
-                        AND target_id IS NOT NULL
-                        AND target_id != ''
-                 )
-                "#,
-                where_clause.replace("WHERE status = 'pending'", "WHERE status = 'approved'")
-            );
-
-            archived_memories_count = match conn.execute(&archive_sql, params![now_str]) {
-                Ok(c) => c,
-                Err(e) => {
-                    let _ = conn.execute("ROLLBACK", []);
-                    return Err(e.into());
-                }
-            };
-        }
-
-        conn.execute("COMMIT", [])?;
-
         Ok(crate::models::ProposalBatchResult {
-            decided_count,
-            approved_count: if approved { decided_count } else { 0 },
-            rejected_count: if !approved { decided_count } else { 0 },
-            archived_memories_count,
+            decided_count: decided,
+            approved_count: if approved { decided } else { 0 },
+            rejected_count: if !approved { decided } else { 0 },
+            archived_memories_count: archived,
         })
     }
 
@@ -396,5 +346,55 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod decision_tests {
+    use super::*;
+    use crate::models::*;
+
+    fn candidate(db: &Database, id: &str) {
+        let mut m = Memory {
+            id: id.into(), scope: MemoryScope::Global, project_id: None, memory_type: MemoryType::Fact, content: "c".into(), summary: "s".into(),
+            confidence: 0.5, importance: 0.5, freshness: 1.0, status: MemoryStatus::Candidate, source_kind: MemorySourceKind::Agent, version: Some(1),
+            created_at: Utc::now(), updated_at: Utc::now(), last_recalled_at: None, tags: vec![], entities: vec![], metadata: serde_json::json!({}),
+        };
+        m.set_trust_tier(TrustTier::AgentClaim);
+        db.save_memory(&m).unwrap();
+    }
+
+    fn proposal(db: &Database, id: &str, kind: &str, target: &str) {
+        db.save_proposal(&ReviewProposal {
+            id: id.into(), project_id: None, proposal_type: kind.into(), target_id: target.into(), description: "d".into(), suggested_action: "a".into(),
+            status: "pending".into(), created_at: Utc::now(), decided_at: None,
+        }).unwrap();
+    }
+
+    #[test]
+    fn approving_many_does_what_approving_one_does() {
+        let db = Database::open_in_memory().unwrap();
+        candidate(&db, "m-llm");
+        candidate(&db, "m-dup");
+        proposal(&db, "p-llm", "llm_candidate", "m-llm");
+        proposal(&db, "p-dup", "duplicate_merge", "m-dup");
+        let r = db.decide_all_proposals(None, None, true).unwrap();
+        assert_eq!((r.decided_count, r.approved_count, r.archived_memories_count), (2, 2, 1), "{r:?}");
+        let llm = db.get_memory_by_id("m-llm").unwrap().unwrap();
+        assert_eq!(llm.status, MemoryStatus::Active, "approve-all used to leave an LLM suggestion as a candidate");
+        assert_eq!(db.get_memory_by_id("m-dup").unwrap().unwrap().status, MemoryStatus::Archived);
+        assert!(db.list_pending_proposals(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejecting_many_shelves_llm_suggestions() {
+        let db = Database::open_in_memory().unwrap();
+        candidate(&db, "m-llm");
+        proposal(&db, "p-llm", "llm_candidate", "m-llm");
+        proposal(&db, "p-other", "sync_conflict", "memory:x");
+        let r = db.decide_all_proposals(None, Some("llm_candidate"), false).unwrap();
+        assert_eq!((r.decided_count, r.rejected_count), (1, 1));
+        assert_eq!(db.get_memory_by_id("m-llm").unwrap().unwrap().status, MemoryStatus::Archived);
+        assert_eq!(db.list_pending_proposals(None).unwrap().len(), 1, "only the chosen type was decided");
     }
 }

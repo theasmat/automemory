@@ -61,13 +61,9 @@ export default defineNuxtConfig({
       crawlLinks: true,
       routes: [
         '/',
-        '/overview',
-        '/memories',
         '/replay',
         '/traces',
         '/failures',
-        '/proposals',
-        '/guardrails',
       ],
     },
   },

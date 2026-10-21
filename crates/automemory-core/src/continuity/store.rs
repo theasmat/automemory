@@ -11,10 +11,7 @@ use uuid::Uuid;
 
 const COLS: &str = "id, project_id, kind, text, reason, ref_id, origin, author, session, state, status, created_at, updated_at";
 
-fn clip(s: &str, max: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= max { t.to_string() } else { format!("{}…", t.chars().take(max).collect::<String>().trim_end()) }
-}
+use crate::text::clip;
 
 /// Lower-case, collapsed whitespace, no trailing punctuation: "Use SQLite." and "use  sqlite" are one item.
 fn normal(s: &str) -> String {

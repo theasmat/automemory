@@ -5,7 +5,7 @@
 use super::*;
 use regex::Regex;
 use serde_json::Value;
-use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::io::{BufRead, Read};
 use std::sync::OnceLock;
 
 pub struct Codex;
@@ -45,11 +45,6 @@ fn meta(path: &Path) -> Option<Value> {
     std::io::BufReader::new(f.take(FIRST_LINE_MAX)).read_line(&mut line).ok()?;
     let v: Value = serde_json::from_str(&line).ok()?;
     (v.get("type")?.as_str()? == "session_meta").then(|| v.get("payload").cloned()).flatten()
-}
-
-fn same_project(cwd: &str, root: &Path) -> bool {
-    let (c, r) = (cwd.trim_end_matches('/'), root.to_string_lossy().trim_end_matches('/').to_string());
-    !r.is_empty() && (c == r || c.starts_with(&format!("{r}/")))
 }
 
 /// Context Codex injects as user messages: not what the person said.
@@ -99,7 +94,7 @@ fn tool_line(p: &Value) -> Option<String> {
     };
     let detail = detail.lines().find(|l| !l.trim().is_empty() && !l.starts_with("*** Begin Patch")).unwrap_or("");
     let detail: String = ["*** Update File: ", "*** Add File: ", "*** Delete File: "].iter().find_map(|p| detail.strip_prefix(p)).unwrap_or(detail).chars().take(100).collect();
-    Some(format!("→ {name} {detail}").trim_end().to_string())
+    Some(util::tool_note(name, &detail))
 }
 
 impl TranscriptReader for Codex {
@@ -125,7 +120,7 @@ impl TranscriptReader for Codex {
             .into_iter()
             .filter_map(|path| {
                 let m = meta(&path)?;
-                same_project(m.get("cwd")?.as_str()?, project_root).then_some(())?;
+                util::same_project(m.get("cwd")?.as_str()?, project_root).then_some(())?;
                 let native_id = m.get("id").or_else(|| m.get("session_id")).and_then(|v| v.as_str()).map(String::from).or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()))?;
                 Some(SessionRef { native_id, modified: std::fs::metadata(&path).ok().and_then(|m| m.modified().ok()).map(DateTime::<Utc>::from), path })
             })
@@ -135,25 +130,18 @@ impl TranscriptReader for Codex {
     }
 
     fn read(&self, session: &SessionRef, since: Option<&Cursor>) -> Result<ReadResult> {
-        let start: u64 = since.and_then(|c| c.0.parse().ok()).unwrap_or(0);
-        let mut file = std::fs::File::open(&session.path)?;
-        let len = file.metadata()?.len();
-        let start = if start > len { 0 } else { start };
-        file.seek(SeekFrom::Start(start))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-        let mut result = ReadResult { cursor: Some(Cursor((start + complete as u64).to_string())), ..Default::default() };
+        let (lines, cursor) = util::tail_lines(&session.path, since)?;
+        let mut result = ReadResult { cursor: Some(cursor), ..Default::default() };
         // Codex writes each message twice (as an event for the screen and as a response item for the model). Events are the clean text; a file that has
         // none (an older or changed format) falls back to the response items.
         let (mut events, mut items, mut tools, mut artifacts): (Vec<RawMessage>, Vec<RawMessage>, Vec<RawMessage>, Vec<RawMessage>) = (vec![], vec![], vec![], vec![]);
-        for line in String::from_utf8_lossy(&bytes[..complete]).lines() {
+        for line in &lines {
             let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
             let ts = v.get("timestamp").and_then(|t| t.as_str()).and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map(|t| t.with_timezone(&Utc));
             let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
             let Some(p) = v.get("payload").or_else(|| v.get("item")) else { continue };
             let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            let mut push = |list: &mut Vec<RawMessage>, role: Role, text: String| {
+            let push = |list: &mut Vec<RawMessage>, role: Role, text: String| {
                 let text = noise().replace_all(&text, "").trim().to_string();
                 if !text.is_empty() {
                     list.push(RawMessage { role, ts, text });

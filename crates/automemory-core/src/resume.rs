@@ -85,14 +85,7 @@ fn ago(when: DateTime<Utc>) -> String {
     }
 }
 
-fn clip(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max).collect();
-    out.push('…');
-    out
-}
+use crate::text::clip;
 
 /// The hand-off written when a session ends: the baton facts from the ledger plus where the
 /// repository stands and which machine this was.

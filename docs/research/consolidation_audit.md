@@ -28,7 +28,7 @@ Oct 2026. Read-only audit of the code, the 68 MCP tools, ~25 CLI commands, 25 da
 ## C. Stale or unproven (real database)
 | Item | Evidence | Suggestion |
 |---|---|---|
-| `sessions` and `session_notes` tables | 0 rows, 0 in use | Remove, or find what was meant to write them |
+| `sessions` and `session_notes` tables | 0 rows at rest, but **in use** (checked later): `sessions` is written by the demo data, `session_notes` buffers lock notes within a session and is emptied after they are shown | Keep. Empty at rest is not unused |
 | Own graph (`graph.index/query/neighbors/impact`, `graph_entities`/`graph_edges`, Graph page 294 lines) | 0 rows; `codeintel.rs` says AutoMemory builds no AST graph and delegates to `codebase-memory-mcp`, which `connect` already registers | Decide: drop our four graph tools and the page in favour of the external one (-4 tools) |
 | `memory_links`, `memory_embeddings`, `memory_vectors`, `custom_guardrail_rules`, `preferences`, `leases`, `lock_alerts` | 0 rows here (features default off or not yet used by this user) | Keep, but they are the first things to test in the live trials; no deletion on one user's data |
 | `memory_versions` | 245 rows for 21 memories | Normal (history), but cap per memory |
@@ -45,6 +45,6 @@ Oct 2026. Read-only audit of the code, the 68 MCP tools, ~25 CLI commands, 25 da
 2. **A4** unified search and read-tool merge, **A2** baton into the brief, **A7** generated rules text. The tool count goes from 68 to about 55; every removed tool stays as a deprecated alias for one release. About a week.
 3. **A6** providers, **A8** activity page after X1. About a week.
 4. **A1** documents into the library, **A3** sync cleanup. The biggest and riskiest; do them last and each behind its own scenario test.
-5. Decided (Oct 2026, maintainer asked for one clear plan): drop our graph tools (C), reviews become rooms (A9), remove the two empty tables (C), cloud stub behind a flag (A3). The plan is PLAN §18.
+5. Decided (Oct 2026, maintainer asked for one clear plan): drop our graph tools (C), reviews become rooms (A9), keep the two empty tables (they are used), cloud stub behind a flag (A3). The plan is PLAN §18.
 
 Every step keeps `tests/run_all.sh` green and updates the counts (tools, tests) in the docs, per the project rules.

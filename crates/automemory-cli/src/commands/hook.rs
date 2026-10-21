@@ -568,55 +568,51 @@ fn library_sync(db: &Database, project_id: Option<&str>, cwd: &Path) {
     let _ = automemory_core::library::fs::sync_project(db, pid, &slug, cwd, &cfg.library);
 }
 
+/// Starts this same binary in the background with `args` (the hook never waits for it). With `throttle = Some((key, seconds))` it is skipped
+/// when it was started under that key less than `seconds` ago.
+fn spawn_self(db: &Database, args: &[&str], cwd: Option<&Path>, throttle: Option<(String, i64)>) {
+    if let Some((key, secs)) = throttle {
+        let now = chrono::Utc::now().timestamp();
+        if db.sync_kv_get(&key).and_then(|v| v.parse::<i64>().ok()).is_some_and(|t| now - t < secs) {
+            return;
+        }
+        db.sync_kv_set(&key, &now.to_string());
+    }
+    let Ok(exe) = std::env::current_exe() else { return };
+    let mut cmd = Command::new(exe);
+    cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    let _ = cmd.spawn();
+}
+
 fn spawn_library_sync(db: &Database, project_id: Option<&str>, cwd: &Path) {
     let Some(pid) = project_id else { return };
-    let key = format!("library_sync_at:{pid}");
-    let now = chrono::Utc::now().timestamp();
-    if db.sync_kv_get(&key).and_then(|v| v.parse::<i64>().ok()).is_some_and(|t| now - t < 20) {
-        return;
-    }
-    db.sync_kv_set(&key, &now.to_string());
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = Command::new(exe).args(["library", "sync"]).current_dir(cwd).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
-    }
+    spawn_self(db, &["library", "sync"], Some(cwd), Some((format!("library_sync_at:{pid}"), 20)));
 }
 
 /// Keeps the brief current without a person asking: new chat lines of the agents a person turned on are imported and
-/// drafted in a detached process (the hook never waits). Nothing happens while no agent is on. Stops fire after every
-/// turn, so those are throttled; the end of a session and a compaction always refresh.
+/// drafted in a detached process. Nothing happens while no agent is on. Stops fire after every turn, so those are
+/// throttled; the end of a session and a compaction always refresh.
 fn spawn_chat_refresh(db: &Database, project_id: Option<&str>, cwd: &Path, throttle: bool) {
     let Some(pid) = project_id else { return };
     if !automemory_core::config::GlobalConfig::load().map(|c| !c.continuity.read_chats.is_empty()).unwrap_or(false) {
         return;
     }
+    // The key is written even when not throttling, so a Stop right after a session end does not start a second import.
     let key = format!("chat_refresh_at:{pid}");
-    let now = chrono::Utc::now().timestamp();
-    if throttle && db.sync_kv_get(&key).and_then(|v| v.parse::<i64>().ok()).is_some_and(|t| now - t < 30) {
-        return;
-    }
-    db.sync_kv_set(&key, &now.to_string());
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = Command::new(exe)
-            .args(["continuity", "import"])
-            .current_dir(cwd)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+    if throttle {
+        spawn_self(db, &["continuity", "import"], Some(cwd), Some((key, 30)));
+    } else {
+        db.sync_kv_set(&key, &chrono::Utc::now().timestamp().to_string());
+        spawn_self(db, &["continuity", "import"], Some(cwd), None);
     }
 }
 
 fn spawn_background_sync(db: &Database) {
-    if !automemory_core::sync::auto::should_spawn(db) {
-        return;
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = Command::new(exe)
-            .args(["sync", "auto", "--pull", "--push"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+    if automemory_core::sync::auto::should_spawn(db) {
+        spawn_self(db, &["sync", "auto", "--pull", "--push"], None, None);
     }
 }
 

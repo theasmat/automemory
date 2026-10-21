@@ -4,7 +4,6 @@
 use super::*;
 use regex::Regex;
 use serde_json::Value;
-use std::io::{Read, Seek, SeekFrom};
 use std::sync::OnceLock;
 
 pub struct ClaudeCode;
@@ -22,10 +21,7 @@ fn noise() -> &'static Regex {
 /// A tool call as one short line: `→ Edit src/a.rs`, `→ Bash cargo test`.
 fn tool_line(block: &Value) -> Option<String> {
     let name = block.get("name")?.as_str()?;
-    let input = block.get("input")?;
-    let detail = ["file_path", "path", "command", "pattern", "url", "description"].iter().find_map(|k| input.get(*k).and_then(|v| v.as_str())).unwrap_or("");
-    let detail: String = detail.lines().next().unwrap_or("").chars().take(100).collect();
-    Some(format!("→ {name} {detail}").trim_end().to_string())
+    Some(util::tool_note(name, &util::arg_detail(block.get("input")?, &["file_path", "path", "command", "pattern", "url", "description"])))
 }
 
 fn text_of(content: &Value) -> String {
@@ -70,17 +66,9 @@ impl TranscriptReader for ClaudeCode {
     }
 
     fn read(&self, session: &SessionRef, since: Option<&Cursor>) -> Result<ReadResult> {
-        let start: u64 = since.and_then(|c| c.0.parse().ok()).unwrap_or(0);
-        let mut file = std::fs::File::open(&session.path)?;
-        let len = file.metadata()?.len();
-        let start = if start > len { 0 } else { start }; // the file was replaced by a shorter one: start over
-        file.seek(SeekFrom::Start(start))?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-        // Only whole lines count; a half-written last line is read next time.
-        let complete = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-        let mut result = ReadResult { cursor: Some(Cursor((start + complete as u64).to_string())), ..Default::default() };
-        for line in String::from_utf8_lossy(&bytes[..complete]).lines() {
+        let (lines, cursor) = util::tail_lines(&session.path, since)?;
+        let mut result = ReadResult { cursor: Some(cursor), ..Default::default() };
+        for line in &lines {
             let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
             let ts = v.get("timestamp").and_then(|t| t.as_str()).and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map(|t| t.with_timezone(&Utc));
             let kind = v.get("type").and_then(|t| t.as_str()).unwrap_or("");

@@ -27,11 +27,6 @@ fn folder_of(workspace_dir: &Path) -> Option<String> {
     Some(path.replace("%20", " ").trim_end_matches('/').to_string())
 }
 
-fn same_project(folder: &str, root: &Path) -> bool {
-    let r = root.to_string_lossy().trim_end_matches('/').to_string();
-    !r.is_empty() && (folder == r || folder.starts_with(&format!("{r}/")))
-}
-
 /// The ordered bubble ids of a conversation (newer `fullConversationHeadersOnly`, older inline `conversation`).
 fn headers(composer: &Value) -> Vec<Value> {
     composer.get("fullConversationHeadersOnly").and_then(|h| h.as_array()).cloned().unwrap_or_default()
@@ -45,8 +40,7 @@ fn tool_line(b: &Value) -> Option<String> {
         Some(v) => v.clone(),
         None => Value::Null,
     };
-    let detail = ["command", "target_file", "file_path", "path", "query", "pattern"].iter().find_map(|k| args.get(*k).and_then(|v| v.as_str())).unwrap_or("");
-    Some(format!("→ {name} {}", detail.lines().next().unwrap_or("").chars().take(100).collect::<String>()).trim_end().to_string())
+    Some(util::tool_note(name, &util::arg_detail(&args, &["command", "target_file", "file_path", "path", "query", "pattern"])))
 }
 
 fn message(b: &Value, out: &mut Vec<RawMessage>) {
@@ -89,7 +83,7 @@ impl TranscriptReader for CursorIde {
             let central = open_ro(&global).and_then(|c| kv_get(&c, "ItemTable", "composer.composerHeaders"));
             for ws in std::fs::read_dir(user.join("workspaceStorage")).into_iter().flatten().flatten() {
                 let Some(folder) = folder_of(&ws.path()) else { continue };
-                if !same_project(&folder, project_root) {
+                if !util::same_project(&folder, project_root) {
                     continue;
                 }
                 let mut ids: Vec<String> = Vec::new();
