@@ -154,5 +154,38 @@ def antigravity():
     return rep.finish()
 
 
+def codex():
+    """Codex rollout files: found by the folder the session ran in (a sub-folder counts), read when turned on, searchable, no reasoning or tool output."""
+    rep = Report("continuity chat history (Codex)")
+    sb = Sandbox("codexhist")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "hist-master"})
+    try:
+        root = sb.project.resolve()
+        sb.mcp("project.register", slug="app", display_name="app", path=str(root))
+        src = REPO / "tests/continuity/fixtures/codex/home/.codex"
+        dst = sb.home / ".codex"
+        shutil.copytree(src, dst)
+        for f in dst.rglob("*.jsonl"):
+            f.write_text(f.read_text().replace("/tmp/demo-shop", str(root)))
+        out = sb.run("continuity", "sources").stdout
+        rep.check("Codex (codex)  off" in out and "found: 1" in out.split("Codex (codex)")[1], "sources finds the Codex chat of this project (not the other project's)", out[-400:])
+        r = sb.run("continuity", "import", "codex")
+        rep.check(r.returncode != 0 and "is off" in (r.stdout + r.stderr), "nothing is read until a person turns Codex on")
+        rep.check(sb.run("continuity", "enable", "codex").returncode == 0, "a person turns Codex on")
+        r = sb.run("continuity", "import", "codex")
+        m = re.search(r"(\d+) new message", r.stdout)
+        rep.check(r.returncode == 0 and m and int(m.group(1)) >= 5, "the rollout is imported", r.stdout + r.stderr)
+        rep.check("0 new message" in sb.run("continuity", "import", "codex").stdout, "importing again adds nothing")
+        hits = sb.run("continuity", "search", "sticky routing", "--agent", "codex").stdout
+        rep.check("codex:0199aaaa" in hits, "search finds the exchange", hits)
+        for word in ("FIXTURESECRET", "PRIVATE REASONING", "TOOL OUTPUT", "environment_context"):
+            rep.check(word not in sb.run("continuity", "search", word).stdout, f"{word.lower()} was never stored")
+        show = sb.run("continuity", "show").stdout
+        rep.check("shopping cart" in show and "sticky routing" in show, "the drafter turns it into goal and ruled-out drafts", show[-400:])
+    finally:
+        sb.cleanup()
+    return rep.finish()
+
+
 if __name__ == "__main__":
-    sys.exit(max(main(), antigravity()))
+    sys.exit(max(main(), antigravity(), codex()))

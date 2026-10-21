@@ -1,6 +1,6 @@
 # Continuity: carry a long chat from one agent to another
 
-Status: C1–C6 and C8 built (Oct 2026); C7 (readers for more agents) is open; live trial T12 is prepared but not run. Dashboard has history sync, a stale-brief hint and an AI-helper button. LLM drafting (`llm run brief`) is built but not yet measured against a real model: keep it only if it beats the deterministic drafter on real chats
+Status: C1–C6 and C8 built (Oct 2026); C7 has the Codex reader (experimental, unverified against a real file) and is open for Gemini CLI, Command Code, Z code and Cursor; live trial T12 is prepared but not run. Dashboard has history sync, a stale-brief hint and an AI-helper button. LLM drafting (`llm run brief`) is built but not yet measured against a real model: keep it only if it beats the deterministic drafter on real chats
 [docs/TASKS.md](../docs/TASKS.md).
 
 ## 1. The problem and the target

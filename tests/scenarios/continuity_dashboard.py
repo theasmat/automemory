@@ -97,7 +97,7 @@ def main():
         rep.check(code == 200 and "preview" in json.loads(body), "Safe: Hand off now needs no password", f"{code} {body[:120]}")
 
         o = json.loads(http(port, "/api/continuity")[1])
-        rep.check(any(x["id"] == "codex" for x in o["others"]), "agents without a reader are listed as brief-only")
+        rep.check(any(x["id"] == "gemini" for x in o["others"]), "agents without a reader are listed as brief-only")
         rep.check(json.loads(http(port, "/api/continuity/history-sync")[1])["remote"] is False, "history sync says it needs a remote first")
         code, _ = http(port, "/api/continuity/history-sync/push", "POST", {}, {})
         rep.check(code == 403, "Protected: sending history needs the password")

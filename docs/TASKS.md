@@ -160,12 +160,12 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] C4 Dashboard Continuity page (opt-in, import, brief editor, preview, Hand off now)
 - [x] C5 Deterministic drafter + confirm flow
 - [x] C6 Automatic triggers + manual history sync
-- [ ] C7 Per-agent research and readers (Codex, Gemini CLI, Command Code, Z code, Cursor)
+- [ ] C7 Per-agent research and readers: Codex reader built (experimental: written from public format descriptions, no real Codex chat existed on this machine; see docs/research/codex_chat_format.md for the 4-step real-file check); still open: Gemini CLI, Command Code, Z code, Cursor
 - [x] C8 Continuity eval (golden chats, floor 0.8), optional LLM drafting (`llm run brief`, drafts only), dashboard history sync + stale hint + AI-helper button; live trial T12 prepared (`tests/manual/t12_check.py`) but NOT RUN: needs you
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 284 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 287 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 

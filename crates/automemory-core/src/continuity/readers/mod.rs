@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 pub mod antigravity;
 pub mod claude_code;
+pub mod codex;
 #[cfg(test)]
 pub mod testkit;
 
@@ -71,7 +72,7 @@ pub trait TranscriptReader: Send + Sync {
 
 /// Every reader AutoMemory knows. Add a line here for a new agent.
 pub fn registry() -> Vec<Box<dyn TranscriptReader>> {
-    vec![Box::new(claude_code::ClaudeCode), Box::new(antigravity::Antigravity)]
+    vec![Box::new(claude_code::ClaudeCode), Box::new(antigravity::Antigravity), Box::new(codex::Codex)]
 }
 
 pub fn reader(agent: &str) -> Option<Box<dyn TranscriptReader>> {
