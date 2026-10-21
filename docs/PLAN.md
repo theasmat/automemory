@@ -480,3 +480,41 @@ model-at-write-time design. Decided: folder `.automemory/library/`, sync to all 
 | L4 | Dashboard Library page; Docs page shows both sources | **Built.** All actions from the page |
 | L5 | `library.put`/`propose`, links from brief/decisions/rooms, move-out-of-git helper | **Built.** Agent files labelled; one-command move |
 | L6 | Attachments, optional model abstracts as suggestions | Decide after use |
+
+## 18. Consolidation: one name for each thing
+
+Evidence for every line: [docs/research/consolidation_audit.md](research/consolidation_audit.md). Rule: nothing a user relies on disappears. A removed tool or command keeps
+working as a hidden alias for one release and says what replaces it.
+
+### 18.1 After the merge, AutoMemory is seven things
+
+| Area | What it is for | Today (several names) | After (one name) |
+|---|---|---|---|
+| **Notes** | What is true about the project (decisions, conventions, gotchas) | memories, constitution, topics, digest, skills, context, ask, recall, search | Notes: `memory.recall` (for a task), `memory.search` (by words), `memory.list` (with a `view`), `memory.about` |
+| **Hand-off** | What the next agent needs to continue | baton, pass/pickup, handoff, resume, session checkpoint, brief | Hand-off: `continuity.brief` (write) and `memory.resume` (read); the ledger packet is part of it |
+| **Library** | Documents agents read (PRDs, plans, notes) | tracked documents (`doc`), Project library | Library: in-repo docs are a built-in set of kept-in-place files |
+| **History** | What was said and done | chat archive, traces, replay, skills, failures, activity | History: one Activity page with tabs; search through `memory.search {scope: chat}` |
+| **Coordination** | Agents not colliding, agreeing a plan | locks/leases, rooms, reviews, tasks | Locks, and Rooms (a review is a one-round room) |
+| **Sync** | Same project on every computer | git deltas, cloud stub, legacy text vault, history sync | Sync: git deltas only (history and library already ride on it); old vaults restore through `backup restore` |
+| **Settings** | Models and keys | embeddings profiles, LLM profiles (two copies of the same screens) | Providers: one screen and one set of routes for both |
+
+Code symbols are left to the external `codebase-memory-mcp` (already registered by `connect`): our own `graph.*` tools and Graph page go.
+
+### 18.2 Counts
+
+| | Now | After |
+|---|---|---|
+| MCP tools | 68 | 51: minus `memory.ask` (alias of recall), `memory.context/topics/digest/constitution/skills` (views of `memory.list`), `chat.search`, `library.search` (scopes of `memory.search`), `baton.pass/pickup`, `review.submit/next/post`, `graph.index/query/neighbors/impact` |
+| Dashboard pages | 25 | 12: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
+| CLI | `doc`, `baton`, `pass`, `pickup`, `sync export/import/restore`, `sync init/status/push/pull` | `library`, `continuity`, `backup restore`; cloud commands hidden until the hosted service exists |
+| Tables | `sessions`, `session_notes` (empty, nothing writes them) | removed |
+
+### 18.3 Order (each step ships alone, suite green, docs and counts updated)
+
+| Step | What | Size |
+|---|---|---|
+| K1 | Fixes and shared code first: one approve/reject path for every Inbox item (fixes approve-all skipping LLM and team-pin items), shared reader helper, one background-spawn helper, one `clip`, delete the 5 redirect pages and the 2 empty tables | small |
+| K2 | Notes and Hand-off: `memory.search {scope}`, `memory.list {view}`, baton into the brief, rules text generated from the tool list so it cannot drift | medium |
+| K3 | History and Settings: fix the skills/traces write path (X1), one Activity page, one Providers screen | medium |
+| K4 | Coordination and code symbols: reviews into rooms, drop `graph.*` and the Graph page | medium |
+| K5 | Library and Sync: tracked documents into the library (88 documents migrated), cloud stub behind a flag, legacy vault into `backup restore` | large, last |

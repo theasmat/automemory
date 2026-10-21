@@ -160,12 +160,12 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] C4 Dashboard Continuity page (opt-in, import, brief editor, preview, Hand off now)
 - [x] C5 Deterministic drafter + confirm flow
 - [x] C6 Automatic triggers + manual history sync
-- [ ] C7 Per-agent research and readers: Codex reader built (experimental: written from public format descriptions, no real Codex chat existed on this machine; see docs/research/codex_chat_format.md for the 4-step real-file check); Command Code reader built the same way (layout from its docs, field names guessed, docs/research/command_code_chat_format.md); Gemini CLI is dropped (replaced by Antigravity CLI, which the Antigravity reader covers); still open: Z code, Cursor
+- [ ] C7 Per-agent research and readers: Codex reader built (experimental: written from public format descriptions, no real Codex chat existed on this machine; see docs/research/codex_chat_format.md for the 4-step real-file check); Command Code reader built the same way (layout from its docs, field names guessed, docs/research/command_code_chat_format.md); Gemini CLI is dropped (replaced by Antigravity CLI, which the Antigravity reader covers); Cursor reader built from public notes on its SQLite storage (experimental, docs/research/cursor_chat_format.md); still open: Z code
 - [x] C8 Continuity eval (golden chats, floor 0.8), optional LLM drafting (`llm run brief`, drafts only), dashboard history sync + stale hint + AI-helper button; live trial T12 prepared (`tests/manual/t12_check.py`) but NOT RUN: needs you
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 289 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 291 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -175,6 +175,14 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] L4 Dashboard Library page (tree, summary/outline/whole-file tiers, new/edit/remove, history and restore, git-status banner, sync folder, files kept in place) and library files on the Documents page
 - [x] L5 `library.put` (agent's own files, no overwriting yours, no secrets, 100-file cap), `library.propose` (Inbox item with a diff, applied only when a person approves, never in bulk, 5 waiting at most), `library:<path>` citations in brief items and room evidence, `library add --move` says whether git tracked the file
 - [ ] L6 Attachments and optional model abstracts
+
+## Consolidation (PLAN §18; evidence in docs/research/consolidation_audit.md; nothing started)
+
+- [ ] K1 One approve/reject path for Inbox items (fixes approve-all), shared reader helper, one spawn helper, one `clip`, remove 5 redirect pages and the empty `sessions`/`session_notes` tables
+- [ ] K2 `memory.search {scope}`, `memory.list {view}`, baton folded into the brief and resume, rules text generated from the tool list
+- [ ] K3 Skills/traces write-path fix (X1), one Activity page, one Providers screen
+- [ ] K4 Reviews as one-round rooms; drop own `graph.*` tools and the Graph page (codebase-memory-mcp covers symbols)
+- [ ] K5 Tracked documents into the library; cloud stub behind a flag; legacy vault into `backup restore`
 
 ## Later (after v1 passes its gates)
 

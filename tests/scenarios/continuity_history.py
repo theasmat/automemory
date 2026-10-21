@@ -214,5 +214,32 @@ def command_code():
     return rep.finish()
 
 
+def cursor():
+    """Cursor IDE chats (SQLite): found through the workspace whose folder is this project, read when turned on, searchable, no reasoning or tool results."""
+    rep = Report("continuity chat history (Cursor)")
+    sb = Sandbox("cursorhist")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "hist-master"})
+    try:
+        root = sb.project.resolve()
+        sb.mcp("project.register", slug="app", display_name="app", path=str(root))
+        user = sb.home / "Library/Application Support/Cursor/User"
+        shutil.copytree(REPO / "tests/continuity/fixtures/cursor/home/Library/Application Support/Cursor/User", user)
+        wj = user / "workspaceStorage/ws-demo-shop/workspace.json"
+        wj.write_text(wj.read_text().replace("/tmp/demo-shop", str(root)))
+        out = sb.run("continuity", "sources").stdout
+        rep.check("Cursor (cursor)  off" in out and "found: 1" in out.split("Cursor (cursor)")[1], "sources finds the one chat of this folder's workspace", out[-400:])
+        rep.check(sb.run("continuity", "enable", "cursor").returncode == 0, "a person turns Cursor on")
+        r = sb.run("continuity", "import", "cursor")
+        m = re.search(r"(\d+) new message", r.stdout)
+        rep.check(r.returncode == 0 and m and int(m.group(1)) >= 4, "the chat is imported", r.stdout + r.stderr)
+        rep.check("0 new message" in sb.run("continuity", "import", "cursor").stdout, "importing again adds nothing")
+        rep.check("cursor:cmp-001" in sb.run("continuity", "search", "sticky routing", "--agent", "cursor").stdout, "search finds the exchange")
+        for word in ("FIXTURESECRET", "PRIVATE REASONING", "TOOL RESULT", "no workspace"):
+            rep.check(word not in sb.run("continuity", "search", word).stdout, f"{word.lower()} was never stored")
+    finally:
+        sb.cleanup()
+    return rep.finish()
+
+
 if __name__ == "__main__":
-    sys.exit(max(main(), antigravity(), codex(), command_code()))
+    sys.exit(max(main(), antigravity(), codex(), command_code(), cursor()))

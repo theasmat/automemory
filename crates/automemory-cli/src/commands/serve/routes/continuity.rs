@@ -50,7 +50,7 @@ pub async fn api_overview(State(state): State<AppState>, Query(q): Query<Project
         (mins >= 30).then(|| json!({ "agent": s["id"], "label": s["label"], "minutes": if mins == i64::MAX { Value::Null } else { json!(mins) } }))
     }).collect();
     // Agents with no reader yet: their agent-written brief still works.
-    let others: Vec<Value> = [("zcode", "Z code"), ("cursor", "Cursor")]
+    let others: Vec<Value> = [("zcode", "Z code")]
         .iter().map(|(id, label)| json!({ "id": id, "label": label })).collect();
     Json(json!({
         "stale": stale, "others": others,

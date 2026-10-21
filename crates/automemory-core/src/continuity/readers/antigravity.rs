@@ -105,7 +105,7 @@ pub mod pb {
     }
 }
 
-fn open_ro(path: &Path) -> Option<Connection> {
+pub(super) fn open_ro(path: &Path) -> Option<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
     let uri = |q: &str| format!("file:{}?{q}", path.to_string_lossy().replace('?', "%3f").replace('#', "%23"));
     // A database the app has open in WAL mode may refuse plain read-only; `immutable` still reads the main file.

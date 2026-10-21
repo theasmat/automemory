@@ -9,6 +9,7 @@ pub mod antigravity;
 pub mod claude_code;
 pub mod codex;
 pub mod command_code;
+pub mod cursor;
 #[cfg(test)]
 pub mod testkit;
 
@@ -73,7 +74,7 @@ pub trait TranscriptReader: Send + Sync {
 
 /// Every reader AutoMemory knows. Add a line here for a new agent.
 pub fn registry() -> Vec<Box<dyn TranscriptReader>> {
-    vec![Box::new(claude_code::ClaudeCode), Box::new(antigravity::Antigravity), Box::new(codex::Codex), Box::new(command_code::CommandCode)]
+    vec![Box::new(claude_code::ClaudeCode), Box::new(antigravity::Antigravity), Box::new(codex::Codex), Box::new(command_code::CommandCode), Box::new(cursor::CursorIde)]
 }
 
 pub fn reader(agent: &str) -> Option<Box<dyn TranscriptReader>> {
