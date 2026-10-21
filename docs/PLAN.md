@@ -464,3 +464,19 @@ cannot read yet, readers added per agent later; code modular (one reader file + 
 | C6 | Automatic triggers (Stop, SessionEnd, PreCompact), manual history sync | Mid-task switch needs no manual step |
 | C7 | Research and readers for Codex, Gemini CLI, Command Code, Z code, Cursor, … | Each passes the testkit |
 | C8 | Continuity eval, live trial T12, optional LLM drafting | Eval recorded; T12 passes |
+
+## 17. Project library: agent documents outside git (plan only)
+
+Detailed spec: [plan/library-plan.md](../plan/library-plan.md). Requested by the maintainer: PRDs, plans and notes for agents that do not
+belong in the repository but must sync between computers and be found by every agent, in the spirit of
+[OpenViking](https://github.com/volcengine/OpenViking) (files addressed by path, three-tier loading, directory-first search), without its
+model-at-write-time design. Not part of v1; five questions to settle are listed at the end of the spec.
+
+| Phase | Scope | Done when |
+|---|---|---|
+| L1 | Store, revisions, secrets check, deterministic tiers, CLI, MCP list/get/search, hook index | An agent lists and reads a library file; `git status` untouched |
+| L2 | Materialize with `.git/info/exclude`, INDEX.md, two-way watcher, doctor check | Edits land in the library; git stays clean |
+| L3 | Vault sync (`library_file`), personal vs shared, conflict suggestions | Readable on the second computer; ciphertext remotely |
+| L4 | Dashboard Library page; Docs page shows both sources | All actions from the page |
+| L5 | `library.put`/`propose`, links from brief/decisions/rooms, move-out-of-git helper | Agent files labelled; one-command move |
+| L6 | Attachments, optional model abstracts as suggestions | Decide after use |
