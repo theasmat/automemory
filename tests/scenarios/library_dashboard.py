@@ -76,6 +76,18 @@ def main():
         code, _ = http(port, "/api/library/link?pattern=PRD-private.md", "DELETE", PW)
         rep.check(code == 200 and "PRD-private.md" not in json.loads(http(port, "/api/library")[1])["patterns"]["global"], "stopping a pattern works")
 
+        # An agent's suggested edit waits in the Inbox; only a person applies it, one at a time.
+        prop = sb.mcp("library.propose", path="plans/prd.md", content="# PRD\n\nCarts expire after 45 days.\n", reason="support asked", agent="claude", project_id="app")["proposal"]
+        pend = json.loads(http(port, "/api/proposals")[1])
+        pend = pend if isinstance(pend, list) else pend.get("proposals", [])
+        rep.check(any(p["id"] == prop and "claude suggests changing" in p["description"] for p in pend), "the suggestion shows in the Inbox with who and what", json.dumps(pend)[:200])
+        code, _ = http(port, "/api/proposals/decide_all", "POST", PW, {"approved": True, "proposal_type": "all"})
+        rep.check("30 days" in json.loads(http(port, "/api/library/file?path=plans/prd.md")[1])["content"], "approve-all does not apply it")
+        code, _ = http(port, "/api/proposals/decide", "POST", {}, {"id": prop, "approved": True})
+        rep.check(code == 403, "Protected: approving needs the password")
+        code, body = http(port, "/api/proposals/decide", "POST", PW, {"id": prop, "approved": True})
+        d = json.loads(http(port, "/api/library/file?path=plans/prd.md")[1])
+        rep.check(code == 200 and "45 days" in d["content"] and d["author"] == "approved from claude", "approving applies it as your change", body[:120] + json.dumps(d)[:120])
         code, _ = http(port, "/api/library/file?path=plans/prd.md", "DELETE", {})
         rep.check(code == 403, "Protected: removing needs the password")
         code, _ = http(port, "/api/library/file?path=plans/prd.md", "DELETE", PW)

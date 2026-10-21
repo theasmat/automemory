@@ -59,7 +59,7 @@ pub fn l1(content: &str) -> String {
 pub fn chunks(content: &str) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let mut cur = (String::new(), String::new());
-    let mut flush = |cur: &mut (String, String), out: &mut Vec<(String, String)>| {
+    let flush = |cur: &mut (String, String), out: &mut Vec<(String, String)>| {
         if !cur.1.trim().is_empty() {
             out.push((cur.0.clone(), std::mem::take(&mut cur.1)));
         }

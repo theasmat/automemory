@@ -59,6 +59,28 @@ def main():
         out = json.dumps(sb.hook("claude", "prompt", {"session_id": "s-new", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})[0] or {})
         rep.check("Project library" in out and "plans/prd-cart.md" in out and "store carts in SQLite" not in out, "a new session is told the library exists (index only, not the content)", out[:300])
 
+        # L5: agents write their own files, suggest edits to yours, and cite library files.
+        put = sb.mcp("library.put", path="notes/agent-notes.md", content="# Agent notes\n\nThe checkout retries three times.\n", agent="claude", project_id="app")
+        rep.check(put.get("outcome") == "created", "an agent saves its own note in the library", json.dumps(put)[:160])
+        got = sb.mcp("library.list", project_id="app")
+        mine = [f for f in got["files"] if f["path"] == "notes/agent-notes.md"]
+        rep.check(mine and mine[0]["origin"] == "agent" and mine[0]["by"] == "claude", "it is listed as agent-written")
+        r = sb.mcp("library.put", path="plans/prd-cart.md", content="# overwritten\n", agent="claude", project_id="app")
+        rep.check("written by a person" in str(r) and "library.propose" in str(r), "an agent cannot overwrite your file and is told to propose", str(r)[:200])
+        r = sb.mcp("library.put", path="notes/leak.md", content="token sk-abcdefghijklmnopqrstuvwxyz1234567890\n", agent="claude", project_id="app")
+        rep.check("looks like a secret" in str(r), "an agent's secret is refused")
+        prop = sb.mcp("library.propose", path="plans/prd-cart.md", content=PRD.replace("30 days", "90 days"), reason="support asked", agent="claude", project_id="app")
+        rep.check(str(prop.get("proposal", "")).startswith("libprop-"), "an agent's suggested edit is filed", json.dumps(prop)[:160])
+        rep.check(sb.mcp("library.get", path="plans/prd-cart.md", project_id="app")["content"] == PRD, "your file is unchanged until you approve")
+        # Cite a library file in a brief item and as room evidence.
+        ok = sb.mcp("continuity.brief", action="add", project_id="app", agent="claude", session_id="s1", items=[{"kind": "next", "text": "Implement the cart per the PRD", "ref_id": "library:plans/prd-cart.md"}])
+        rep.check("[see library:plans/prd-cart.md]" in ok["brief"], "a brief item can point at a library file", ok["brief"][:300])
+        bad = sb.mcp("continuity.brief", action="add", project_id="app", agent="claude", session_id="s1", items=[{"kind": "next", "text": "Read the missing file", "ref_id": "library:nope.md"}])
+        rep.check("not in the project library" in str(bad), "a missing library file cannot be cited")
+        room = sb.mcp("room.join", session_id="agent-a", topic="cart expiry", project_id="app")["room"]["id"]
+        r = sb.mcp("room.post", room_id=room, session_id="agent-a", kind="propose", body="Expire carts after thirty days, as the PRD says, and clean up nightly.", evidence=["library:plans/prd-cart.md"])
+        rep.check("refused" not in json.dumps(r).lower(), "a library file counts as room evidence", json.dumps(r)[:200])
+
         # L2: a folder view for agents without MCP, kept out of git status; linked files from the global config.
         r = sb.run("library", "sync")
         folder = sb.project / ".automemory" / "library"
@@ -97,6 +119,10 @@ def main():
         subprocess.run(["git", "add", "PRIVATE-PRD.md"], cwd=sb.project, capture_output=True)
         r = pw("library", "add", str(inrepo), "--move")
         rep.check(r.returncode == 0 and not inrepo.exists() and "git rm --cached" in r.stdout, "--move removes the original and prints the git command", r.stdout + r.stderr)
+        untracked = sb.project / "SCRATCH-PRD.md"
+        untracked.write_text("# Scratch\n\nNever added to git.\n")
+        r = pw("library", "add", str(untracked), "--move")
+        rep.check(r.returncode == 0 and "not tracking it" in r.stdout and "git rm" not in r.stdout, "--move on a file git never tracked says there is nothing to do in git", r.stdout + r.stderr)
         log = subprocess.run(["git", "log", "--oneline"], cwd=sb.project, capture_output=True, text=True).stdout
         rep.check("Private" not in log, "AutoMemory never committed anything")
 

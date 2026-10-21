@@ -478,5 +478,5 @@ model-at-write-time design. Decided: folder `.automemory/library/`, sync to all 
 | L2 | Materialize with `.git/info/exclude`, INDEX.md, two-way sync (hook-driven, no always-on watcher), linked files, doctor check | **Built.** Edits land in the library; git stays clean |
 | L3 | Vault sync (record kind `library`, content inside the encrypted delta), personal vs shared, conflict handling | **Built.** Readable on the second computer; ciphertext remotely |
 | L4 | Dashboard Library page; Docs page shows both sources | **Built.** All actions from the page |
-| L5 | `library.put`/`propose`, links from brief/decisions/rooms, move-out-of-git helper | Agent files labelled; one-command move |
+| L5 | `library.put`/`propose`, links from brief/decisions/rooms, move-out-of-git helper | **Built.** Agent files labelled; one-command move |
 | L6 | Attachments, optional model abstracts as suggestions | Decide after use |

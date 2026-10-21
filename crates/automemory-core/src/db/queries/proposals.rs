@@ -249,6 +249,9 @@ impl Database {
 
         drop(conn);
         if rows > 0 {
+            if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "library_edit") {
+                if approved { self.library_apply_proposal(&p.id)?; } else { self.library_drop_proposal(&p.id); }
+            }
             if let Some(p) = proposal.as_ref().filter(|p| p.proposal_type == "llm_candidate") {
                 // A note an LLM suggested: a human approval makes it a user-confirmed fact, a rejection shelves it.
                 if let Ok(Some(mut m)) = self.get_memory_by_id(&p.target_id) {
@@ -311,6 +314,11 @@ impl Database {
                     pt.replace('\'', "''")
                 ));
             }
+        }
+
+        // A suggested edit to a library file changes a document the agents trust: a person decides each one, never in bulk.
+        if approved {
+            where_clause.push_str(" AND proposal_type != 'library_edit'");
         }
 
         conn.execute("BEGIN TRANSACTION", [])?;

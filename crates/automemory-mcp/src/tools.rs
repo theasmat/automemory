@@ -949,6 +949,35 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
+                name: "library.put".to_string(),
+                description: "Write a new document to the project library, or update one you wrote earlier (notes, a plan, research that should outlive this session). You cannot change a file a person wrote: use library.propose for that. No secrets; text up to 1 MB.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Relative path such as notes/api-quirks.md (md, txt, json, yaml, toml, rst, csv)" },
+                        "content": { "type": "string", "description": "The whole text of the file" },
+                        "agent": { "type": "string", "description": "Your agent name (claude-code, antigravity, codex, ...)" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["path", "content"]
+                }),
+            },
+            ToolDefinition {
+                name: "library.propose".to_string(),
+                description: "Suggest a change to a library file (including one a person wrote). It waits in the person's Inbox with a short diff; only they can apply it. Give the whole new text and a reason.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Library path" },
+                        "content": { "type": "string", "description": "The whole new text of the file" },
+                        "reason": { "type": "string", "description": "Why the change (shown to the person)" },
+                        "agent": { "type": "string", "description": "Your agent name" },
+                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
+                    },
+                    "required": ["path", "content"]
+                }),
+            },
+            ToolDefinition {
                 name: "room.status".to_string(),
                 description: "Fetch a room by id: its topic, members (with agent names), turn, and posts in order, including notes from the human".to_string(),
                 input_schema: json!({
@@ -976,7 +1005,7 @@ impl ToolRegistry {
         // A write with no project goes to the project of the folder this server runs in (agents start it in
         // the workspace), so decisions and notes are not saved as "global" and show up in that project's views.
         const PROJECT_WRITES: &[&str] = &[
-            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief", "chat.search", "library.list", "library.get", "library.search",
+            "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief", "chat.search", "library.list", "library.get", "library.search", "library.put", "library.propose",
         ];
         let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
         if missing && PROJECT_WRITES.contains(&name) {
@@ -2511,6 +2540,11 @@ impl ToolRegistry {
                                 None => return ToolCallResult::error("each item needs a kind"),
                             };
                             let Some(text) = it.get("text").and_then(|v| v.as_str()) else { return ToolCallResult::error("each item needs text") };
+                            if let Some(path) = it.get("ref_id").and_then(|v| v.as_str()).and_then(|r| r.strip_prefix("library:")) {
+                                if !matches!(self.db.library_get(project_id.as_deref(), path), Ok(Some(_))) {
+                                    return ToolCallResult::error(format!("ref_id library:{path} is not in the project library (see library.list)"));
+                                }
+                            }
                             let new = NewItem {
                                 project_id: project_id.clone(), kind, text: text.to_string(),
                                 reason: it.get("reason").and_then(|v| v.as_str()).map(String::from),
@@ -2626,6 +2660,30 @@ impl ToolRegistry {
                     Ok(hits) if hits.is_empty() => ToolCallResult::json(&json!({ "hits": [], "next_action": "Nothing matched. library.list shows every document." })),
                     Ok(hits) => ToolCallResult::json(&json!({ "hits": hits, "next_action": "Open a file with library.get {path}." })),
                     Err(e) => ToolCallResult::error(format!("Search failed: {e}")),
+                }
+            }
+
+            "library.put" => {
+                let (Some(path), Some(content)) = (arguments.get("path").and_then(|v| v.as_str()), arguments.get("content").and_then(|v| v.as_str())) else { return ToolCallResult::error("Missing required parameter: path and content") };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
+                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent").to_string();
+                match self.db.library_put(automemory_core::library::NewFile { project_id, path: path.to_string(), content: content.to_string(), origin: automemory_core::library::Origin::Agent, author: agent, personal: false, allow_secrets: false, linked: false }) {
+                    Ok((f, outcome)) => ToolCallResult::json(&json!({ "path": f.path, "outcome": format!("{outcome:?}").to_lowercase(), "summary": f.l0, "next_action": "Saved. It appears in the library index of every agent in this project." })),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        let hint = if msg.contains("written by a person") { " Use library.propose to suggest the change." } else { "" };
+                        ToolCallResult::error(format!("{msg}.{hint}"))
+                    }
+                }
+            }
+
+            "library.propose" => {
+                let (Some(path), Some(content)) = (arguments.get("path").and_then(|v| v.as_str()), arguments.get("content").and_then(|v| v.as_str())) else { return ToolCallResult::error("Missing required parameter: path and content") };
+                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+                let agent = arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent");
+                match automemory_core::library::propose::propose(&self.db, project_id, path, content, arguments.get("reason").and_then(|v| v.as_str()), agent) {
+                    Ok(id) => ToolCallResult::json(&json!({ "proposal": id, "next_action": "Waiting in the person's Inbox. Do not rely on the change until it is approved." })),
+                    Err(e) => ToolCallResult::error(e.to_string()),
                 }
             }
 

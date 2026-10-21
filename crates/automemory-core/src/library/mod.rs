@@ -2,6 +2,7 @@
 //! index shown to agents. Files appear in the project folder (L2) and sync through the vault (L3) in later phases (plan/library-plan.md).
 pub mod fs;
 pub mod model;
+pub mod propose;
 pub mod store;
 pub mod tiers;
 

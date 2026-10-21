@@ -248,6 +248,10 @@ impl Database {
     }
 
     fn evidence_resolves(&self, id: &str) -> Result<bool> {
+        // A document in the project library: `library:plans/prd.md`.
+        if let Some(path) = id.strip_prefix("library:") {
+            return Ok(self.conn().query_row("SELECT COUNT(*) FROM library_files WHERE path = ?1 AND status = 'active'", [path.trim()], |r| r.get::<_, i64>(0))? > 0);
+        }
         if self.get_memory_by_id(id)?.is_some() {
             return Ok(true);
         }

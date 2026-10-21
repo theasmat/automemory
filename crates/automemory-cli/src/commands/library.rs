@@ -25,10 +25,20 @@ pub fn add(file: &str, name: Option<String>, mv: bool, personal: bool, allow_sec
     let path = name.unwrap_or_else(|| Path::new(file).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
     let (db, project) = human("add a file to the project library")?;
     let project = project_or_bail(project)?;
+    // Where git stands before the file goes: tracked files need `git rm --cached`, others need nothing.
+    let abs = std::fs::canonicalize(file).unwrap_or_else(|_| Path::new(file).to_path_buf());
+    let dir = abs.parent().map(Path::to_path_buf).unwrap_or_default();
+    let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(&dir).args(args).arg(abs.as_os_str()).output().ok();
+    let in_repo = std::process::Command::new("git").arg("-C").arg(&dir).args(["rev-parse", "--is-inside-work-tree"]).output().map(|o| o.status.success()).unwrap_or(false);
+    let tracked = in_repo && git(&["ls-files", "--error-unmatch"]).is_some_and(|o| o.status.success());
     put(&db, &project, &path, text, personal, allow_secrets)?;
     if mv {
         std::fs::remove_file(file)?;
-        println!("  Moved: {file} was deleted. If git tracked it, run: git rm --cached {file}   (then commit when you are ready; AutoMemory never commits for you)");
+        if tracked {
+            println!("  Moved: {file} was deleted from the folder, but git still tracks it. Stop tracking it with:\n      git rm --cached {file}\n  and commit when you are ready (AutoMemory never commits or changes git for you). Older commits still contain the file.");
+        } else {
+            println!("  Moved: {file} was deleted. Git was not tracking it, so there is nothing to do in git.");
+        }
     }
     Ok(())
 }

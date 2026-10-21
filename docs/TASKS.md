@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (66 MCP tools, 282 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (68 MCP tools, 284 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -173,7 +173,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] L2 `.automemory/library/` copies with INDEX.md (kept out of git status through `.git/info/exclude`, `[library] exclude_from_git`), files kept in place from global config `[library] files` (any git state), edits taken back, doctor check; event-driven by hooks and `library sync` (no always-on file watcher)
 - [x] L3 Vault sync of library files as a `library` record kind (encrypted deltas, same key as the vault; removals travel as markers; personal files stay; both-changed files keep yours, theirs parked in `.automemory/library/_incoming/` with an Inbox item; kept-in-place files are written in place on the other computer and never overwrite a different local file)
 - [x] L4 Dashboard Library page (tree, summary/outline/whole-file tiers, new/edit/remove, history and restore, git-status banner, sync folder, files kept in place) and library files on the Documents page
-- [ ] L5 Agent put/propose, links, move-out-of-git helper
+- [x] L5 `library.put` (agent's own files, no overwriting yours, no secrets, 100-file cap), `library.propose` (Inbox item with a diff, applied only when a person approves, never in bulk, 5 waiting at most), `library:<path>` citations in brief items and room evidence, `library add --move` says whether git tracked the file
 - [ ] L6 Attachments and optional model abstracts
 
 ## Later (after v1 passes its gates)

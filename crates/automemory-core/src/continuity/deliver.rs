@@ -32,7 +32,8 @@ pub fn label(db: &Database, i: &BriefItem) -> String {
 
 fn line(db: &Database, i: &BriefItem) -> String {
     let why = i.reason.as_deref().map(|r| format!(" because {r}")).unwrap_or_default();
-    format!("- {}{why} {}", i.text.trim_end_matches('.'), label(db, i))
+    let see = i.ref_id.as_deref().filter(|r| r.starts_with("library:")).map(|r| format!(" [see {r}]")).unwrap_or_default();
+    format!("- {}{why}{see} {}", i.text.trim_end_matches('.'), label(db, i))
 }
 
 /// Every active item grouped by kind, within about `max_tokens` (4 characters per token). `None` when there is nothing.

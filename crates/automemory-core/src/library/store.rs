@@ -153,6 +153,12 @@ impl Database {
                 bail!("{path} was written by a person: an agent may not change it (suggest an edit instead)");
             }
         }
+        if new.origin == Origin::Agent && existing.is_none() {
+            let n: i64 = self.conn().query_row("SELECT COUNT(*) FROM library_files WHERE (project_id IS ?1) AND status = 'active' AND origin = 'agent'", params![new.project_id], |r| r.get(0))?;
+            if n >= 100 {
+                bail!("agents already wrote 100 files in this library: a person should clear some first");
+            }
+        }
         let used: i64 = self.conn().query_row(
             "SELECT COALESCE(SUM(size), 0) FROM library_files WHERE (project_id IS ?1) AND status = 'active' AND path != ?2", params![new.project_id, path], |r| r.get(0))?;
         if used as usize + new.content.len() > PROJECT_MAX {
