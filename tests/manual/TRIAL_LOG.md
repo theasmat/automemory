@@ -28,6 +28,8 @@ Statuses: `PENDING`, `PASS`, `FAIL`, `PARTIAL`, `BLOCKED`.
 | T10 | Clean removal: `disconnect` leaves nothing behind | PENDING | |
 | T11 | Planning room: two real agents agree a plan, the human approves it | PASS (3 fixes) | 2026-10-20 |
 | T11b | Room started in the dashboard; invited agents find it with no id pasted | PASS | 2026-10-20 |
+| T12 | Antigravity long chat continued in Claude Code (brief + history) | PENDING | |
+| T13 | Project library with Claude Code, Antigravity and Codex | PENDING | |
 
 ## Test cases
 
@@ -556,3 +558,52 @@ Prepared in C8. Steps and the checker are in `tests/manual/t12_check.py` (read-o
 goal, a next step and what was ruled out, you confirm the drafts, and Claude Code (new session, same folder) answers "where did we get to / what
 was ruled out and why / next step" from the brief without you re-explaining. Record the result and any wrong or missing item below.
 Offline evidence so far: `tests/eval/continuity_eval.py` (golden chats; recall 18/18 on phrasings the drafter was tuned on, so expect lower on real chats).
+
+### T13 Project library with Claude Code, Antigravity and Codex: NOT RUN YET (about 45 minutes)
+
+Goal: documents kept outside git are found, read, written and (carefully) changed by three real agents; git stays clean; they sync like the rest.
+Facts the agents cannot guess: the PRD says carts expire after **37 days** and **Redis was rejected**; the git-ignored file holds the marker **pelican-2290**.
+
+Setup (you, in the trial folder; the installed binary is current, restart anything that was running)
+1. `automemory serve` (restart it so the Library page exists), then `automemory doctor` (all green; the line "Checking running MCP servers" must list nothing: restart agents it names).
+2. `automemory connect codex` (project only, no `-g`), and make sure Claude Code and Antigravity are connected as in T1/T2.
+3. Create the PRD file and add it (asks the password):
+   ```bash
+   cat > /tmp/prd-cart.md <<'EOF'
+   # Cart PRD
+
+   A shopper keeps items between visits. Carts expire after 37 days of no activity.
+
+   ## Decisions
+   - Decision: store carts in SQLite
+   - Rejected: Redis, because of hosting cost
+
+   - TODO: write the nightly cleanup job
+   EOF
+   automemory library add /tmp/prd-cart.md --as plans/prd-cart.md
+   ```
+4. A file git must not see, kept in place:
+   ```bash
+   printf '# Private PRD\n\nCodename marker: pelican-2290. Not for the repository.\n' > PRD-private.md
+   echo PRD-private.md >> .gitignore
+   automemory library link PRD-private.md      # password
+   automemory library sync
+   git status --short                          # must show only .gitignore (and your earlier trial changes), nothing under .automemory
+   ```
+5. Dashboard > Library: the tree shows `plans/prd-cart.md` and `PRD-private.md` (badge "in place"); open each at Summary, Outline, Whole file.
+
+Per agent (fresh session in the trial folder; do Claude Code, then Antigravity, then Codex; save each reply as `claude.txt`, `agy.txt`, `codex.txt` in one folder)
+6. Read question (do not mention tools or paths): "What does our cart PRD say about how long carts last, what did we reject and why, and what is in PRD-private.md? Tell me where you found each."
+   Expect: 37 days, Redis rejected for hosting cost, pelican-2290. Note whether it used `library.get`/`library.search`, `.automemory/library/INDEX.md`, or the file directly (all acceptable; record which).
+7. Write question: "Save a short note of what you just learned as a library note for the other agents." Expect a `library.put` (a file under `notes/` or similar) marked agent-written in the Library page.
+8. Suggest question (once, with any one agent, or each with a different change): "Support wants carts to last 60 days. Suggest that change to the PRD." Expect `library.propose`: an Inbox item "<agent> suggests changing library file plans/prd-cart.md (+1 -1 lines)". **Record if the agent instead edits `.automemory/library/plans/prd-cart.md` directly** (the file is read-only, but a determined agent can bypass it; the checker flags it).
+9. You: Inbox > open the suggestion > Approve (password). Library > History shows a revision "approved from <agent>"; Restore the previous revision to prove it is reversible.
+10. Cross-agent: in a fresh Antigravity (or Codex) session ask "Which library notes did other agents leave, and what do they say?" Expect it to find the note from step 7.
+11. Sync (needs a remote; skip if none): on a second computer run `automemory sync auto` then `automemory library sync`; the PRD, the agent note and `PRD-private.md` (in place) should appear.
+
+Check (in the AutoMemory repo)
+```bash
+python3 tests/manual/t13_check.py --project /Users/as/Developer/test/automemory --answers /path/to/replies
+```
+Pass when it prints `PASS: T13`. Warnings are findings to record (an agent bypassing `library.propose`, or reading without a tool call), not failures.
+Paste the output and each agent's reply, plus anything that confused the agent (for example it ignored the INDEX line, or tried to edit a read-only copy).
