@@ -59,6 +59,38 @@ def main():
         out = json.dumps(sb.hook("claude", "prompt", {"session_id": "s-new", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})[0] or {})
         rep.check("Project library" in out and "plans/prd-cart.md" in out and "store carts in SQLite" not in out, "a new session is told the library exists (index only, not the content)", out[:300])
 
+        # L2: a folder view for agents without MCP, kept out of git status; linked files from the global config.
+        r = sb.run("library", "sync")
+        folder = sb.project / ".automemory" / "library"
+        rep.check(r.returncode == 0 and (folder / "plans/prd-cart.md").read_text() == PRD and "plans/prd-cart.md" in (folder / "INDEX.md").read_text(), "sync writes the copy and INDEX.md into .automemory/library", r.stdout + r.stderr)
+        rep.check(subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=sb.project, capture_output=True, text=True).stdout == status_before, "the folder does not show in git status (local exclude)")
+        rep.check(not (sb.project / ".gitignore").exists(), ".gitignore was not created or changed")
+        (folder / "plans/prd-cart.md").unlink()
+        sb.hook("claude", "prompt", {"session_id": "s-restore", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})
+        rep.check((folder / "plans/prd-cart.md").exists(), "a new session finds the copy in place (the hook restores it)")
+        (sb.project / ".gitignore").write_text("PRD-private.md\n")
+        (sb.project / "PRD-private.md").write_text("# Private PRD\n\nKept out of git on purpose.\n")
+        r = sb.run("library", "link", "PRD-private.md")
+        rep.check(r.returncode != 0, "changing which files are kept in sync needs the password")
+        r = pw("library", "link", "PRD-private.md")
+        rep.check(r.returncode == 0, "with the password the pattern is added to the global config", r.stdout + r.stderr)
+        rep.check(sb.run("library", "sync").returncode == 0, "sync reads it")
+        listing = sb.mcp("library.list", project_id="app")
+        linked = [f for f in listing["files"] if f["path"] == "PRD-private.md"]
+        rep.check(bool(linked) and linked[0]["linked"] is True, "a git-ignored file named in the config is in the library, marked linked", json.dumps(listing)[:300])
+        rep.check((sb.project / ".gitignore").read_text() == "PRD-private.md\n" and (sb.project / "PRD-private.md").exists() and not (folder / "PRD-private.md").exists(), "it stays where it is; git settings untouched; no copy made")
+        (sb.project / "PRD-private.md").write_text("# Private PRD\n\nChanged on disk.\n")
+        sb.run("library", "sync")
+        rep.check("Changed on disk" in sb.mcp("library.get", path="PRD-private.md", project_id="app")["content"], "an edit in place is picked up")
+        rep.check("PRD-private.md" in sb.run("library", "links").stdout, "links shows the pattern and the file")
+        dr = sb.run("doctor").stdout
+        rep.check("Checking project library... ✓" in dr, "doctor checks the library", dr[dr.find("Checking project library"):][:200])
+        (folder / "INDEX.md").unlink()
+        (folder / "plans/prd-cart.md").unlink()
+        rep.check("not up to date" in sb.run("doctor").stdout, "doctor notices a missing copy")
+        sb.run("library", "sync")
+        pw("library", "unlink", "PRD-private.md")
+
         # Moving a file out of the repository: copy in, delete the original, print the git command, never commit.
         inrepo = sb.project / "PRIVATE-PRD.md"
         inrepo.write_text("# Private\n\nNot for the repository.\n")

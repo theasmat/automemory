@@ -2589,7 +2589,7 @@ impl ToolRegistry {
                 match self.db.library_list(project_id, prefix) {
                     Ok(files) if files.is_empty() => ToolCallResult::json(&json!({ "files": [], "next_action": "The library is empty. A person adds documents with `automemory library add <file>`." })),
                     Ok(files) => ToolCallResult::json(&json!({
-                        "files": files.iter().map(|f| json!({ "path": f.path, "summary": f.l0, "size": f.size, "by": f.author, "origin": f.origin, "updated_at": f.updated_at })).collect::<Vec<_>>(),
+                        "files": files.iter().map(|f| json!({ "path": f.path, "summary": f.l0, "size": f.size, "by": f.author, "origin": f.origin, "linked": f.linked, "updated_at": f.updated_at })).collect::<Vec<_>>(),
                         "next_action": "Open one with library.get {path}; tier 1 gives an outline, tier 2 the whole file."
                     })),
                     Err(e) => ToolCallResult::error(format!("Failed: {e}")),

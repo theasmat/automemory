@@ -10,7 +10,7 @@ fn project_or_bail(p: Option<String>) -> Result<String> {
 }
 
 fn put(db: &automemory_core::db::Database, project: &str, path: &str, content: String, personal: bool, allow_secrets: bool) -> Result<()> {
-    let (f, outcome) = db.library_put(NewFile { project_id: Some(project.to_string()), path: path.to_string(), content, origin: Origin::Human, author: "human".into(), personal, allow_secrets })?;
+    let (f, outcome) = db.library_put(NewFile { project_id: Some(project.to_string()), path: path.to_string(), content, origin: Origin::Human, author: "human".into(), personal, allow_secrets, linked: false })?;
     match outcome {
         PutOutcome::Created => println!("✓ Added {} ({} KB). Agents see: {}", f.path, f.size / 1024 + 1, f.l0),
         PutOutcome::Updated => println!("✓ Updated {} (revision {}).", f.path, f.revisions),
@@ -92,5 +92,76 @@ pub fn history(path: &str) -> Result<()> {
     for (rev, author, origin, at) in db.library_revisions(project.as_deref(), path)? {
         println!("rev {rev:<3} {at}  {author} ({origin})");
     }
+    Ok(())
+}
+
+/// The project of this folder: (id, slug, root).
+fn here(db: &automemory_core::db::Database, project: Option<String>) -> Result<(String, String, std::path::PathBuf)> {
+    let pid = project_or_bail(project)?;
+    let slug = db.get_project_by_id(&pid)?.map(|p| p.slug).unwrap_or_default();
+    let root = super::brief::project_root(db, Some(&pid));
+    Ok((pid, slug, root))
+}
+
+/// One pass: edits made in `.automemory/library/` become revisions, files named in the config are read where they are, copies and INDEX.md are written.
+pub fn sync() -> Result<()> {
+    let (db, project) = open()?;
+    let (pid, slug, root) = here(&db, project)?;
+    let cfg = automemory_core::config::GlobalConfig::load()?;
+    let r = automemory_core::library::fs::sync_project(&db, &pid, &slug, &root, &cfg.library)?;
+    println!("✓ Library synced: {} copied into .automemory/library, {} taken back from it, {} kept-in-place file(s) read, {} copy(ies) removed.", r.written, r.ingested, r.linked, r.removed);
+    for s in r.skipped {
+        println!("  skipped {s}");
+    }
+    Ok(())
+}
+
+/// Adds a pattern (relative to the project root) to the global config: those files are kept in sync where they are, tracked by git or not.
+pub fn link(pattern: &str, project_only: bool) -> Result<()> {
+    if pattern.starts_with('/') || pattern.contains("..") || pattern.contains(':') {
+        bail!("use a path or pattern relative to the project folder, such as PRD-private.md or plans/**/*.md");
+    }
+    automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "change which files the library keeps in sync")?;
+    let (db, project) = open()?;
+    let (_, slug, _) = here(&db, project)?;
+    let mut cfg = automemory_core::config::GlobalConfig::load()?;
+    let list = if project_only { &mut cfg.library.projects.entry(slug.clone()).or_default().files } else { &mut cfg.library.files };
+    if !list.iter().any(|p| p == pattern) {
+        list.push(pattern.to_string());
+    }
+    cfg.save()?;
+    println!("✓ \"{pattern}\" is now kept in sync{}. Git does not matter: tracked, ignored or untracked files are all read as they are. Run: automemory library sync", if project_only { format!(" for project {slug}") } else { " in every project".into() });
+    Ok(())
+}
+
+pub fn unlink(pattern: &str) -> Result<()> {
+    automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "change which files the library keeps in sync")?;
+    let mut cfg = automemory_core::config::GlobalConfig::load()?;
+    let before = cfg.library.files.len() + cfg.library.projects.values().map(|p| p.files.len()).sum::<usize>();
+    cfg.library.files.retain(|p| p != pattern);
+    for p in cfg.library.projects.values_mut() {
+        p.files.retain(|x| x != pattern);
+    }
+    let after = cfg.library.files.len() + cfg.library.projects.values().map(|p| p.files.len()).sum::<usize>();
+    cfg.save()?;
+    println!("{}", if before == after { format!("\"{pattern}\" was not in the config.") } else { format!("✓ \"{pattern}\" removed. Files already in the library stay until: automemory library rm <path>") });
+    Ok(())
+}
+
+pub fn links() -> Result<()> {
+    let (db, project) = open()?;
+    let (pid, slug, _) = here(&db, project)?;
+    let cfg = automemory_core::config::GlobalConfig::load()?;
+    let pats = cfg.library.patterns_for(&slug);
+    if pats.is_empty() {
+        println!("No files are kept in sync in place. Add one: automemory library link PRD-private.md");
+    }
+    for p in pats {
+        println!("{p}");
+    }
+    for f in db.library_list(Some(&pid), None)?.into_iter().filter(|f| f.linked) {
+        println!("   in library: {}", f.path);
+    }
+    println!("Folder kept out of git status: {}", if cfg.library.exclude_from_git { "yes (.git/info/exclude)" } else { "no ([library] exclude_from_git = false)" });
     Ok(())
 }

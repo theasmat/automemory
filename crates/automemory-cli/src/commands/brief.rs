@@ -76,7 +76,7 @@ pub fn forget(all: bool) -> Result<()> {
 use automemory_core::continuity::{import, readers};
 
 /// The folder an agent ran in for this project: the project's registered path, else where we are.
-fn project_root(db: &Database, project: Option<&str>) -> std::path::PathBuf {
+pub(crate) fn project_root(db: &Database, project: Option<&str>) -> std::path::PathBuf {
     project
         .and_then(|p| db.conn().query_row("SELECT local_path FROM project_paths WHERE project_id = ?1 ORDER BY is_primary DESC LIMIT 1", [p], |r| r.get::<_, String>(0)).ok())
         .map(std::path::PathBuf::from)

@@ -1549,6 +1549,10 @@ async fn main() -> Result<()> {
             LibraryCommands::Search { query, limit } => commands::library::search(&query, limit)?,
             LibraryCommands::Rm { path } => commands::library::rm(&path)?,
             LibraryCommands::History { path } => commands::library::history(&path)?,
+            LibraryCommands::Sync => commands::library::sync()?,
+            LibraryCommands::Link { pattern, project } => commands::library::link(&pattern, project)?,
+            LibraryCommands::Unlink { pattern } => commands::library::unlink(&pattern)?,
+            LibraryCommands::Links => commands::library::links()?,
         },
         Commands::Continuity { command } => match command {
             ContinuityCommands::Show { all } => commands::brief::show(all)?,
@@ -1739,6 +1743,19 @@ enum LibraryCommands {
     Rm { path: String },
     /// Revisions of a file
     History { path: String },
+    /// Write copies into .automemory/library (with INDEX.md), take edits back, read the files named by `link`
+    Sync,
+    /// Keep files in sync where they are (relative path or glob; git tracked, ignored or not does not matter). Password when set
+    Link {
+        pattern: String,
+        /// Only for this project (default: every project)
+        #[arg(long)]
+        project: bool,
+    },
+    /// Stop keeping a pattern in sync (library copies stay until `rm`)
+    Unlink { pattern: String },
+    /// Show the patterns and the files they brought in
+    Links,
 }
 
 #[derive(Subcommand)]

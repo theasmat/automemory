@@ -41,6 +41,8 @@ pub struct LibraryFile {
     pub l0: String,
     pub l1: String,
     pub revisions: usize,
+    /// Kept in sync where it is in the project (global config), not copied into the library folder.
+    pub linked: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -55,6 +57,8 @@ pub struct NewFile {
     pub personal: bool,
     /// A person accepts a file that looks like it holds a secret (never an agent).
     pub allow_secrets: bool,
+    /// The path is relative to the project root and may be hidden or ignored by git.
+    pub linked: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

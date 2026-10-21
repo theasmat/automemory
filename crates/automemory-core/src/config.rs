@@ -26,6 +26,8 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub continuity: ContinuitySettings,
     #[serde(default)]
+    pub library: LibrarySettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
 }
 
@@ -159,6 +161,43 @@ fn default_inject_tokens() -> usize {
 impl Default for ContinuitySettings {
     fn default() -> Self {
         Self { inject_tokens: default_inject_tokens(), read_chats: Vec::new() }
+    }
+}
+
+/// `[library]`: documents for agents kept outside git (plan/library-plan.md).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibrarySettings {
+    /// Files kept in sync where they are, relative to every project root (globs). AutoMemory does not care whether git tracks or ignores them.
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// Keep `.automemory/library/` out of `git status` through `.git/info/exclude` (local to the clone; `.gitignore` is never touched).
+    #[serde(default = "default_true")]
+    pub exclude_from_git: bool,
+    /// Extra patterns for one project, keyed by its slug.
+    #[serde(default)]
+    pub projects: std::collections::BTreeMap<String, LibraryProjectSettings>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LibraryProjectSettings {
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+impl Default for LibrarySettings {
+    fn default() -> Self {
+        Self { files: Vec::new(), exclude_from_git: true, projects: Default::default() }
+    }
+}
+
+impl LibrarySettings {
+    /// Patterns that apply to a project (global plus its own).
+    pub fn patterns_for(&self, slug: &str) -> Vec<String> {
+        let mut v = self.files.clone();
+        if let Some(p) = self.projects.get(slug) {
+            v.extend(p.files.clone());
+        }
+        v
     }
 }
 
@@ -365,6 +404,7 @@ impl Default for GlobalConfig {
             embeddings: EmbeddingSettings::default(),
             llm: LlmSettings::default(),
             continuity: ContinuitySettings::default(),
+            library: LibrarySettings::default(),
             projects: Vec::new(),
         }
     }

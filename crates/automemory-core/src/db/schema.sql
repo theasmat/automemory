@@ -552,6 +552,7 @@ CREATE TABLE IF NOT EXISTS library_files (
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    link INTEGER NOT NULL DEFAULT 0,
     UNIQUE(project_id, path)
 );
 CREATE TABLE IF NOT EXISTS library_revisions (

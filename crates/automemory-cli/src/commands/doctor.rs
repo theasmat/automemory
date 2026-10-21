@@ -190,6 +190,31 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Project library: copies up to date, linked files present, the folder out of git status.
+    {
+        print!("Checking project library... ");
+        let db = automemory_core::db::Database::open(&config.db_path).ok();
+        let here = std::env::current_dir().ok();
+        match (db, here) {
+            (Some(db), Some(cwd)) => match db.find_project_by_path(&cwd.to_string_lossy()).ok().flatten() {
+                Some(p) => {
+                    let cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+                    let problems = automemory_core::library::fs::check(&db, &p.id, &p.slug, &cwd, &cfg.library);
+                    if problems.is_empty() {
+                        println!("✓ {} file(s)", db.library_list(Some(&p.id), None).map(|f| f.len()).unwrap_or(0));
+                    } else {
+                        println!("⚠ {} thing(s) to look at:", problems.len());
+                        for pr in problems {
+                            println!("    {pr}");
+                        }
+                    }
+                }
+                None => println!("– this folder is not a registered project"),
+            },
+            _ => println!("– database unavailable"),
+        }
+    }
+
     // Backups: every saved copy should open (a damaged one is no use when it is needed).
     {
         print!("Checking backups... ");

@@ -430,6 +430,10 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
 
     if matches!(canonical, Some(CanonicalEvent::Stop | CanonicalEvent::SessionEnd | CanonicalEvent::PreCompact)) {
         spawn_chat_refresh(&db, effective_project_id, &root_dir(), canonical == Some(CanonicalEvent::Stop));
+        // Edits made in .automemory/library or to linked files during the session are taken in at the end of the turn.
+        if canonical != Some(CanonicalEvent::PreCompact) {
+            spawn_library_sync(&db, effective_project_id, &root_dir());
+        }
     }
 
     // The session is over: its files are free for other agents at once.
@@ -553,6 +557,30 @@ fn dir_of(root: &str) -> PathBuf {
 
 /// Start `automemory sync auto` detached (a hook never waits for the network). Throttled, and
 /// only when a git remote is configured.
+/// Project library pass for the project of `cwd`: edits taken back, linked files read, copies written. Errors are ignored (never blocks a hook).
+fn library_sync(db: &Database, project_id: Option<&str>, cwd: &Path) {
+    let Some(pid) = project_id else { return };
+    let Ok(cfg) = automemory_core::config::GlobalConfig::load() else { return };
+    let slug = db.get_project_by_id(pid).ok().flatten().map(|p| p.slug).unwrap_or_default();
+    if cfg.library.patterns_for(&slug).is_empty() && db.library_list(Some(pid), None).map(|f| f.is_empty()).unwrap_or(true) {
+        return;
+    }
+    let _ = automemory_core::library::fs::sync_project(db, pid, &slug, cwd, &cfg.library);
+}
+
+fn spawn_library_sync(db: &Database, project_id: Option<&str>, cwd: &Path) {
+    let Some(pid) = project_id else { return };
+    let key = format!("library_sync_at:{pid}");
+    let now = chrono::Utc::now().timestamp();
+    if db.sync_kv_get(&key).and_then(|v| v.parse::<i64>().ok()).is_some_and(|t| now - t < 20) {
+        return;
+    }
+    db.sync_kv_set(&key, &now.to_string());
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = Command::new(exe).args(["library", "sync"]).current_dir(cwd).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+}
+
 /// Keeps the brief current without a person asking: new chat lines of the agents a person turned on are imported and
 /// drafted in a detached process (the hook never waits). Nothing happens while no agent is on. Stops fire after every
 /// turn, so those are throttled; the end of a session and a compaction always refresh.
@@ -604,6 +632,8 @@ fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &
     db.sync_kv_set(&key, "1");
     // Keep instruction files that already carry our block current (never creates new ones).
     super::rules_export::refresh_existing(db, project_id, cwd);
+    // Project library: copies and INDEX.md are in place before the agent looks (cheap; nothing happens for an empty library).
+    library_sync(db, project_id, cwd);
 
     // One-time 3-line notice per project for newly connected agents
     let pid = project_id.unwrap_or("global");

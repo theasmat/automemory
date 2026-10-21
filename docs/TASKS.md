@@ -165,12 +165,12 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (66 MCP tools, 278 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (66 MCP tools, 280 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
 - [x] L1 Store (schema v17), secrets check, deterministic tiers, CLI (`automemory library add|new|ls|show|search|rm|history`), MCP `library.list/get/search`, session-start index
-- [ ] L2 Materialize `.automemory/library/` (git exclude optional), linked files from global config `[library] files`, INDEX.md, watcher, doctor check
+- [x] L2 `.automemory/library/` copies with INDEX.md (kept out of git status through `.git/info/exclude`, `[library] exclude_from_git`), files kept in place from global config `[library] files` (any git state), edits taken back, doctor check; event-driven by hooks and `library sync` (no always-on file watcher)
 - [ ] L3 Vault sync of library files, personal vs shared
 - [ ] L4 Dashboard Library page
 - [ ] L5 Agent put/propose, links, move-out-of-git helper

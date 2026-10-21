@@ -10,7 +10,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-const COLS: &str = "id, project_id, path, origin, author, scope, size, sha256, content, l0, l1, created_at, updated_at";
+const COLS: &str = "id, project_id, path, origin, author, scope, size, sha256, content, l0, l1, created_at, updated_at, link";
 
 fn when(s: String) -> DateTime<Utc> {
     DateTime::parse_from_rfc3339(&s).map(|d| d.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now())
@@ -30,6 +30,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<LibraryFile> {
         l0: r.get(9)?,
         l1: r.get(10)?,
         revisions: 0,
+        linked: r.get::<_, i64>(13)? != 0,
         created_at: when(r.get(11)?),
         updated_at: when(r.get(12)?),
     })
@@ -44,6 +45,20 @@ pub fn clean_path(path: &str) -> Result<String> {
     }
     if path.trim().starts_with('/') || p.split('/').any(|s| s.is_empty() || s == ".." || s == "." || s.starts_with('.') || s.contains(':')) {
         bail!("use a plain relative path such as plans/prd.md (no '..', no hidden folders, no drive letters)");
+    }
+    let ext = p.rsplit('.').next().unwrap_or("").to_lowercase();
+    if !p.contains('.') || !EXTENSIONS.contains(&ext.as_str()) {
+        bail!("only text files are kept: {}", EXTENSIONS.join(", "));
+    }
+    Ok(p)
+}
+
+/// For a file kept in place: a relative path inside the project; hidden folders are fine, `.git`, `.automemory` and `..` are not.
+pub fn clean_linked_path(path: &str) -> Result<String> {
+    let p = path.trim().replace('\\', "/");
+    let p = p.trim_start_matches("./").to_string();
+    if p.is_empty() || p.len() > 300 || p.starts_with('/') || p.split('/').any(|s| s.is_empty() || s == ".." || s == "." || s == ".git" || s == ".automemory" || s.contains(':')) {
+        bail!("not a plain relative path inside the project: {path}");
     }
     let ext = p.rsplit('.').next().unwrap_or("").to_lowercase();
     if !p.contains('.') || !EXTENSIONS.contains(&ext.as_str()) {
@@ -72,7 +87,10 @@ impl Database {
     /// Adds or updates a file. Refused: a path that is not plain text, content over the limits, a secret (a person may override), an agent
     /// changing a file a person wrote.
     pub fn library_put(&self, new: NewFile) -> Result<(LibraryFile, PutOutcome)> {
-        let path = clean_path(&new.path)?;
+        let path = if new.linked { clean_linked_path(&new.path)? } else { clean_path(&new.path)? };
+        if !new.linked && path.eq_ignore_ascii_case("INDEX.md") {
+            bail!("INDEX.md is written by AutoMemory; choose another name");
+        }
         if new.content.contains('\0') {
             bail!("binary content is not accepted: only text files");
         }
@@ -86,6 +104,9 @@ impl Database {
         }
         let existing = self.library_get(new.project_id.as_deref(), &path)?;
         if let Some(e) = &existing {
+            if e.linked != new.linked {
+                bail!("{path} is already in the library as {}", if e.linked { "a file kept in place" } else { "a copied file" });
+            }
             if e.origin == Origin::Human && new.origin == Origin::Agent {
                 bail!("{path} was written by a person: an agent may not change it (suggest an edit instead)");
             }
@@ -107,8 +128,8 @@ impl Database {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute(
-            &format!("INSERT OR REPLACE INTO library_files ({COLS}, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'active')"),
-            params![id, new.project_id, path, new.origin.as_str(), new.author, scope, new.content.len() as i64, sha, new.content, l0, l1, created, now],
+            &format!("INSERT OR REPLACE INTO library_files ({COLS}, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'active')"),
+            params![id, new.project_id, path, new.origin.as_str(), new.author, scope, new.content.len() as i64, sha, new.content, l0, l1, created, now, new.linked as i64],
         )?;
         let rev: i64 = tx.query_row("SELECT COALESCE(MAX(rev), 0) + 1 FROM library_revisions WHERE file_id = ?1", [&id], |r| r.get(0))?;
         tx.execute("INSERT INTO library_revisions (file_id, rev, sha256, content, author, origin, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -200,7 +221,7 @@ mod tests {
     use super::*;
 
     fn put(db: &Database, path: &str, content: &str, origin: Origin) -> Result<(LibraryFile, PutOutcome)> {
-        db.library_put(NewFile { project_id: Some("p".into()), path: path.into(), content: content.into(), origin, author: if origin == Origin::Human { "human".into() } else { "claude".into() }, personal: false, allow_secrets: false })
+        db.library_put(NewFile { project_id: Some("p".into()), path: path.into(), content: content.into(), origin, author: if origin == Origin::Human { "human".into() } else { "claude".into() }, personal: false, allow_secrets: false, linked: false })
     }
 
     #[test]
@@ -237,7 +258,7 @@ mod tests {
         assert!(e.contains("line 2") && e.contains("--allow-secrets"), "{e}");
         let e = put(&db, "n.md", text, Origin::Agent).unwrap_err().to_string();
         assert!(e.contains("line 2") && !e.contains("--allow-secrets"), "{e}");
-        let ok = db.library_put(NewFile { project_id: Some("p".into()), path: "n.md".into(), content: text.into(), origin: Origin::Human, author: "human".into(), personal: true, allow_secrets: true });
+        let ok = db.library_put(NewFile { project_id: Some("p".into()), path: "n.md".into(), content: text.into(), origin: Origin::Human, author: "human".into(), personal: true, allow_secrets: true, linked: false });
         assert!(ok.is_ok());
     }
 

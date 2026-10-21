@@ -1,5 +1,6 @@
 //! Project library: documents for agents (PRDs, plans, notes) kept outside git. L1: the store, deterministic tiers, search and the
 //! index shown to agents. Files appear in the project folder (L2) and sync through the vault (L3) in later phases (plan/library-plan.md).
+pub mod fs;
 pub mod model;
 pub mod store;
 pub mod tiers;
@@ -16,10 +17,10 @@ pub fn index_block(db: &crate::db::Database, project_id: Option<&str>, max_token
         return None;
     }
     let budget = max_tokens.max(100) * 4;
-    let mut out = String::from("Project library (documents kept outside git; read one with library.get {path}, find with library.search):\n");
+    let mut out = String::from("Project library (documents kept outside git; read one with library.get {path}, find with library.search, or open .automemory/library/INDEX.md):\n");
     let mut omitted = 0;
     for f in &files {
-        let line = format!("- {} - {}{}\n", f.path, f.l0, if f.origin == Origin::Agent { format!(" (agent-written by {})", f.author) } else { String::new() });
+        let line = format!("- {} - {}{}\n", f.path, f.l0, if f.origin == Origin::Agent { format!(" (agent-written by {})", f.author) } else if f.linked { " (linked, in the project)".to_string() } else { String::new() });
         if out.len() + line.len() > budget {
             omitted += 1;
         } else {
