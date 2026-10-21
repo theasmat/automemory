@@ -182,14 +182,6 @@ const SHOWCASE_STEPS: CoachStep[] = [
     placement: 'bottom',
   },
   {
-    id: 's-graph',
-    target: 'main h1',
-    title: 'Knowledge graph',
-    body: 'How files, ideas and decisions connect. It grows as agents work.',
-    route: '/graph',
-    placement: 'bottom',
-  },
-  {
     id: 's-recall',
     target: 'main h1',
     title: 'Models',

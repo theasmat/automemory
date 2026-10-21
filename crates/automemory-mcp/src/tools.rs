@@ -18,10 +18,12 @@ use uuid::Uuid;
 
 /// Folded into other tools (kept working for agents that still call them): `memory.ask` = `memory.recall`; `memory.context/topics/digest/constitution/skills`
 /// = `memory.list {view}`; `chat.search`, `library.search` = `memory.search {scope}`; `baton.pass` = `continuity.brief {action: handoff}`;
-/// `baton.pickup` = what `memory.resume` already returns.
+/// `baton.pickup` = what `memory.resume` already returns; `graph.*` = the `codebase-memory` server; `review.*` are kept for scripts that use them.
 const RETIRED: &[&str] = &[
     "memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills",
     "chat.search", "library.search", "baton.pass", "baton.pickup",
+    // The code graph is served by the codebase-memory server every agent already has; a cross-review is a diff with a test verdict, not a room.
+    "graph.index", "graph.query", "graph.neighbors", "graph.impact", "review.submit", "review.next", "review.post",
 ];
 
 pub struct ToolRegistry {

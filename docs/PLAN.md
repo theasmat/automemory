@@ -504,8 +504,8 @@ Code symbols are left to the external `codebase-memory-mcp` (already registered 
 
 | | Now | After |
 |---|---|---|
-| MCP tools | 68 | 58 after K2, 51 after K4: minus `memory.ask` (alias of recall), `memory.context/topics/digest/constitution/skills` (views of `memory.list`), `chat.search`, `library.search` (scopes of `memory.search`), `baton.pass/pickup`, `review.submit/next/post`, `graph.index/query/neighbors/impact` |
-| Dashboard pages | 25 | 16 after K3, 12 after K5: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
+| MCP tools | 68 | 58 after K2, 51 after K4 (done): minus `memory.ask` (alias of recall), `memory.context/topics/digest/constitution/skills` (views of `memory.list`), `chat.search`, `library.search` (scopes of `memory.search`), `baton.pass/pickup`, `review.submit/next/post`, `graph.index/query/neighbors/impact` |
+| Dashboard pages | 25 | 15 after K4, 12 after K5: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
 | CLI | `doc`, `baton`, `pass`, `pickup`, `sync export/import/restore`, `sync init/status/push/pull` | `library`, `continuity`, `backup restore`; cloud commands hidden until the hosted service exists |
 
 ### 18.3 Order (each step ships alone, suite green, docs and counts updated)
@@ -514,6 +514,6 @@ Code symbols are left to the external `codebase-memory-mcp` (already registered 
 |---|---|---|
 | K1 | Fixes and shared code first: one approve/reject path for every Inbox item (fixes approve-all skipping LLM and team-pin items), shared reader helper, one background-spawn helper, one `clip`, delete the 5 redirect pages | small |
 | K2 | Notes and Hand-off: `memory.search {scope}`, `memory.list {view}`, baton into the brief, rules text generated from the tool list so it cannot drift | medium |
-| K3 | History and Settings: fix the skills/traces write path (X1), one Activity page, one Providers screen | medium |
-| K4 | Coordination and code symbols: reviews into rooms, drop `graph.*` and the Graph page | medium |
+| K3 | **Built.** History and Settings: skills, traces and failures written once per thing (X1), `memory prune`, one Activity page, one Models page (the two model screens merged; their routes stay separate) | medium |
+| K4 | **Built.** Code symbols: `graph.*` tools and the Graph page dropped (codebase-memory covers it). Reviews hidden from the tool list, not merged into rooms (a review has a test verdict a room does not) | medium |
 | K5 | Library and Sync: tracked documents into the library (88 documents migrated), cloud stub behind a flag, legacy vault into `backup restore` | large, last |

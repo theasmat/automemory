@@ -1389,10 +1389,6 @@ mod guideline_tests {
             // maintenance the person normally does in the dashboard
             "memory.update", "memory.archive", "memory.restore", "memory.redact", "preference.set", "preference.lock", "project.register",
             "memory.proposals.list", "memory.proposals.summary", "memory.proposals.decide", "memory.proposals.decide_all", "failure.resolve",
-            // code graph (served by the codebase-memory server too)
-            "graph.index", "graph.query", "graph.neighbors", "graph.impact",
-            // folded into rooms in a later step (PLAN section 18, K4)
-            "review.submit", "review.next", "review.post",
             // the lock tools are rarely needed: edits are locked automatically
             "lock.acquire", "lock.release", "lock.status",
         ];

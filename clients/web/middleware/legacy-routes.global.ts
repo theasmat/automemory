@@ -5,6 +5,7 @@ const MOVED: Record<string, string> = {
   '/coordination': '/agents',
   '/proposals': '/inbox',
   '/guardrails': '/safety',
+  '/graph': '/brain',
   '/recall': '/models?tab=search',
   '/skills': '/activity?tab=skills',
   '/traces': '/activity?tab=traces',
