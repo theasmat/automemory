@@ -1,6 +1,6 @@
 # Project library: agent documents that are not in git, kept in sync by AutoMemory
 
-Status: plan only (Oct 2026). Nothing in this file is built. Not part of v1 scope; see [docs/PLAN.md §17](../docs/PLAN.md).
+Status: plan only (Oct 2026); the maintainer's answers to the open questions are in §9. Nothing in this file is built. Not part of v1 scope; see [docs/PLAN.md §17](../docs/PLAN.md).
 
 ## 1. The need
 PRDs, plans, research notes, scratch specs, prompts and "read this first" files help agents, but people do not want them in the
@@ -37,14 +37,31 @@ automemory library ls | tree | show plans/prd-cart.md | search "refund"
 automemory library sync --push|--pull                                  or automatic, see 6
 ```
 - **Where the files are:** `~/.automemory/library/<project>/...` is the source of truth (plain files you can edit with any tool).
-- **Where agents see them:** a read-only-by-convention folder in the project, `.automemory/library/` (symlink on macOS and Linux,
-  copy on Windows), excluded through **`.git/info/exclude`** (local to the clone, never committed, never touches `.gitignore`).
-  `git status` stays clean; a test proves it. An `INDEX.md` in that folder lists every file with its L0 line.
+- **Where agents see managed files:** a read-only-by-convention folder in the project, `.automemory/library/` (symlink on macOS and Linux,
+  copy on Windows). By default it is kept out of git through **`.git/info/exclude`** (local to the clone, never committed, never touches `.gitignore`);
+  `[library] exclude_from_git = false` turns that off. `git status` stays clean by default; a test proves it. Linked files are never touched this way. An `INDEX.md` in that folder lists every file with its L0 line.
 - **Agents with MCP:** `library.list`, `library.get {path, tier}`, `library.search {query}`, `library.put {path, content}`.
 - **Hooks:** the session-start pack adds a short "Project library" index (L0 lines only, within the token budget); the rules text
   tells agents to open `.automemory/library/INDEX.md` or call `library.get`.
 - **Dashboard (Library page):** tree, preview at each tier, new/edit/upload (Markdown editor), history and revert, "where agents
   see it", sync state, and a banner if the folder is not excluded from git.
+
+## 3b. Two ways to put a file in the library (decided)
+1. **Managed:** `library add` / `new`, or the dashboard. The file lives in `~/.automemory/library/<project>/` and is shown to agents in
+   `.automemory/library/`.
+2. **Linked (in place), from the global config:** you list files that already sit in the project, wherever you keep them, and AutoMemory
+   syncs and indexes them **where they are**. AutoMemory **does not care whether git tracks, ignores or has never seen them**; it never edits
+   `.gitignore`, `.git/info/exclude` or the index for these files. Example in `~/.automemory/config.toml`:
+```toml
+[library]
+files = ["PRD-private.md", "plans/**/*.md", ".notes/**"]        # relative to every project root
+
+[library.projects.shop]                                          # extra files for one project (slug or git key)
+files = ["docs/agent-brief.md"]
+```
+   On another computer the same relative paths are written into that project's folder after sync (never over a different local file, see
+   conflicts in §6). Linked files get the same tiers, search, index and `library.get` as managed ones; the index marks them `linked`. Removing a
+   pattern stops syncing; it deletes nothing. `library link <path>` adds a line to the config for you (global config is a protected change: password).
 
 ## 4. Data and rules
 - **Entry:** path (unique per project), kind (md, txt, json, yaml; images and PDFs later), size, sha256, revisions, origin
@@ -76,7 +93,7 @@ Routes call only `library::` functions, like the rest of the project.
   the person chose to put the file in the library; `scope: personal` files never leave the machine.
 - Conflicts (same path edited on two computers): keep both revisions, newest wins in the tree, the older one is offered as a suggestion in the Inbox
   (existing conflict handling); nothing is overwritten without a trace.
-- Teammates: a file arrives labelled `from <person>` (existing `shared_by`) and only when the person opts in to project-wide library sharing.
+- Teammates (later, not in this feature's first phases): a file arrives labelled `from <person>` (existing `shared_by`) and only when the person opts in to project-wide library sharing.
 
 ## 7. Phases
 | Phase | Scope | Done when |
@@ -97,9 +114,24 @@ Routes call only `library::` functions, like the rest of the project.
 - **Windows.** Copy mode; CI check like the update/hooks tests.
 - **Scope creep into a knowledge base.** Text files for agents only; no wiki features, no web clipper.
 
-## 9. To settle with the maintainer
-1. Folder name agents see: `.automemory/library/` (proposed) or something shorter such as `.docs/`?
-2. Default for new files: shared with all your computers (proposed) or this machine only until marked?
-3. Teammate sharing in v1 of this feature, or only your own computers?
-4. Do you want existing in-repo PRDs/plans offered for "move out of git" (never done without asking), or only new files?
-5. Which agents must work on day one (Claude Code, Antigravity, Codex proposed)?
+## 9. Decisions (maintainer, Oct 2026) and what is still open
+Decided:
+1. Managed files appear under `.automemory/library/` (name chosen: library).
+2. New files sync to all your computers by default; `scope: personal` keeps one on this machine.
+3. Teammate sharing: later.
+4. Files can also be listed in the **global config** and are then synced in place; AutoMemory does not care if git tracks or ignores them (§3b).
+5. Day-one agents: Claude Code, Antigravity, Codex.
+
+Suggested defaults (change if you disagree):
+- **Conflicts on pull:** if a linked path already exists on the other computer with different content, never overwrite; keep the local file, put the incoming
+  version in `.automemory/library/_incoming/<path>`, and show an Inbox item.
+- **Deletes:** deleting a file here does not delete it elsewhere unless you run `library rm` (asks the password); a missing linked file is reported by `doctor`.
+- **History:** keep the last 20 revisions per file (configurable); older ones are dropped on sync cleanup.
+- **Agents writing linked files:** allowed only to files an agent created; edits to your files go through `library.propose`.
+- **Duplicates:** `doctor` warns when a linked file is also copied into the managed folder.
+- **Size:** 1 MB per file, 50 MB per project, text only at first.
+
+Still open (answer when you reach L2):
+a. Keep `exclude_from_git = true` as the default for the managed folder, or off (matching "we don't care about gitignore")?
+b. When two linked patterns match a file already in git history, should the dashboard offer "stop tracking in git" (prints the commands, never runs them)?
+c. Should linked files be restored on a computer that does not have the project folder yet, or wait until the project is registered there?

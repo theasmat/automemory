@@ -470,7 +470,7 @@ cannot read yet, readers added per agent later; code modular (one reader file + 
 Detailed spec: [plan/library-plan.md](../plan/library-plan.md). Requested by the maintainer: PRDs, plans and notes for agents that do not
 belong in the repository but must sync between computers and be found by every agent, in the spirit of
 [OpenViking](https://github.com/volcengine/OpenViking) (files addressed by path, three-tier loading, directory-first search), without its
-model-at-write-time design. Not part of v1; five questions to settle are listed at the end of the spec.
+model-at-write-time design. Decided: folder `.automemory/library/`, sync to all your computers by default, teammate sharing later, files can also be listed in the global config and synced in place whether or not git tracks or ignores them, day-one agents Claude Code, Antigravity and Codex. Three smaller questions remain at the end of the spec. Not part of v1.
 
 | Phase | Scope | Done when |
 |---|---|---|

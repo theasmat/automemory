@@ -167,10 +167,10 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 - [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 270 Rust tests at last check)
 
-## Project library (plan/library-plan.md, not started; settle its five questions first)
+## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
 - [ ] L1 Store, secrets check, deterministic tiers, CLI, MCP list/get/search, hook index
-- [ ] L2 Materialize with `.git/info/exclude`, INDEX.md, watcher, doctor check
+- [ ] L2 Materialize `.automemory/library/` (git exclude optional), linked files from global config `[library] files`, INDEX.md, watcher, doctor check
 - [ ] L3 Vault sync of library files, personal vs shared
 - [ ] L4 Dashboard Library page
 - [ ] L5 Agent put/propose, links, move-out-of-git helper
