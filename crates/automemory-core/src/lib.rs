@@ -5,6 +5,7 @@ pub mod baton;
 pub mod bip39;
 pub mod config;
 pub mod continuity;
+pub mod library;
 pub mod crypto;
 pub mod db;
 pub mod docs;

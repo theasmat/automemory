@@ -143,11 +143,11 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 
 ## 9. Interfaces
 
-**MCP (63 tools, stdio + HTTP).**
+**MCP (66 tools, stdio + HTTP).**
 
 | Group | Tools |
 |---|---|
-| Read | `memory.recall/ask/about/get/topics/search/list/stats/context/digest/constitution/skills`, `trace.list/get`, `failure.list/get`, `project.list/get`, `doc.list/get`, `preference.get`, `sync.status`, `graph.query/neighbors/index/impact`, `decision.get` |
+| Read | `memory.recall/ask/about/get/topics/search/list/stats/context/digest/constitution/skills`, `trace.list/get`, `failure.list/get`, `project.list/get`, `doc.list/get`, `library.list/get/search`, `preference.get`, `sync.status`, `graph.query/neighbors/index/impact`, `decision.get` |
 | Write | `memory.save/update/archive/restore/propose/redact`, `decision.record`, `trace.save`, `failure.save/resolve`, `preference.set/lock`, `project.register` |
 | Coordination | `lock.acquire/release/status`, `task.create/next/submit`, `review.next/post/submit`, `room.join/pending/post/status`, `baton.pass/pickup`, `continuity.brief`, `chat.search/get` |
 | Governance | `memory.proposals.list/summary/decide/decide_all` |

@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 16;
+const LATEST_SCHEMA_VERSION: i32 = 17;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -487,6 +487,53 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
         step(conn, "PRAGMA user_version = 16", [])?;
+    }
+
+    if version < 17 {
+        step(
+            conn,
+            r#"
+            CREATE TABLE IF NOT EXISTS library_files (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                path TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                author TEXT NOT NULL,
+                scope TEXT NOT NULL DEFAULT 'project',
+                size INTEGER NOT NULL,
+                sha256 TEXT NOT NULL,
+                content TEXT NOT NULL,
+                l0 TEXT NOT NULL,
+                l1 TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(project_id, path)
+            );
+            CREATE TABLE IF NOT EXISTS library_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id TEXT NOT NULL,
+                rev INTEGER NOT NULL,
+                sha256 TEXT NOT NULL,
+                content TEXT NOT NULL,
+                author TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(file_id, rev)
+            );
+            CREATE TABLE IF NOT EXISTS library_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                heading TEXT NOT NULL,
+                text TEXT NOT NULL
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(text, tokenize='unicode61');
+            CREATE INDEX IF NOT EXISTS idx_library_chunks_file ON library_chunks(file_id);
+            "#,
+            [],
+        )?;
+        step(conn, "PRAGMA user_version = 17", [])?;
     }
     Ok(())
 }

@@ -164,17 +164,19 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
         project_id,
         crate::config::GlobalConfig::load().map(|g| g.continuity.inject_tokens).unwrap_or(crate::continuity::deliver::DEFAULT_INJECT_TOKENS),
     );
-    if lines.is_empty() && brief.is_none() {
+    let library = crate::library::index_block(db, project_id, crate::library::INDEX_TOKENS);
+    if lines.is_empty() && brief.is_none() && library.is_none() {
         return None;
     }
     if let Some(state) = git_state(cwd) {
         lines.push(format!("Now: {state}"));
     }
     let pack = clip(&format!("Resuming this project.\n{}", lines.join("\n")), RESUME_CHAR_BUDGET);
-    Some(match brief {
-        Some(b) => format!("{pack}\n\n{b}"),
-        None => pack,
-    })
+    let mut out = pack;
+    for extra in [brief, library].into_iter().flatten() {
+        out = format!("{out}\n\n{extra}");
+    }
+    Some(out)
 }
 
 /// A short, deterministic digest of what is *verified* about a project, for writing into the

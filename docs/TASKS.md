@@ -165,11 +165,11 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (63 MCP tools, 270 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (66 MCP tools, 278 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
-- [ ] L1 Store, secrets check, deterministic tiers, CLI, MCP list/get/search, hook index
+- [x] L1 Store (schema v17), secrets check, deterministic tiers, CLI (`automemory library add|new|ls|show|search|rm|history`), MCP `library.list/get/search`, session-start index
 - [ ] L2 Materialize `.automemory/library/` (git exclude optional), linked files from global config `[library] files`, INDEX.md, watcher, doctor check
 - [ ] L3 Vault sync of library files, personal vs shared
 - [ ] L4 Dashboard Library page

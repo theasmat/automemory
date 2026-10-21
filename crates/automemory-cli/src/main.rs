@@ -252,6 +252,13 @@ enum Commands {
         command: ContinuityCommands,
     },
 
+    /// Documents for agents kept outside git (PRDs, plans, notes), found by every agent
+    #[command(next_help_heading = "Daily")]
+    Library {
+        #[command(subcommand)]
+        command: LibraryCommands,
+    },
+
     /// Planning rooms: see what agents agreed and approve, reject or send it back
     #[command(next_help_heading = "Daily")]
     Room {
@@ -1534,6 +1541,15 @@ async fn main() -> Result<()> {
             },
             LlmCommands::Run { what } => commands::llm::run(&what)?,
         },
+        Commands::Library { command } => match command {
+            LibraryCommands::Add { file, r#as, r#move, personal, allow_secrets } => commands::library::add(&file, r#as, r#move, personal, allow_secrets)?,
+            LibraryCommands::New { name, personal } => commands::library::new(&name, personal)?,
+            LibraryCommands::Ls { prefix } => commands::library::ls(prefix)?,
+            LibraryCommands::Show { path, tier } => commands::library::show(&path, tier)?,
+            LibraryCommands::Search { query, limit } => commands::library::search(&query, limit)?,
+            LibraryCommands::Rm { path } => commands::library::rm(&path)?,
+            LibraryCommands::History { path } => commands::library::history(&path)?,
+        },
         Commands::Continuity { command } => match command {
             ContinuityCommands::Show { all } => commands::brief::show(all)?,
             ContinuityCommands::Add { kind, text, reason } => commands::brief::add(&kind, &text, reason)?,
@@ -1679,6 +1695,50 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Subcommand)]
+enum LibraryCommands {
+    /// Copy a text file into the library (password when set)
+    Add {
+        file: String,
+        /// Library path, e.g. plans/prd.md (default: the file name)
+        #[arg(long)]
+        r#as: Option<String>,
+        /// Delete the original afterwards (prints the git command if git tracked it; never commits)
+        #[arg(long)]
+        r#move: bool,
+        /// Keep it on this computer only
+        #[arg(long)]
+        personal: bool,
+        /// Accept a file that looks like it contains a secret
+        #[arg(long)]
+        allow_secrets: bool,
+    },
+    /// Write or edit a library file in $EDITOR
+    New {
+        name: String,
+        #[arg(long)]
+        personal: bool,
+    },
+    /// List library files with a one-line summary
+    Ls { prefix: Option<String> },
+    /// Print a file (--tier 0 title, 1 outline, 2 whole file)
+    Show {
+        path: String,
+        #[arg(long, default_value_t = 2)]
+        tier: u8,
+    },
+    /// Search the library by words
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 8)]
+        limit: usize,
+    },
+    /// Remove a file from the library (password when set)
+    Rm { path: String },
+    /// Revisions of a file
+    History { path: String },
 }
 
 #[derive(Subcommand)]

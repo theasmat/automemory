@@ -1,6 +1,6 @@
 # Project library: agent documents that are not in git, kept in sync by AutoMemory
 
-Status: plan only (Oct 2026); the maintainer's answers to the open questions are in §9. Nothing in this file is built. Not part of v1 scope; see [docs/PLAN.md §17](../docs/PLAN.md).
+Status: L1 built (Oct 2026: store in SQLite with revisions, secrets check, deterministic tiers, CLI, MCP list/get/search, session-start index); L2-L6 are plan. Maintainer's answers are in §9. In L1 the file content lives in the database; the plain-file folders arrive with L2. Not part of v1 scope; see [docs/PLAN.md §17](../docs/PLAN.md).
 
 ## 1. The need
 PRDs, plans, research notes, scratch specs, prompts and "read this first" files help agents, but people do not want them in the

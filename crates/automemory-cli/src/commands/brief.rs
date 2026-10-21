@@ -4,14 +4,14 @@ use automemory_core::config::Config;
 use automemory_core::continuity::{deliver, ItemKind, ItemStatus, NewItem, Origin};
 use automemory_core::db::Database;
 
-fn open() -> Result<(Database, Option<String>)> {
+pub(crate) fn open() -> Result<(Database, Option<String>)> {
     let db = Database::open(&Config::default_config().db_path)?;
     let cwd = std::env::current_dir()?;
     let project = db.find_project_by_path(&cwd.to_string_lossy()).ok().flatten().map(|p| p.id);
     Ok((db, project))
 }
 
-fn human(what: &str) -> Result<(Database, Option<String>)> {
+pub(crate) fn human(what: &str) -> Result<(Database, Option<String>)> {
     automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), what)?;
     open()
 }
