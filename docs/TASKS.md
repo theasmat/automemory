@@ -172,7 +172,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] L1 Store (schema v17), secrets check, deterministic tiers, CLI (`automemory library add|new|ls|show|search|rm|history`), MCP `library.list/get/search`, session-start index
 - [x] L2 `.automemory/library/` copies with INDEX.md (kept out of git status through `.git/info/exclude`, `[library] exclude_from_git`), files kept in place from global config `[library] files` (any git state), edits taken back, doctor check; event-driven by hooks and `library sync` (no always-on file watcher)
 - [x] L3 Vault sync of library files as a `library` record kind (encrypted deltas, same key as the vault; removals travel as markers; personal files stay; both-changed files keep yours, theirs parked in `.automemory/library/_incoming/` with an Inbox item; kept-in-place files are written in place on the other computer and never overwrite a different local file)
-- [ ] L4 Dashboard Library page
+- [x] L4 Dashboard Library page (tree, summary/outline/whole-file tiers, new/edit/remove, history and restore, git-status banner, sync folder, files kept in place) and library files on the Documents page
 - [ ] L5 Agent put/propose, links, move-out-of-git helper
 - [ ] L6 Attachments and optional model abstracts
 

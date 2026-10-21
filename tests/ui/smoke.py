@@ -25,7 +25,7 @@ from dashboard import free_port  # noqa: E402
 
 PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/recall", "/safety", "/sync", "/settings", "/memories",
          "/proposals", "/coordination", "/guardrails", "/skills", "/traces", "/replay", "/failures", "/docs",
-         "/constitution", "/graph", "/overview", "/activity", "/rooms", "/continuity"]
+         "/constitution", "/graph", "/overview", "/activity", "/rooms", "/continuity", "/library"]
 
 
 def main():
@@ -102,6 +102,32 @@ def main():
             page.wait_for_timeout(1500)
             rep.check("Hand-off written" in page.inner_text("main"), "Hand off now works without a password", page.inner_text("main")[:200])
             rep.check(not problems, "the Continuity page uses only known policy paths", "; ".join(problems))
+            page.close()
+            # Library: seeded through the page's own API; tree, tiers, lock icons, no unknown policy paths.
+            _u.urlopen(_u.Request(base + "/api/library/file", data=_j.dumps({"path": "plans/prd.md", "content": "# Cart PRD\n\nCarts expire after 30 days.\n\n## Decisions\n- Decision: SQLite\n"}).encode(), method="PUT",
+                                  headers={"Content-Type": "application/json", "X-AutoMemory-Password": "smoke pw"}), timeout=60)
+            page = browser.new_page()
+            problems = []
+            page.on("console", lambda m: m.type == "error" and problems.append(m.text[:160]))
+            page.goto(base + "/library", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            body = page.inner_text("main")
+            rep.check("plans" in body and "prd.md" in body, "the Library page shows the file tree", body[:200])
+            page.get_by_role("button", name="prd.md").click()
+            page.wait_for_timeout(500)
+            rep.check("Cart PRD: Carts expire after 30 days." in page.inner_text("main"), "a file opens at the summary tier")
+            page.get_by_role("button", name="Outline").click()
+            rep.check("Decision: SQLite" in page.inner_text("main"), "the outline tier keeps the decision line")
+            page.get_by_role("button", name="Whole file").click()
+            rep.check(page.get_by_role("button", name="Edit").locator("svg[aria-label]").count() == 1, "Edit shows the lock")
+            rep.check(page.get_by_role("button", name="Sync folder").locator("svg[aria-label]").count() == 0, "Sync folder is Safe: no lock")
+            page.get_by_role("button", name="Sync folder").click()
+            page.wait_for_timeout(1200)
+            rep.check("Synced:" in page.inner_text("main"), "Sync folder reports what it did", page.inner_text("main")[:200])
+            rep.check(not problems, "the Library page uses only known policy paths", "; ".join(problems))
+            page.goto(base + "/docs", wait_until="networkidle")
+            page.wait_for_timeout(400)
+            rep.check("Library (outside git)" in page.inner_text("main") and "plans/prd.md" in page.inner_text("main"), "the Documents page lists library files too")
             page.close()
             # Planning rooms: the discussion and plan show, and approving (asks the password) records the verdict.
             page = browser.new_page()

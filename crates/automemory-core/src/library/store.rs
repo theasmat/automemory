@@ -285,6 +285,12 @@ impl Database {
         Ok(rows)
     }
 
+    /// The text of one revision (for compare and revert).
+    pub fn library_revision_text(&self, project_id: Option<&str>, path: &str, rev: i64) -> Result<Option<String>> {
+        let Some(f) = self.library_get(project_id, path)? else { return Ok(None) };
+        Ok(self.conn().query_row("SELECT content FROM library_revisions WHERE file_id = ?1 AND rev = ?2", params![f.id, rev], |r| r.get(0)).optional()?)
+    }
+
     pub fn library_revisions(&self, project_id: Option<&str>, path: &str) -> Result<Vec<(i64, String, String, String)>> {
         let Some(f) = self.library_get(project_id, path)? else { return Ok(vec![]) };
         let conn = self.conn();

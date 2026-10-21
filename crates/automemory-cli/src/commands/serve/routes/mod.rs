@@ -1,4 +1,5 @@
 pub mod continuity;
+pub mod library;
 pub mod control;
 pub mod guardrails;
 pub mod memories;
@@ -28,6 +29,12 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/demo",
             post(setup::api_post_demo).delete(setup::api_delete_demo),
         )
+        .route("/api/library", get(library::api_overview))
+        .route("/api/library/file", get(library::api_file).put(library::api_put).delete(library::api_remove))
+        .route("/api/library/revision", get(library::api_revision))
+        .route("/api/library/revert", post(library::api_revert))
+        .route("/api/library/sync", post(library::api_sync))
+        .route("/api/library/link", post(library::api_link).delete(library::api_unlink))
         .route("/api/continuity", get(continuity::api_overview))
         .route("/api/continuity/search", get(continuity::api_search))
         .route("/api/continuity/chat", get(continuity::api_chat))

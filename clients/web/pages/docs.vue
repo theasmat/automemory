@@ -14,6 +14,16 @@
       </template>
     </PageHeader>
 
+    <!-- Library: documents kept outside git (same agents read them) -->
+    <Card v-if="library.length" title="Library (outside git)">
+      <ul class="divide-y divide-border/60">
+        <li v-for="f in library" :key="f.path" class="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+          <span class="min-w-0"><code class="text-text">{{ f.path }}</code> <Badge v-if="f.linked" variant="info">in place</Badge><span class="block truncate text-xs text-text-muted">{{ f.summary }}</span></span>
+        </li>
+      </ul>
+      <NuxtLink to="/library" class="mt-2 inline-block text-sm text-accent">Open the Library to read, edit or add files</NuxtLink>
+    </Card>
+
     <!-- Controls -->
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
       <!-- Category Tabs -->
@@ -114,13 +124,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useAutoMemoryStore } from '~/stores/automemory';
+import { request } from '~/utils/api';
 
 const store = useAutoMemoryStore();
 const activeCategory = ref('all');
 const searchQuery = ref('');
 
+const library = ref<any[]>([]);
 onMounted(async () => {
   await store.fetchDocs();
+  const r = await request<any>('/api/library');
+  if (r.ok && r.data.files) library.value = r.data.files;
 });
 
 const categories = [
