@@ -1,0 +1,2 @@
+{"sessionId": "cc-other", "cwd": "/tmp/other-project"}
+{"type": "user", "message": {"role": "user", "content": "A chat from another project"}}

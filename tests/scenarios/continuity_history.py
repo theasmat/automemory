@@ -187,5 +187,32 @@ def codex():
     return rep.finish()
 
 
+def command_code():
+    """Command Code transcripts: found by the working folder in the header, checkpoints and prompt history left out, read when turned on, searchable."""
+    rep = Report("continuity chat history (Command Code)")
+    sb = Sandbox("cmdcodehist")
+    sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "hist-master"})
+    try:
+        root = sb.project.resolve()
+        sb.mcp("project.register", slug="app", display_name="app", path=str(root))
+        dst = sb.home / ".commandcode"
+        shutil.copytree(REPO / "tests/continuity/fixtures/command-code/home/.commandcode", dst)
+        for f in dst.rglob("*.jsonl"):
+            f.write_text(f.read_text().replace("/tmp/demo-shop", str(root)))
+        out = sb.run("continuity", "sources").stdout
+        rep.check("Command Code (command-code)  off" in out and "found: 1" in out.split("Command Code (command-code)")[1], "sources finds this project's transcript (not the checkpoints, prompt history or another project's)", out[-400:])
+        rep.check(sb.run("continuity", "enable", "command-code").returncode == 0, "a person turns Command Code on")
+        r = sb.run("continuity", "import", "command-code")
+        m = re.search(r"(\d+) new message", r.stdout)
+        rep.check(r.returncode == 0 and m and int(m.group(1)) >= 4, "the transcript is imported", r.stdout + r.stderr)
+        rep.check("0 new message" in sb.run("continuity", "import", "command-code").stdout, "importing again adds nothing")
+        rep.check("command-code:cc-sess-001" in sb.run("continuity", "search", "sticky routing", "--agent", "command-code").stdout, "search finds the exchange")
+        for word in ("FIXTURESECRET", "PRIVATE REASONING", "TOOL RESULT", "CHECKPOINT DATA", "PROMPT HISTORY"):
+            rep.check(word not in sb.run("continuity", "search", word).stdout, f"{word.lower()} was never stored")
+    finally:
+        sb.cleanup()
+    return rep.finish()
+
+
 if __name__ == "__main__":
-    sys.exit(max(main(), antigravity(), codex()))
+    sys.exit(max(main(), antigravity(), codex(), command_code()))
