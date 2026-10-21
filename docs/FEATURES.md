@@ -94,7 +94,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Interfaces
 | Feature | Status | Notes |
 |---|---|---|
-| MCP server (51 tools), CLI | ✅ | |
+| MCP server (49 tools), CLI | ✅ | |
 | Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
 | Guided onboarding (CLI tour + dashboard coachmarks) | ✅ | `automemory tour`, `next`, `learn`, welcome card, 6-stop tour, sample data mode |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |

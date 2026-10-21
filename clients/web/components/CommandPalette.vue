@@ -99,7 +99,7 @@ const commands: CommandItem[] = [
   { id: 'sync', category: 'Navigation', title: 'Go to Sync & Devices', shortcut: 'g s', action: () => router.push('/sync') },
   { id: 'safety', category: 'Navigation', title: 'Go to Safety Guardrails', action: () => router.push('/safety') },
   { id: 'skills', category: 'Navigation', title: 'Go to Learned Skills', action: () => router.push('/activity?tab=skills') },
-  { id: 'docs', category: 'Navigation', title: 'Go to Project Documents', action: () => router.push('/docs') },
+  { id: 'library', category: 'Navigation', title: 'Go to Library (documents)', action: () => router.push('/library') },
   { id: 'traces', category: 'Navigation', title: 'Go to What Worked (Traces)', action: () => router.push('/activity?tab=traces') },
   { id: 'failures', category: 'Navigation', title: 'Go to Problems & Fixes', action: () => router.push('/activity?tab=problems') },
   { id: 'add-note', category: 'Action', title: 'Add a new note to Project Brain', shortcut: 'n', action: () => emit('add-note') },

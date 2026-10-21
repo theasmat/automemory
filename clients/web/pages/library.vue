@@ -1,7 +1,8 @@
 <template>
   <div class="space-y-6">
-    <PageHeader title="Library" description="Documents for your agents that stay out of git: PRDs, plans, notes. Every agent can list, search and read them; they sync between your computers.">
+    <PageHeader title="Library" description="Documents for your agents: your PRDs, plans and notes that stay out of git (synced between your computers), and the project documents found in the repository.">
       <template #actions>
+        <Button size="sm" variant="secondary" :loading="busy === 'rescan'" @click="rescan">Rescan project documents</Button>
         <Button size="sm" variant="secondary" :loading="busy === 'sync'" @click="syncNow">Sync folder</Button>
         <Button size="sm" variant="primary" lock="/api/library/file" @click="openNew">New file</Button>
       </template>
@@ -26,7 +27,7 @@
       <div class="grid gap-4 lg:grid-cols-[18rem_1fr]">
         <!-- Tree -->
         <Card>
-          <p v-if="!data.files.length" class="text-sm text-text-muted">The library is empty. Add a file, or list files to keep in place below.</p>
+          <p v-if="!data.files.length && !data.project_docs?.length" class="text-sm text-text-muted">The library is empty. Add a file, or list files to keep in place below.</p>
           <div v-for="g in groups" :key="g.folder" class="mb-3 last:mb-0">
             <p v-if="g.folder" class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">{{ g.folder }}</p>
             <ul>
@@ -40,14 +41,25 @@
               </li>
             </ul>
           </div>
+          <div v-if="data.project_docs?.length" class="mt-4 border-t border-border/60 pt-3">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Project documents (in the repository)</p>
+            <ul>
+              <li v-for="d in data.project_docs" :key="d.path">
+                <button type="button" class="w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2" :class="sel === d.path ? 'bg-surface-2 font-semibold text-text' : 'text-text-muted'" @click="open(d.path)">
+                  {{ d.path }} <Badge variant="neutral">{{ d.category }}</Badge>
+                </button>
+              </li>
+            </ul>
+          </div>
         </Card>
 
         <!-- File -->
         <Card v-if="file" :title="file.path">
           <p class="text-xs text-text-muted">
-            {{ file.linked ? 'Kept where it is in the project folder; edit it there.' : `Written by ${file.author === 'human' ? 'you' : file.author}` }} · updated {{ (file.updated_at || '').slice(0, 16).replace('T', ' ') }}
+            <template v-if="file.source === 'repo'">A project document in the repository (git is its home); read it here, edit it in your editor.</template>
+            <template v-else>{{ file.linked ? 'Kept where it is in the project folder; edit it there.' : `Written by ${file.author === 'human' ? 'you' : file.author}` }} · updated {{ (file.updated_at || '').slice(0, 16).replace('T', ' ') }}</template>
           </p>
-          <Tabs v-model="tier" class="mt-3" :tabs="[{ id: 'summary', label: 'Summary' }, { id: 'outline', label: 'Outline' }, { id: 'full', label: 'Whole file' }, { id: 'history', label: 'History', count: file.revisions.length }]" />
+          <Tabs v-model="tier" class="mt-3" :tabs="file.source === 'repo' ? [{ id: 'summary', label: 'Summary' }, { id: 'outline', label: 'Outline' }, { id: 'full', label: 'Whole file' }] : [{ id: 'summary', label: 'Summary' }, { id: 'outline', label: 'Outline' }, { id: 'full', label: 'Whole file' }, { id: 'history', label: 'History', count: file.revisions.length }]" />
 
           <div class="mt-3">
             <p v-if="tier === 'summary'" class="text-sm text-text">{{ file.summary }}</p>
@@ -60,8 +72,8 @@
                   <Button size="sm" variant="primary" lock="/api/library/file" @click="save">Save</Button>
                   <Button size="sm" variant="ghost" @click="editing = false">Cancel</Button>
                 </template>
-                <Button v-else-if="!file.linked" size="sm" variant="secondary" lock="/api/library/file" @click="startEdit">Edit</Button>
-                <Button v-if="!editing" size="sm" variant="ghost" lock="/api/library/file" @click="remove">Remove from library</Button>
+                <Button v-else-if="!file.linked && file.source !== 'repo'" size="sm" variant="secondary" lock="/api/library/file" @click="startEdit">Edit</Button>
+                <Button v-if="!editing && file.source !== 'repo'" size="sm" variant="ghost" lock="/api/library/file" @click="remove">Remove from library</Button>
               </div>
             </template>
             <ul v-else class="divide-y divide-border/60">
@@ -170,6 +182,18 @@ async function syncNow() {
     const x = r.data.report;
     syncNote.value = `Synced: ${x.written} copied into the folder, ${x.ingested} taken back, ${x.linked} kept-in-place file(s) updated${x.skipped.length ? `; skipped: ${x.skipped.join('; ')}` : ''}.`;
     await load();
+  } finally {
+    busy.value = '';
+  }
+}
+
+async function rescan() {
+  busy.value = 'rescan';
+  try {
+    const r = await safeCall('POST', '/api/tools/docs-rescan');
+    if (!r.ok) return toast.error(r.error || 'Could not rescan');
+    syncNote.value = 'Rescanning the project documents.';
+    setTimeout(load, 1500);
   } finally {
     busy.value = '';
   }

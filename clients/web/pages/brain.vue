@@ -31,6 +31,14 @@
       @retry="store.fetchMemories()"
     />
 
+    <!-- The standing rules every agent is shown at the start of a session -->
+    <Card v-if="store.constitution" title="Rules every agent follows">
+      <details>
+        <summary class="cursor-pointer text-sm text-accent">Show the rules</summary>
+        <div class="mt-3"><Prose :text="store.constitution" /></div>
+      </details>
+    </Card>
+
     <!-- Filter & Search Toolbar -->
     <div class="flex flex-col gap-4">
       <Tabs

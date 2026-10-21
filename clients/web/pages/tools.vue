@@ -84,7 +84,6 @@ const stateLabel = (s: string) => ({ running: 'Running…', done: 'Finished', fa
 const tools = [
   { kind: 'doctor', title: 'Health check', text: 'Checks the database, hooks, search and the code engine.', button: 'Run', url: '/api/tools/doctor' },
   { kind: 'sync-pull', title: 'Pull from the remote', text: 'Brings in changes from your other computers. Nothing is sent.', button: 'Pull', url: '/api/sync/pull' },
-  { kind: 'docs', title: 'Rescan documents', text: 'Finds specs and decision records in the project again.', button: 'Rescan', url: '/api/tools/docs-rescan' },
   { kind: 'graph', title: 'Index the code graph', text: 'Maps files and symbols so agents see what a change touches.', button: 'Index', url: '/api/tools/graph-index' },
   { kind: 'eval', title: 'Run the checks', text: 'Runs the built-in quality checks for search, locks and speed.', button: 'Run', url: '/api/tools/eval' },
   { kind: 'backup', title: 'Back up the database', text: 'Saves a copy in ~/.automemory/backups (newest 10 kept). To go back to one, run automemory backup restore in a terminal.', button: 'Back up', url: '/api/tools/backup' },

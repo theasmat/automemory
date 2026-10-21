@@ -143,11 +143,11 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 
 ## 9. Interfaces
 
-**MCP (51 tools advertised, stdio + HTTP).** Seventeen older names are not shown to agents any more but still answer (PLAN §18): `memory.ask/context/topics/digest/constitution/skills`, `chat.search`, `library.search`, `baton.pass/pickup` are folded into other tools; `graph.index/query/neighbors/impact` belong to the `codebase-memory` server every agent already has; `review.submit/next/post` stay for scripts that use them.
+**MCP (49 tools advertised, stdio + HTTP).** Nineteen older names are not shown to agents any more but still answer (PLAN §18): `memory.ask/context/topics/digest/constitution/skills`, `chat.search`, `library.search`, `baton.pass/pickup` are folded into other tools; `graph.index/query/neighbors/impact` belong to the `codebase-memory` server every agent already has; `review.submit/next/post` stay for scripts that use them; `doc.list/get` are `library.list/get` (the repository's own documents appear there with source `repo`).
 
 | Group | Tools |
 |---|---|
-| Read | `memory.recall/about/get/search/list/stats` (`search {scope: notes\|chat\|library\|all}`, `list {view: memories\|constitution\|context\|topics\|skills\|digest}`), `trace.list/get`, `failure.list/get`, `project.list/get`, `doc.list/get`, `library.list/get`, `preference.get`, `sync.status`, `decision.get` |
+| Read | `memory.recall/about/get/search/list/stats` (`search {scope: notes\|chat\|library\|all}`, `list {view: memories\|constitution\|context\|topics\|skills\|digest}`), `trace.list/get`, `failure.list/get`, `project.list/get`, `library.list/get`, `preference.get`, `sync.status`, `decision.get` |
 | Write | `memory.save/update/archive/restore/propose/redact`, `decision.record`, `trace.save`, `failure.save/resolve`, `preference.set/lock`, `project.register`, `library.put` (own files only), `library.propose` (Inbox item) |
 | Coordination | `lock.acquire/release/status`, `task.create/next/submit`, `room.join/pending/post/status`, `continuity.brief` (`get\|add\|handoff\|confirm\|correct\|resolve\|remove`), `memory.resume`, `chat.get` |
 | Governance | `memory.proposals.list/summary/decide/decide_all` |

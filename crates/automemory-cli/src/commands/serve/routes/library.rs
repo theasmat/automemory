@@ -29,6 +29,7 @@ pub async fn api_overview(State(state): State<AppState>, Query(q): Query<Project
         "project": pid, "slug": slug, "root": root.to_string_lossy(),
         "files": files.iter().map(|f| json!({ "path": f.path, "summary": f.l0, "size": f.size, "linked": f.linked, "personal": f.scope == "personal", "origin": f.origin, "author": f.author, "updated_at": f.updated_at, "revisions": f.revisions })).collect::<Vec<_>>(),
         "folder": { "path": folder.to_string_lossy(), "exists": folder.exists(), "out_of_git_status": ignored, "exclude_from_git": cfg.library.exclude_from_git },
+        "project_docs": automemory_core::library::repo_docs::list(&state.db, &pid).unwrap_or_default(),
         "problems": libfs::check(&state.db, &pid, &slug, &root, &cfg.library),
         "patterns": { "global": cfg.library.files, "project": cfg.library.projects.get(&slug).map(|p| p.files.clone()).unwrap_or_default() },
     })).into_response()
@@ -45,7 +46,16 @@ pub async fn api_file(State(state): State<AppState>, Query(q): Query<FileQuery>)
             "path": f.path, "summary": f.l0, "outline": f.l1, "content": f.content, "linked": f.linked, "personal": f.scope == "personal", "origin": f.origin, "author": f.author, "updated_at": f.updated_at,
             "revisions": state.db.library_revisions(Some(&pid), &f.path).unwrap_or_default().iter().map(|(rev, author, origin, at)| json!({ "rev": rev, "author": author, "origin": origin, "at": at })).collect::<Vec<_>>(),
         })).into_response(),
-        Ok(None) => bad("no such file"),
+        Ok(None) => {
+            // One of the project's own documents in the repository: read-only here, git is its home.
+            let docs = automemory_core::library::repo_docs::list(&state.db, &pid).unwrap_or_default();
+            let Some(d) = docs.iter().find(|d| d.path == q.path) else { return bad("no such file") };
+            let get = |tier| automemory_core::library::repo_docs::get(&state.db, &pid, &q.path, tier).ok().flatten().unwrap_or_default();
+            Json(json!({
+                "path": d.path, "summary": get(0), "outline": get(1), "content": get(2), "linked": false, "personal": false, "origin": "repo", "author": d.category,
+                "source": "repo", "updated_at": null, "revisions": [],
+            })).into_response()
+        }
         Err(e) => bad(e.to_string()),
     }
 }

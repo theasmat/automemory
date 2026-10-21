@@ -3,6 +3,7 @@
 pub mod fs;
 pub mod model;
 pub mod propose;
+pub mod repo_docs;
 pub mod store;
 pub mod tiers;
 

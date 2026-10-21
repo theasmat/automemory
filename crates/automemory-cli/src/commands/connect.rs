@@ -1384,7 +1384,7 @@ mod guideline_tests {
         let tools = automemory_mcp::ToolRegistry::new(db).list_tools();
         const OPTIONAL: &[&str] = &[
             // read-only look-ups an agent finds from the tool list
-            "memory.get", "memory.stats", "trace.list", "trace.get", "failure.list", "failure.get", "project.list", "project.get", "doc.list", "doc.get",
+            "memory.get", "memory.stats", "trace.list", "trace.get", "failure.list", "failure.get", "project.list", "project.get",
             "preference.get", "sync.status", "decision.get", "memory.about",
             // maintenance the person normally does in the dashboard
             "memory.update", "memory.archive", "memory.restore", "memory.redact", "preference.set", "preference.lock", "project.register",

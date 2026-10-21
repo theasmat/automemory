@@ -55,10 +55,10 @@ mod tests {
         assert!(names.contains(&"trace.save"));
         assert!(names.contains(&"failure.save"));
         // Folded tools are not advertised any more...
-        for retired in ["memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills", "chat.search", "library.search", "baton.pass", "baton.pickup", "graph.index", "graph.query", "graph.neighbors", "graph.impact", "review.submit", "review.next", "review.post"] {
+        for retired in ["memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills", "chat.search", "library.search", "baton.pass", "baton.pickup", "graph.index", "graph.query", "graph.neighbors", "graph.impact", "review.submit", "review.next", "review.post", "doc.list", "doc.get"] {
             assert!(!names.contains(&retired), "{retired} should be folded into another tool");
         }
-        assert_eq!(names.len(), 51, "advertised tools (PLAN section 18)");
+        assert_eq!(names.len(), 49, "advertised tools (PLAN section 18)");
     }
 
     #[test]

@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scenarios"))
 from dashboard import free_port  # noqa: E402
 
 PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/models", "/models?tab=helper", "/safety", "/sync", "/settings",
-         "/activity", "/activity?tab=sessions", "/activity?tab=traces", "/activity?tab=problems", "/activity?tab=skills", "/docs",
-         "/constitution", "/rooms", "/continuity", "/library"]
+         "/activity", "/activity?tab=sessions", "/activity?tab=traces", "/activity?tab=problems", "/activity?tab=skills",
+         "/rooms", "/continuity", "/library"]
 
 
 def main():
@@ -105,7 +105,7 @@ def main():
             page.close()
             # Old links keep working: merged pages forward to their new home.
             page = browser.new_page()
-            for old, now in (("/replay", "tab=sessions"), ("/skills", "tab=skills"), ("/failures", "tab=problems"), ("/memories", "/brain")):
+            for old, now in (("/replay", "tab=sessions"), ("/skills", "tab=skills"), ("/failures", "tab=problems"), ("/memories", "/brain"), ("/docs", "/library"), ("/constitution", "/brain"), ("/graph", "/brain")):
                 page.goto(base + old, wait_until="networkidle")
                 page.wait_for_timeout(300)
                 rep.check(now in page.url, f"{old} forwards to its new home", page.url)
@@ -134,9 +134,6 @@ def main():
             page.wait_for_timeout(1200)
             rep.check("Synced:" in page.inner_text("main"), "Sync folder reports what it did", page.inner_text("main")[:200])
             rep.check(not problems, "the Library page uses only known policy paths", "; ".join(problems))
-            page.goto(base + "/docs", wait_until="networkidle")
-            page.wait_for_timeout(400)
-            rep.check("Library (outside git)" in page.inner_text("main") and "plans/prd.md" in page.inner_text("main"), "the Documents page lists library files too")
             page.close()
             # Planning rooms: the discussion and plan show, and approving (asks the password) records the verdict.
             page = browser.new_page()

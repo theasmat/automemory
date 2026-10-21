@@ -166,19 +166,11 @@ const SHOWCASE_STEPS: CoachStep[] = [
     placement: 'bottom',
   },
   {
-    id: 's-docs',
+    id: 's-library',
     target: 'main h1',
-    title: 'Documents',
-    body: 'Project docs your agents read, kept in sync with the project brain.',
-    route: '/docs',
-    placement: 'bottom',
-  },
-  {
-    id: 's-rules',
-    target: 'main h1',
-    title: 'Rules of the project',
-    body: 'The standing rules every agent must follow in this project.',
-    route: '/constitution',
+    title: 'Library',
+    body: 'The documents your agents read: your PRDs and notes kept out of git, and the project documents found in the repository.',
+    route: '/library',
     placement: 'bottom',
   },
   {

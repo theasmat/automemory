@@ -82,11 +82,25 @@ def main():
         r = sb.mcp("room.post", room_id=room, session_id="agent-a", kind="propose", body="Expire carts after thirty days, as the PRD says, and clean up nightly.", evidence=["library:plans/prd-cart.md"])
         rep.check("refused" not in json.dumps(r).lower(), "a library file counts as room evidence", json.dumps(r)[:200])
 
+        # The project's own documents (found in the repository) show next to the library files, readable the same way.
+        (sb.project / "PRD.md").write_text("# Shop PRD\n\nA small shop. Carts matter most.\n\n## Goals\n- Fast checkout\n")
+        plist = sb.mcp("project.list")
+        plist = plist.get("projects", plist) if isinstance(plist, dict) else plist
+        pid = next(p["id"] for p in plist if p.get("slug") == "app")
+        r = sb.run("doc", "track", "PRD.md", "--category", "prd", "--project", pid)
+        both = sb.mcp("library.list", project_id="app")
+        repo = [f for f in both["files"] if f.get("source") == "repo"]
+        rep.check(r.returncode == 0 and repo and repo[0]["path"] == "PRD.md" and any(f.get("source") == "library" for f in both["files"]), "library.list shows the repository's documents too, marked source repo", (r.stdout + r.stderr)[-160:] + json.dumps(both)[:200])
+        full = sb.mcp("library.get", path="PRD.md", tier=2, project_id="app")
+        rep.check(full.get("source") == "repo" and "Carts matter most" in full["content"], "library.get opens one (the file itself at tier 2)", json.dumps(full)[:200])
+        rep.check(sb.mcp("library.get", path="PRD.md", tier=0, project_id="app")["content"] != "", "and its abstract at tier 0")
+        rep.check(sb.mcp("doc.list", project_id="app") is not None, "the old doc.list name still answers")
+
         # L2: a folder view for agents without MCP, kept out of git status; linked files from the global config.
         r = sb.run("library", "sync")
         folder = sb.project / ".automemory" / "library"
         rep.check(r.returncode == 0 and (folder / "plans/prd-cart.md").read_text() == PRD and "plans/prd-cart.md" in (folder / "INDEX.md").read_text(), "sync writes the copy and INDEX.md into .automemory/library", r.stdout + r.stderr)
-        rep.check(subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=sb.project, capture_output=True, text=True).stdout == status_before, "the folder does not show in git status (local exclude)")
+        rep.check(".automemory" not in subprocess.run(["git", "status", "--porcelain", "-uall"], cwd=sb.project, capture_output=True, text=True).stdout, "the folder does not show in git status (local exclude)")
         rep.check(not (sb.project / ".gitignore").exists(), ".gitignore was not created or changed")
         (folder / "plans/prd-cart.md").unlink()
         sb.hook("claude", "prompt", {"session_id": "s-restore", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})

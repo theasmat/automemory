@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (51 MCP tools, 303 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (49 MCP tools, 303 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -182,7 +182,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] K2 `memory.search {scope}`, `memory.list {view}`, `continuity.brief {action: handoff}` (baton), 10 names retired but still answering, a test that fails when a tool is not taught in the rules text (instead of generating the text)
 - [x] K3 Skills/traces/failures written once per thing (stable ids; grep/diff exit 1 is not a failure), `memory prune` and a doctor line for existing duplicates (on the maintainer's database a dry run finds 8,880 skills and 168 traces; not run for him), one Activity page with tabs (old links forward), one Models page for the search model and the AI helper (the two screens are merged; their routes stay separate)
 - [x] K4 Graph tools and the Graph page dropped (the codebase-memory server covers symbols; backend routes and the "Index the code graph" job stay). Reviews were NOT turned into rooms: a review is a diff with a test verdict, a room is a plan with a human verdict, so the mapping would lose the test gate; the three review tools are only hidden from the tool list
-- [ ] K5 Tracked documents into the library; cloud stub behind a flag; legacy vault into `backup restore`
+- [x] K5 One place for documents: the Library page and `library.list/get` also show the project's own documents found in the repository (source repo; the Documents page and `doc.list/get` names are folded); the Rules page became a card on Project brain; cloud-sync commands hidden and gated by AUTOMEMORY_EXPERIMENTAL_CLOUD; legacy `sync export/import/restore` hidden. NOT done: the scanner and watcher still index repository documents separately from the library files (a deeper merge would rework retrieval), and the legacy vault code is hidden, not deleted
 
 ## Later (after v1 passes its gates)
 

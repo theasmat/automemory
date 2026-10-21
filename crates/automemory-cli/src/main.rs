@@ -1090,7 +1090,8 @@ enum SyncCommands {
         no_connect: bool,
     },
 
-    /// Initialize cloud delta sync configuration (.automemory/config.json)
+    /// (Hosted sync, not available yet; needs AUTOMEMORY_EXPERIMENTAL_CLOUD=1) Initialize cloud delta sync configuration
+    #[command(hide = true)]
     Init {
         /// Project ID or slug (defaults to folder name or config)
         #[arg(short, long)]
@@ -1105,14 +1106,16 @@ enum SyncCommands {
         token: Option<String>,
     },
 
-    /// Check cloud sync status and pending deltas
+    /// (Hosted sync, not available yet) Check cloud sync status and pending deltas
+    #[command(hide = true)]
     Status {
         /// Project slug (defaults to current project)
         #[arg(short, long)]
         project: Option<String>,
     },
 
-    /// Push local document deltas and memories to cloud
+    /// (Hosted sync, not available yet) Push local document deltas and memories to cloud
+    #[command(hide = true)]
     Push {
         /// Project slug (defaults to current project)
         #[arg(short, long)]
@@ -1131,7 +1134,8 @@ enum SyncCommands {
         key: Option<String>,
     },
 
-    /// Pull remote updates from cloud endpoint
+    /// (Hosted sync, not available yet) Pull remote updates from cloud endpoint
+    #[command(hide = true)]
     Pull {
         /// Project slug (defaults to current project)
         #[arg(short, long)]
@@ -1151,6 +1155,7 @@ enum SyncCommands {
     },
 
     /// Disaster recovery: restore memories, skills, and product docs onto machine
+    #[command(hide = true)]
     Restore {
         /// Project ID to restore
         #[arg(short, long)]
@@ -1173,13 +1178,15 @@ enum SyncCommands {
         key: Option<String>,
     },
 
-    /// Export database to text-first JSONL & Markdown vault (legacy)
+    /// (Legacy; use `automemory backup`) Export database to text-first JSONL & Markdown vault
+    #[command(hide = true)]
     Export {
         #[arg(short, long)]
         path: Option<String>,
     },
 
-    /// Import text-first vault records into local database (legacy)
+    /// (Legacy; use `automemory backup restore`) Import text-first vault records into local database
+    #[command(hide = true)]
     Import {
         #[arg(short, long)]
         path: Option<String>,
@@ -1371,6 +1378,9 @@ async fn main() -> Result<()> {
             }
             SyncCommands::Bootstrap { remote, phrase, no_connect } => {
                 commands::sync::bootstrap(&remote, phrase, !no_connect)?
+            }
+            SyncCommands::Init { .. } | SyncCommands::Status { .. } | SyncCommands::Push { .. } | SyncCommands::Pull { .. } if std::env::var("AUTOMEMORY_EXPERIMENTAL_CLOUD").is_err() => {
+                println!("Hosted sync is not available yet. Memory syncs between your computers with `automemory sync remote <git-url>` and `automemory sync auto` (end-to-end encrypted). To try the unfinished hosted-sync client anyway, set AUTOMEMORY_EXPERIMENTAL_CLOUD=1.");
             }
             SyncCommands::Init {
                 project,
