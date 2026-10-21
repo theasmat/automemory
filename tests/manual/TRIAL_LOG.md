@@ -594,7 +594,7 @@ Setup (you, in the trial folder; the installed binary is current, restart anythi
 
 Per agent (fresh session in the trial folder; do Claude Code, then Antigravity, then Codex; save each reply as `claude.txt`, `agy.txt`, `codex.txt` in one folder)
 6. Read question (do not mention tools or paths): "What does our cart PRD say about how long carts last, what did we reject and why, and what is in PRD-private.md? Tell me where you found each."
-   Expect: 37 days, Redis rejected for hosting cost, pelican-2290. Note whether it used `library.get`/`library.search`, `.automemory/library/INDEX.md`, or the file directly (all acceptable; record which).
+   Expect: 37 days, Redis rejected for hosting cost, pelican-2290. Note whether it used `library.get`/`memory.search` (scope library), `.automemory/library/INDEX.md`, or the file directly (all acceptable; record which).
 7. Write question: "Save a short note of what you just learned as a library note for the other agents." Expect a `library.put` (a file under `notes/` or similar) marked agent-written in the Library page.
 8. Suggest question (once, with any one agent, or each with a different change): "Support wants carts to last 60 days. Suggest that change to the PRD." Expect `library.propose`: an Inbox item "<agent> suggests changing library file plans/prd-cart.md (+1 -1 lines)". **Record if the agent instead edits `.automemory/library/plans/prd-cart.md` directly** (the file is read-only, but a determined agent can bypass it; the checker flags it).
 9. You: Inbox > open the suggestion > Approve (password). Library > History shows a revision "approved from <agent>"; Restore the previous revision to prove it is reversible.

@@ -1,5 +1,5 @@
 //! The chat archive: redacted messages of imported sessions, searchable with FTS5. Never injected whole; agents reach it
-//! through `chat.search` and `chat.get`.
+//! through `memory.search` (scope chat) and `chat.get`.
 use crate::db::Database;
 use anyhow::Result;
 use chrono::{DateTime, Utc};

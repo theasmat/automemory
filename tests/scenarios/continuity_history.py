@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Continuity C2 end to end: reading an agent's chat files is off until a person turns that agent on; then the project's Claude
 Code chats are imported incrementally (read-only, secrets and the home folder removed, thinking and tool output never kept),
-searchable from the CLI and by agents (chat.search / chat.get), and forgettable."""
+searchable from the CLI and by agents (memory.search scope chat / chat.get), and forgettable."""
 import hashlib
 import json
 import re
@@ -49,7 +49,7 @@ def main():
         r = sb.run("continuity", "import", "claude")
         rep.check(r.returncode != 0 and "is off" in (r.stdout + r.stderr), "importing an agent that is off is refused", r.stdout + r.stderr)
         rep.check("No agent is turned on" in sb.run("continuity", "import").stdout, "importing with nothing on says so")
-        empty = j(sb.mcp("chat.search", query="sticky", project_id="app"))
+        empty = j(sb.mcp("memory.search", scope="chat", query="sticky", project_id="app"))
         rep.check(empty["hits"] == [] and "continuity enable" in empty["next_action"], "before any import, an agent is told how a person turns it on", json.dumps(empty)[:200])
 
         r = sb.run("continuity", "enable", "claude")
@@ -70,8 +70,10 @@ def main():
         rep.check("TOOL OUTPUT" not in sb.run("continuity", "search", "TOOL OUTPUT").stdout, "nor tool output")
 
         # Agents reach it through MCP.
-        s = j(sb.mcp("chat.search", query="sticky routing", project_id="app"))
-        rep.check(len(s["hits"]) >= 1 and s["hits"][0]["agent"] == "claude", "chat.search returns hits for an agent", json.dumps(s)[:240])
+        s = j(sb.mcp("memory.search", scope="chat", query="sticky routing", project_id="app"))
+        rep.check(len(s["hits"]) >= 1 and s["hits"][0]["agent"] == "claude", "memory.search (scope chat) returns hits for an agent", json.dumps(s)[:240])
+        old = j(sb.mcp("chat.search", query="sticky routing", project_id="app"))
+        rep.check(old["hits"] == s["hits"], "the old name chat.search still answers the same", json.dumps(old)[:160])
         g = j(sb.mcp("chat.get", session=s["hits"][0]["session"], from_seq=max(0, s["hits"][0]["seq"] - 1), limit=4))
         rep.check(len(g["messages"]) >= 2 and g["title"] == "Plan the demo shop cart", "chat.get opens the exchange in order", json.dumps(g)[:240])
         rep.check("no such session" in json.dumps(j(sb.mcp("chat.get", session="claude:nope"))).lower(), "an unknown session is an error")
@@ -97,7 +99,7 @@ def main():
         rep.check("is off" in (sb.run("continuity", "import", "claude").stdout + sb.run("continuity", "import", "claude").stderr), "a disabled agent is not read any more")
         r = subprocess.run([sb.bin, "continuity", "history-forget", "--agent", "claude"], cwd=sb.project, env=env, capture_output=True, text=True)
         rep.check(r.returncode == 0 and "Deleted" in r.stdout, "forgetting deletes the imported history", r.stdout + r.stderr)
-        rep.check("Nothing found" in sb.run("continuity", "search", "sticky").stdout and j(sb.mcp("chat.search", query="sticky", project_id="app"))["hits"] == [], "and it is gone from search")
+        rep.check("Nothing found" in sb.run("continuity", "search", "sticky").stdout and j(sb.mcp("memory.search", scope="chat", query="sticky", project_id="app"))["hits"] == [], "and it is gone from search")
     finally:
         sb.cleanup()
     return rep.finish()
@@ -141,8 +143,8 @@ def antigravity():
         rep.check("→ read_file" not in sb.run("continuity", "search", "read_file").stdout, "one-line tool notes are not searched")
 
         # The switch: a new Claude Code session asks what was said.
-        g = j(sb.mcp("chat.search", query="sticky routing", agent="agy", project_id="app"))
-        rep.check(g["hits"] and g["hits"][0]["agent"] == "agy", "a Claude session finds the Antigravity discussion with chat.search", json.dumps(g)[:240])
+        g = j(sb.mcp("memory.search", scope="chat", query="sticky routing", agent="agy", project_id="app"))
+        rep.check(g["hits"] and g["hits"][0]["agent"] == "agy", "a Claude session finds the Antigravity discussion with memory.search", json.dumps(g)[:240])
         got = j(sb.mcp("chat.get", session=g["hits"][0]["session"], from_seq=0, limit=12))
         roles = [m["role"] for m in got["messages"]]
         rep.check("user" in roles and "assistant" in roles and "tool" in roles, "chat.get opens the exchange with user, assistant and tool notes in order", json.dumps(roles))

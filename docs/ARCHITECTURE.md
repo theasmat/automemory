@@ -143,13 +143,13 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 
 ## 9. Interfaces
 
-**MCP (68 tools, stdio + HTTP).**
+**MCP (58 tools advertised, stdio + HTTP).** Ten older names (`memory.ask/context/topics/digest/constitution/skills`, `chat.search`, `library.search`, `baton.pass/pickup`) are folded into other tools and still answer, but are not shown to agents (PLAN §18).
 
 | Group | Tools |
 |---|---|
-| Read | `memory.recall/ask/about/get/topics/search/list/stats/context/digest/constitution/skills`, `trace.list/get`, `failure.list/get`, `project.list/get`, `doc.list/get`, `library.list/get/search`, `preference.get`, `sync.status`, `graph.query/neighbors/index/impact`, `decision.get` |
+| Read | `memory.recall/about/get/search/list/stats` (`search {scope: notes\|chat\|library\|all}`, `list {view: memories\|constitution\|context\|topics\|skills\|digest}`), `trace.list/get`, `failure.list/get`, `project.list/get`, `doc.list/get`, `library.list/get`, `preference.get`, `sync.status`, `graph.query/neighbors/index/impact`, `decision.get` |
 | Write | `memory.save/update/archive/restore/propose/redact`, `decision.record`, `trace.save`, `failure.save/resolve`, `preference.set/lock`, `project.register`, `library.put` (own files only), `library.propose` (Inbox item) |
-| Coordination | `lock.acquire/release/status`, `task.create/next/submit`, `review.next/post/submit`, `room.join/pending/post/status`, `baton.pass/pickup`, `continuity.brief`, `chat.search/get` |
+| Coordination | `lock.acquire/release/status`, `task.create/next/submit`, `review.next/post/submit`, `room.join/pending/post/status`, `continuity.brief` (`get\|add\|handoff\|confirm\|correct\|resolve\|remove`), `memory.resume`, `chat.get` |
 | Governance | `memory.proposals.list/summary/decide/decide_all` |
 
 Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace.invalidate`, `project.configure`, `doc.track/untrack`, `sync.push/pull` (CLI only).

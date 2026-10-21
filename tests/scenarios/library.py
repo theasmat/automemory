@@ -52,9 +52,10 @@ def main():
         t2 = sb.mcp("library.get", path="plans/prd-cart.md", project_id="app")
         rep.check(t2["content"] == PRD and t2["origin"] == "human", "library.get tier 2 returns the whole file with who wrote it")
         rep.check("error" in json.dumps(sb.mcp("library.get", path="../secret.md", project_id="app")).lower() or "No such" in str(sb.mcp("library.get", path="../secret.md", project_id="app")), "a path outside the library finds nothing")
-        hits = sb.mcp("library.search", query="sticky routing", project_id="app")
-        rep.check(hits["hits"] and hits["hits"][0]["path"] == "plans/prd-cart.md", "MCP library.search finds it", json.dumps(hits)[:200])
+        hits = sb.mcp("memory.search", scope="library", query="sticky routing", project_id="app")
+        rep.check(hits["hits"] and hits["hits"][0]["path"] == "plans/prd-cart.md", "MCP memory.search (scope library) finds it", json.dumps(hits)[:200])
 
+        rep.check(sb.mcp("library.search", query="sticky routing", project_id="app")["hits"] == hits["hits"], "the old name library.search still answers the same")
         # The session-start pack carries a short index, not the files.
         out = json.dumps(sb.hook("claude", "prompt", {"session_id": "s-new", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})[0] or {})
         rep.check("Project library" in out and "plans/prd-cart.md" in out and "store carts in SQLite" not in out, "a new session is told the library exists (index only, not the content)", out[:300])

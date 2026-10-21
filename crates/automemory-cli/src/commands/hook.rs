@@ -800,7 +800,7 @@ fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str)
         .flatten()
         .is_some_and(|b| b.to_session.as_deref() == Some(session_id))
     {
-        items.push("a handoff baton awaits pickup (baton.pickup)".to_string());
+        items.push("a hand-off awaits you (memory.resume)".to_string());
     }
     if db
         .next_review(project_id, Some(session_id))

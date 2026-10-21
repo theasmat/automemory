@@ -16,6 +16,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Folded into other tools (kept working for agents that still call them): `memory.ask` = `memory.recall`; `memory.context/topics/digest/constitution/skills`
+/// = `memory.list {view}`; `chat.search`, `library.search` = `memory.search {scope}`; `baton.pass` = `continuity.brief {action: handoff}`;
+/// `baton.pickup` = what `memory.resume` already returns.
+const RETIRED: &[&str] = &[
+    "memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills",
+    "chat.search", "library.search", "baton.pass", "baton.pickup",
+];
+
 pub struct ToolRegistry {
     db: Arc<Database>,
 }
@@ -85,7 +93,12 @@ impl ToolRegistry {
         Self { db }
     }
 
+    /// The tools an agent is shown. Retired names (folded into others, see PLAN section 18) are still answered, just not advertised.
     pub fn list_tools(&self) -> Vec<ToolDefinition> {
+        self.all_tools().into_iter().filter(|t| !RETIRED.contains(&t.name.as_str())).collect()
+    }
+
+    fn all_tools(&self) -> Vec<ToolDefinition> {
         vec![
             // Read Tools
             ToolDefinition {
@@ -179,23 +192,31 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "memory.search".to_string(),
-                description: "Hybrid search over memories, success traces, failures, and document summaries".to_string(),
+                description: "Search by words. scope notes (default): memories, success traces, failures and document summaries. scope chat: what was said in earlier sessions with any agent (open a hit with chat.get). scope library: the documents in the project library (open one with library.get). scope all: the three together.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "query": { "type": "string", "description": "Search query" },
+                        "scope": { "type": "string", "enum": ["notes", "chat", "library", "all"], "description": "What to search (default notes)" },
+                        "agent": { "type": "string", "description": "scope chat only: only chats with this agent (claude, agy, codex, ...)" },
                         "project_id": { "type": "string", "description": "Optional project ID" },
-                        "limit": { "type": "integer", "description": "Max results (default 10)" }
+                        "limit": { "type": "integer", "description": "Max results (default 10; chat and library at most 20)" }
                     },
                     "required": ["query"]
                 }),
             },
             ToolDefinition {
                 name: "memory.list".to_string(),
-                description: "List memories filtered by project, type, status, or confidence".to_string(),
+                description: "List memories filtered by project, type, status, or confidence. view picks what to list: memories (default), constitution (the short list of core rules, invariants and gotchas: read it first), context (a bounded package for a task: task_query, max_tokens), topics (what can be queried), skills (playbooks learned from successes), digest (what happened in a time span: span, session_id, auto_save).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
+                        "view": { "type": "string", "enum": ["memories", "constitution", "context", "topics", "skills", "digest"], "description": "What to list (default memories)" },
+                        "task_query": { "type": "string", "description": "view context: the task or prompt to build context for" },
+                        "max_tokens": { "type": "integer", "description": "view context: token budget (default 2000)" },
+                        "span": { "type": "string", "description": "view digest: '15m', '30m', '1h', '2h', '4h', '24h', 'today' or 'session' (default '1h')" },
+                        "session_id": { "type": "string", "description": "view digest with span session: the session" },
+                        "auto_save": { "type": "boolean", "description": "view digest: save the digest as a checkpoint memory" },
                         "project_id": { "type": "string" },
                         "status": { "type": "string", "enum": ["active", "superseded", "archived", "invalid", "review"] },
                         "type": { "type": "string", "enum": ["fact", "decision", "lesson", "pattern", "warning", "observation", "preference", "skill"] },
@@ -867,7 +888,7 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "action": { "type": "string", "enum": ["get", "add", "confirm", "correct", "resolve", "remove"], "description": "get (default): the brief and its item ids; add: items to record; confirm: you agree with an item; correct: change an item's wording (id, text, reason); resolve: an open question answered or a step done; remove: delete your own item" },
+                        "action": { "type": "string", "enum": ["get", "add", "handoff", "confirm", "correct", "resolve", "remove"], "description": "get (default): the brief and its item ids; add: items to record; handoff: pass this session's work to the next agent (a short packet from the ledger: files, tool calls, decisions, blockers; give note = the next step, and to_session to address one agent); confirm: you agree with an item; correct: change an item's wording (id, text, reason); resolve: an open question answered or a step done; remove: delete your own item" },
                         "items": { "type": "array", "description": "For add: one entry per fact", "items": { "type": "object", "properties": {
                             "kind": { "type": "string", "enum": ["goal", "status", "constraint", "decision", "rejected", "open", "next", "file", "glossary", "preference"], "description": "rejected = an option you ruled out (put the reason in reason); open = an unanswered question; next = what to do next" },
                             "text": { "type": "string", "description": "One short sentence (max 400 characters)" },
@@ -875,6 +896,8 @@ impl ToolRegistry {
                             "ref_id": { "type": "string", "description": "A decision, note or file this points at" }
                         }, "required": ["kind", "text"] } },
                         "id": { "type": "string", "description": "Item id for confirm, correct, resolve, remove" },
+                        "note": { "type": "string", "description": "For handoff: the next step for the receiving agent (also added to the brief as a next step)" },
+                        "to_session": { "type": "string", "description": "For handoff: the receiving session (omit to leave it for whoever starts next)" },
                         "text": { "type": "string", "description": "New wording for correct" },
                         "reason": { "type": "string", "description": "New reason for correct" },
                         "agent": { "type": "string", "description": "Your agent name (claude-code, antigravity, codex, …)" },
@@ -899,11 +922,11 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "chat.get".to_string(),
-                description: "Read part of one imported chat session, in order, starting at from_seq (use a chat.search hit's session and seq, minus a few messages for context).".to_string(),
+                description: "Read part of one imported chat session, in order, starting at from_seq (use a memory.search (scope chat) hit's session and seq, minus a few messages for context).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session": { "type": "string", "description": "Session id from chat.search" },
+                        "session": { "type": "string", "description": "Session id from memory.search (scope chat)" },
                         "from_seq": { "type": "integer", "description": "First message position (default 0)" },
                         "limit": { "type": "integer", "description": "Default 12, at most 40" }
                     },
@@ -927,7 +950,7 @@ impl ToolRegistry {
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "path": { "type": "string", "description": "Path from library.list or library.search" },
+                        "path": { "type": "string", "description": "Path from library.list or memory.search (scope library)" },
                         "tier": { "type": "integer", "description": "0, 1 or 2 (default 2)" },
                         "offset": { "type": "integer", "description": "Character position to continue a long file from" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" }
@@ -993,7 +1016,45 @@ impl ToolRegistry {
 
     /// Agents pass `project_id` as an id or a slug; tables key on the id, so a slug is resolved
     /// first (otherwise the same project has two spellings and queries miss half the rows).
+    /// The merged tools: one name with a `scope`, `view` or `action` that picks the older tool's behaviour.
+    fn folded(&self, name: &str, arguments: &Value) -> Option<ToolCallResult> {
+        let text = |k: &str| arguments.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        match (name, text("scope"), text("view"), text("action")) {
+            ("memory.search", "chat", _, _) => Some(self.call_tool("chat.search", arguments)),
+            ("memory.search", "library", _, _) => Some(self.call_tool("library.search", arguments)),
+            ("memory.search", "all", _, _) => {
+                let parse = |r: ToolCallResult| serde_json::from_str::<Value>(&r.content.first().map(|c| c.text.clone()).unwrap_or_default()).unwrap_or(Value::Null);
+                Some(ToolCallResult::json(&json!({
+                    "notes": parse(self.call_tool("memory.search", &{ let mut a = arguments.clone(); a["scope"] = json!("notes"); a })),
+                    "chat": parse(self.call_tool("chat.search", arguments)),
+                    "library": parse(self.call_tool("library.search", arguments)),
+                    "next_action": "Open a chat hit with chat.get, a library hit with library.get."
+                })))
+            }
+            ("memory.list", _, view @ ("constitution" | "context" | "topics" | "skills" | "digest"), _) => Some(self.call_tool(&format!("memory.{view}"), arguments)),
+            ("continuity.brief", _, _, "handoff") => {
+                let passed = self.call_tool("baton.pass", arguments);
+                if passed.is_error != Some(true) {
+                    // The note is also the next step on the brief, so the hand-off and the brief tell the same story.
+                    if let Some(note) = arguments.get("note").and_then(|v| v.as_str()).filter(|n| !n.trim().is_empty()) {
+                        let project_id = arguments.get("project_id").and_then(|v| v.as_str()).map(String::from);
+                        let _ = self.db.brief_add(automemory_core::continuity::NewItem {
+                            project_id, kind: automemory_core::continuity::ItemKind::Next, text: note.to_string(), reason: None, ref_id: None, origin: automemory_core::continuity::Origin::Agent,
+                            author: arguments.get("agent").and_then(|v| v.as_str()).unwrap_or("agent").to_string(),
+                            session: arguments.get("session_id").and_then(|v| v.as_str()).map(String::from),
+                        });
+                    }
+                }
+                Some(passed)
+            }
+            _ => None,
+        }
+    }
+
     pub fn call_tool(&self, name: &str, arguments: &Value) -> ToolCallResult {
+        if let Some(r) = self.folded(name, arguments) {
+            return r;
+        }
         let mut args = arguments.clone();
         if let Some(p) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
             if self.db.get_project_by_id(&p).ok().flatten().is_none() {
@@ -1076,7 +1137,7 @@ impl ToolRegistry {
                             "next": "automemory next",
                             "learn": "automemory learn <topic>"
                         },
-                        "next_action": "Call memory.context to inspect the current Project brain, or pass target=\"<path_or_symbol>\" to inspect a specific file or symbol."
+                        "next_action": "Call memory.list with view=context to inspect the current Project brain, or pass target=\"<path_or_symbol>\" to inspect a specific file or symbol."
                     }));
                 }
 
@@ -1129,7 +1190,7 @@ impl ToolRegistry {
                 match self.db.list_topics(project_id, 50) {
                     Ok(topics) => ToolCallResult::json(&json!({
                         "topics": topics,
-                        "next_action": "Query any topic with memory.ask."
+                        "next_action": "Query any topic with memory.recall."
                     })),
                     Err(e) => ToolCallResult::error(format!("Failed to list topics: {}", e)),
                 }
@@ -2280,7 +2341,7 @@ impl ToolRegistry {
                         let payload = json!({
                             "status": "passed",
                             "baton": baton,
-                            "next_action": "Tell the receiving agent to call baton.pickup with its session_id, then memory.context for full context."
+                            "next_action": "Tell the receiving agent to call memory.resume, then memory.resume for full context."
                         });
                         ToolCallResult::json(&payload)
                     }
@@ -2317,7 +2378,7 @@ impl ToolRegistry {
                 ToolCallResult::json(&json!({
                     "resume": pack,
                     "next_action": if pack.is_some() {
-                        "Continue from the hand-off's next step; use memory.ask for anything the pack names."
+                        "Continue from the hand-off's next step; use memory.recall for anything the pack names."
                     } else {
                         "Nothing recorded yet for this project: start the task and save decisions with decision.record."
                     }
@@ -2332,7 +2393,7 @@ impl ToolRegistry {
                     Ok(Some(baton)) => {
                         let payload = json!({
                             "baton": baton,
-                            "next_action": "Call memory.context for full project context, then continue with the packet's next step."
+                            "next_action": "Call memory.list with view=context for full project context, then continue with the packet's next step."
                         });
                         ToolCallResult::json(&payload)
                     }

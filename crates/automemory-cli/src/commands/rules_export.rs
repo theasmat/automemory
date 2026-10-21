@@ -34,7 +34,7 @@ pub const TARGETS: &[Target] = &[
 fn block(view: &str) -> String {
     let body = if view.trim().is_empty() { "_Nothing verified yet._\n".to_string() } else { format!("{}\n", view.trim_end()) };
     format!(
-        "{BEGIN}\n## Project memory (AutoMemory)\nShared by every agent on this project. Start from this instead of re-exploring; for more call `memory.context` (MCP). Record non-trivial choices with `decision.record`. File locks are automatic.\n\n{body}{END}\n"
+        "{BEGIN}\n## Project memory (AutoMemory)\nShared by every agent on this project. Start from this instead of re-exploring; for more call `memory.list` with `view: context` (MCP). Record non-trivial choices with `decision.record`. File locks are automatic.\n\n{body}{END}\n"
     )
 }
 

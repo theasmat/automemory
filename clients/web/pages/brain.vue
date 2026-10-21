@@ -299,7 +299,7 @@ const filteredNotes = computed(() => {
 const previewBlock = computed(() => {
   return `<!-- automemory:begin (generated; change it with \`automemory note\` / \`automemory decision\`) -->
 ## Project memory (AutoMemory)
-Shared by every agent on this project. Start from this instead of re-exploring; for more call \`memory.context\` (MCP). Record non-trivial choices with \`decision.record\`. File locks are automatic.
+Shared by every agent on this project. Start from this instead of re-exploring; for more call \`memory.list\` with \`view: context\` (MCP). Record non-trivial choices with \`decision.record\`. File locks are automatic.
 
 ${store.memories.map((m) => `- **${m.summary}**: ${m.content || ''}`).join('\n') || '_Nothing verified yet._'}
 <!-- automemory:end -->`;

@@ -51,9 +51,41 @@ mod tests {
         let names: Vec<_> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"memory.recall"));
         assert!(names.contains(&"memory.save"));
-        assert!(names.contains(&"memory.context"));
+        assert!(names.contains(&"memory.search") && names.contains(&"memory.list"));
         assert!(names.contains(&"trace.save"));
         assert!(names.contains(&"failure.save"));
+        // Folded tools are not advertised any more...
+        for retired in ["memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills", "chat.search", "library.search", "baton.pass", "baton.pickup"] {
+            assert!(!names.contains(&retired), "{retired} should be folded into another tool");
+        }
+        assert_eq!(names.len(), 58, "advertised tools (docs say 58 until the graph and review tools are folded too)");
+    }
+
+    #[test]
+    fn folded_tools_still_answer_and_their_replacements_reach_the_same_code() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db);
+        let call = |name: &str, arguments: serde_json::Value| -> serde_json::Value {
+            let r = server
+                .handle_request(JsonRpcRequest { jsonrpc: "2.0".to_string(), id: Some(json!(1)), method: "tools/call".to_string(), params: Some(json!({ "name": name, "arguments": arguments })) })
+                .unwrap()
+                .result
+                .unwrap();
+            serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap_or(json!({ "text": r["content"][0]["text"] }))
+        };
+        // memory.list {view} reaches the same handler.
+        assert_eq!(call("memory.list", json!({ "view": "topics" })), call("memory.topics", json!({})));
+        assert_eq!(call("memory.list", json!({ "view": "constitution" })), call("memory.constitution", json!({})));
+        // memory.search {scope}: chat and library go to their handlers; all returns the three.
+        assert_eq!(call("memory.search", json!({ "query": "x", "scope": "chat" })), call("chat.search", json!({ "query": "x" })));
+        assert_eq!(call("memory.search", json!({ "query": "x", "scope": "library" })), call("library.search", json!({ "query": "x" })));
+        let all = call("memory.search", json!({ "query": "x", "scope": "all" }));
+        assert!(all.get("notes").is_some() && all.get("chat").is_some() && all.get("library").is_some(), "{all}");
+        // continuity.brief {handoff} passes the baton and leaves the note as the brief's next step.
+        let h = call("continuity.brief", json!({ "action": "handoff", "session_id": "s1", "agent": "claude", "note": "Wire the cart page to the new route" }));
+        assert_eq!(h["status"], "passed", "{h}");
+        let brief = call("continuity.brief", json!({ "action": "get" }));
+        assert!(brief["brief"].as_str().unwrap_or("").contains("Wire the cart page"), "{brief}");
     }
 
     #[test]
