@@ -3,7 +3,6 @@ use crate::models::{ProceduralSkill, SuccessTrace};
 use anyhow::Result;
 use chrono::Utc;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 pub struct SkillDistiller<'a> {
     db: &'a Database,
@@ -64,7 +63,7 @@ impl<'a> SkillDistiller<'a> {
             }
 
             let first = cluster_traces[0];
-            let skill_id = format!("skill_{}", Uuid::new_v4().simple());
+            let skill_id = crate::db::queries::prune::stable_id("skill", &[project_id.unwrap_or(""), &_cluster_key]);
             let name = format!("Procedural Playbook: {}", first.title);
             let description = format!(
                 "Autonomous procedural playbook distilled from {} successful execution trace(s) in category '{}' (avg reproducibility: {:.2}).",
@@ -223,5 +222,24 @@ mod tests {
         let listed = db.list_skills(Some("proj_alpha"), 10).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, promoted[0].id);
+    }
+
+    #[test]
+    fn distilling_again_gives_the_same_skill_not_another() {
+        let db = Database::open_in_memory().unwrap();
+        for n in 0..3 {
+            db.save_trace(&SuccessTrace {
+                id: format!("t{n}"), project_id: Some("p1".into()), title: "Ship a fix".into(), category: "bugfix".into(), status: "active".into(), preconditions: vec![],
+                steps: vec![TraceStep { position: 1, action: "run tests".into(), tool: "bash".into(), command: Some("cargo test".into()), verification: None }],
+                reproducibility_score: 0.95, caveats: vec![], source_task_id: None, evidence_event_ids: vec![], created_at: Utc::now(), updated_at: Utc::now(),
+            }).unwrap();
+        }
+        let d = SkillDistiller::new(&db);
+        for _ in 0..3 {
+            for s in d.distill_skills_with_threshold(Some("p1"), 3, 0.85).unwrap() {
+                db.save_skill(&s).unwrap();
+            }
+        }
+        assert_eq!(db.list_skills(None, 100).unwrap().len(), 1, "three runs, one skill (it used to add a copy every time)");
     }
 }

@@ -40,6 +40,7 @@ run "continuity dashboard"            python3 tests/scenarios/continuity_dashboa
 run "continuity triggers + history sync" python3 tests/scenarios/continuity_triggers.py
 run "continuity eval (golden chats)"   python3 tests/eval/continuity_eval.py
 run "project library"                  python3 tests/scenarios/library.py
+run "duplicate records (prune)"        python3 tests/scenarios/prune.py
 run "project library sync"             python3 tests/scenarios/library_sync.py
 run "library dashboard"                python3 tests/scenarios/library_dashboard.py
 run "guideline refresh on connect"    python3 tests/scenarios/guidelines_refresh.py

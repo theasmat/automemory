@@ -147,7 +147,7 @@ impl<'a> TrajectoryDistiller<'a> {
                     // Check if this tool call resolved a previous error
                     if let Some((err_tool, err_msg)) = last_error.take() {
                         let failure_rec = FailureRecord {
-                            id: Uuid::now_v7().to_string(),
+                            id: crate::db::queries::prune::stable_id("fail", &[project_id.as_deref().unwrap_or(""), &err_tool, &crate::db::queries::prune::error_signature(&err_msg)]),
                             project_id: project_id.clone(),
                             task_title: format!(
                                 "Error in `{}` resolved by `{}`",
@@ -274,7 +274,8 @@ impl<'a> TrajectoryDistiller<'a> {
         let pruned_events = total_raw_events.saturating_sub(key_steps.len());
 
         // 4. Synthesize 1 Clean SuccessTrace
-        let trace_id = Uuid::now_v7().to_string();
+        // One trace per session and project: distilling the same session again (every Stop) updates it instead of adding another.
+        let trace_id = crate::db::queries::prune::stable_id("trace", &[project_id.as_deref().unwrap_or(""), session_id]);
         let reproducibility_score = if failed_tools.is_empty() { 0.98 } else { 0.92 };
         let category = if !failed_tools.is_empty() {
             "bugfix".to_string()

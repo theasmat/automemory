@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (58 MCP tools, 298 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (58 MCP tools, 303 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -180,7 +180,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 - [x] K1 One approve/reject path for Inbox items (fixes approve-all), shared reader helper, one spawn helper, one `clip`, remove 5 redirect pages (the two empty tables stay: `sessions` is written by the demo data and `session_notes` is a short-lived lock-note buffer, empty between sessions)
 - [x] K2 `memory.search {scope}`, `memory.list {view}`, `continuity.brief {action: handoff}` (baton), 10 names retired but still answering, a test that fails when a tool is not taught in the rules text (instead of generating the text)
-- [ ] K3 Skills/traces write-path fix (X1), one Activity page, one Providers screen
+- [x] K3 Skills/traces/failures written once per thing (stable ids; grep/diff exit 1 is not a failure), `memory prune` and a doctor line for existing duplicates (on the maintainer's database a dry run finds 8,880 skills and 168 traces; not run for him), one Activity page with tabs (old links forward), one Models page for the search model and the AI helper (the two screens are merged; their routes stay separate)
 - [ ] K4 Reviews as one-round rooms; drop own `graph.*` tools and the Graph page (codebase-memory-mcp covers symbols)
 - [ ] K5 Tracked documents into the library; cloud stub behind a flag; legacy vault into `backup restore`
 

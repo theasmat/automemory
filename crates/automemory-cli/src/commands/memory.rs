@@ -443,3 +443,23 @@ pub fn archive(id: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Counts, or removes, duplicate skills, traces and failures. Old versions wrote a new row every time the same thing happened.
+pub fn prune(yes: bool) -> Result<()> {
+    if yes {
+        automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "remove duplicate skills, traces and failures")?;
+    }
+    let db = Database::open(&Config::default_config().db_path)?;
+    let counts = if yes { db.prune_duplicates()? } else { db.duplicates()? };
+    if counts.total() == 0 {
+        println!("No duplicates.");
+        return Ok(());
+    }
+    if yes {
+        println!("✓ Removed {} duplicate skill(s), {} trace(s), {} failure(s). The newest of each was kept.", counts.skills, counts.traces, counts.failures);
+        println!("  If you sync with other computers, run this there too before the next sync, or the copies come back.");
+    } else {
+        println!("{} duplicate skill(s), {} trace(s), {} failure(s) (identical records kept many times). Nothing was changed. To remove them: automemory memory prune --yes", counts.skills, counts.traces, counts.failures);
+    }
+    Ok(())
+}

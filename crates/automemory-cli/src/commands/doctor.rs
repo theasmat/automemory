@@ -190,6 +190,16 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Derived records written many times for the same thing (older versions did this on every session end).
+    {
+        print!("Checking duplicate records... ");
+        match automemory_core::db::Database::open(&config.db_path).and_then(|db| db.duplicates()) {
+            Ok(d) if d.total() == 0 => println!("✓ none"),
+            Ok(d) => println!("⚠ {} duplicate skill(s), {} trace(s), {} failure(s): run `automemory memory prune --yes` (nothing else is touched)", d.skills, d.traces, d.failures),
+            Err(_) => println!("– database unavailable"),
+        }
+    }
+
     // Project library: copies up to date, linked files present, the folder out of git status.
     {
         print!("Checking project library... ");

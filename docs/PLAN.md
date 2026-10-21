@@ -505,7 +505,7 @@ Code symbols are left to the external `codebase-memory-mcp` (already registered 
 | | Now | After |
 |---|---|---|
 | MCP tools | 68 | 58 after K2, 51 after K4: minus `memory.ask` (alias of recall), `memory.context/topics/digest/constitution/skills` (views of `memory.list`), `chat.search`, `library.search` (scopes of `memory.search`), `baton.pass/pickup`, `review.submit/next/post`, `graph.index/query/neighbors/impact` |
-| Dashboard pages | 25 | 12: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
+| Dashboard pages | 25 | 16 after K3, 12 after K5: Home, Notes, Agents, Inbox, Hand-off, Library, Rooms, Activity, Sync, Safety, Tools, Settings (constitution into Notes, docs into Library, traces/replay/skills/failures into Activity, recall into Settings, graph removed, 5 redirect pages removed) |
 | CLI | `doc`, `baton`, `pass`, `pickup`, `sync export/import/restore`, `sync init/status/push/pull` | `library`, `continuity`, `backup restore`; cloud commands hidden until the hosted service exists |
 
 ### 18.3 Order (each step ships alone, suite green, docs and counts updated)

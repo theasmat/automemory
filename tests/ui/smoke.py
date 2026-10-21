@@ -23,9 +23,9 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scenarios"))
 from dashboard import free_port  # noqa: E402
 
-PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/recall", "/safety", "/sync", "/settings",
-         "/skills", "/traces", "/replay", "/failures", "/docs",
-         "/constitution", "/graph", "/activity", "/rooms", "/continuity", "/library"]
+PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/models", "/models?tab=helper", "/safety", "/sync", "/settings",
+         "/activity", "/activity?tab=sessions", "/activity?tab=traces", "/activity?tab=problems", "/activity?tab=skills", "/docs",
+         "/constitution", "/graph", "/rooms", "/continuity", "/library"]
 
 
 def main():
@@ -103,6 +103,15 @@ def main():
             rep.check("Hand-off written" in page.inner_text("main"), "Hand off now works without a password", page.inner_text("main")[:200])
             rep.check(not problems, "the Continuity page uses only known policy paths", "; ".join(problems))
             page.close()
+            # Old links keep working: merged pages forward to their new home.
+            page = browser.new_page()
+            for old, now in (("/replay", "tab=sessions"), ("/skills", "tab=skills"), ("/failures", "tab=problems"), ("/memories", "/brain")):
+                page.goto(base + old, wait_until="networkidle")
+                page.wait_for_timeout(300)
+                rep.check(now in page.url, f"{old} forwards to its new home", page.url)
+            page.goto(base + "/activity", wait_until="networkidle")
+            rep.check("What worked" in page.inner_text("main") and "Learned skills" in page.inner_text("main"), "Activity has the tabs for sessions, what worked, problems and skills")
+            page.close()
             # Library: seeded through the page's own API; tree, tiers, lock icons, no unknown policy paths.
             _u.urlopen(_u.Request(base + "/api/library/file", data=_j.dumps({"path": "plans/prd.md", "content": "# Cart PRD\n\nCarts expire after 30 days.\n\n## Decisions\n- Decision: SQLite\n"}).encode(), method="PUT",
                                   headers={"Content-Type": "application/json", "X-AutoMemory-Password": "smoke pw"}), timeout=60)
@@ -156,7 +165,7 @@ def main():
             page.close()
             # A Protected action asks for the password before anything is sent.
             page = browser.new_page()
-            page.goto(base + "/tools", wait_until="networkidle")
+            page.goto(base + "/models?tab=helper", wait_until="networkidle")
             rep.check(page.locator("input[type=password]").count() == 0, "no password field before an action")
             page.get_by_role("button", name="Turn on").click()
             page.wait_for_timeout(500)

@@ -949,6 +949,13 @@ enum ProjectCommands {
 
 #[derive(Subcommand)]
 enum MemoryCommands {
+    /// Remove duplicate skills, traces and failures (the newest of each kind is kept). Without --yes it only counts
+    Prune {
+        /// Do it (asks for the password when one is set)
+        #[arg(long)]
+        yes: bool,
+    },
+
     /// Read a specific memory record in detail
     Get {
         /// Memory ID
@@ -1303,6 +1310,7 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Memory { command } => match command {
+            MemoryCommands::Prune { yes } => commands::memory::prune(yes)?,
             MemoryCommands::Get { id } => {
                 commands::memory::get(&id)?;
             }
