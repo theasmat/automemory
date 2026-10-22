@@ -85,88 +85,8 @@ pub async fn search(
     let db = Database::open(&config.db_path)?;
 
     if semantic {
-        let global_cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
         let vector_engine = automemory_core::ports::LocalEmbeddings::new();
         let query_vector = automemory_core::ports::EmbeddingProvider::embed(&vector_engine, query)?;
-
-        if let Some(ref endpoint) = global_cfg.cloud.endpoint {
-            let search_url = format!("{}/api/v1/vector/search", endpoint.trim_end_matches('/'));
-            println!(
-                "🔍 Querying Edge Vector Index (Zero-Knowledge): {}",
-                search_url
-            );
-
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
-                .build()?;
-
-            let mut req = client.post(&search_url).json(&serde_json::json!({
-                "vector": query_vector,
-                "blind_project_id": project.as_deref(),
-                "top_k": limit,
-            }));
-
-            if let Some(ref tok) = global_cfg.cloud.auth_token {
-                req = req.header("Authorization", format!("Bearer {}", tok));
-            }
-
-            if let Ok(resp) = req.send().await {
-                if resp.status().is_success() {
-                    if let Ok(body) = resp.json::<serde_json::Value>().await {
-                        if let Some(matches) = body.get("matches").and_then(|m| m.as_array()) {
-                            if !matches.is_empty() {
-                                let master_key =
-                                    automemory_core::crypto::BlindCrypto::get_or_create_master_key(
-                                        None,
-                                    )?;
-                                println!(
-                                    "Found {} semantic vector matches for '{}':",
-                                    matches.len(),
-                                    query
-                                );
-                                println!("{}", "-".repeat(90));
-
-                                for m_val in matches {
-                                    let wire_res: Result<
-                                        automemory_core::crypto::BlindMemoryWire,
-                                        _,
-                                    > = serde_json::from_value(m_val.clone());
-                                    let score =
-                                        m_val.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-                                    if let Ok(wire) = wire_res {
-                                        match automemory_core::crypto::BlindCrypto::decrypt_memory(
-                                            &master_key,
-                                            &wire,
-                                            project.as_deref(),
-                                        ) {
-                                            Ok(mem) => {
-                                                println!(
-                                                    "[{}] {} (Semantic Similarity: {:.3})",
-                                                    mem.memory_type, mem.summary, score
-                                                );
-                                                println!("  ID: {}", mem.id);
-                                                println!("  Content: {}", mem.content);
-                                                println!("  [Decrypted locally via AES-256-GCM Master Key]");
-                                                println!();
-                                            }
-                                            Err(e) => {
-                                                println!(
-                                                    "[ENCRYPTED MATCH] ID: {} (Score: {:.3}, Decrypt err: {})",
-                                                    wire.id, score, e
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-            } else {
-                println!("ℹ Edge endpoint unreachable; falling back to local zero-knowledge vector similarity.");
-            }
-        }
 
         // Local Zero-Knowledge Semantic Vector Search Fallback
         let active_mems = db.list_memories(

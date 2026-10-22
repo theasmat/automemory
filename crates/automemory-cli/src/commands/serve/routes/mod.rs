@@ -161,9 +161,4 @@ pub fn build_api_router() -> Router<AppState> {
         .route("/api/stream", get(stats::api_stream))
         .route("/api/sync/status", get(sync::api_sync_status))
         .route("/api/sync/trigger", post(sync::api_sync_trigger))
-        .route("/api/cloud/sync", post(sync::api_mock_cloud_sync))
-        .route(
-            "/api/cloud/projects/:id/manifest",
-            get(sync::api_mock_cloud_manifest),
-        )
 }

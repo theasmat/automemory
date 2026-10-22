@@ -372,6 +372,7 @@ fn default_version() -> u32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Kept for the key: `[cloud] encryption_key` in an existing config still decrypts what it encrypted (see `crypto.rs`). The hosted-sync fields are unused.
 pub struct CloudConfig {
     pub endpoint: Option<String>,
     pub auth_token: Option<String>,

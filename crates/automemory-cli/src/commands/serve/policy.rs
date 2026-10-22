@@ -71,8 +71,6 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/guardrails/evaluate", Tier::Safe, "try a command against the rules"),
     ("/api/sync/trigger", Tier::Protected, "sync now (sends data to the remote)"),
     ("/api/sync/pull", Tier::Safe, "pull from the remote"),
-    ("/api/cloud/sync", Tier::Protected, "cloud sync (test endpoint)"),
-    ("/api/cloud/projects/:id/manifest", Tier::Protected, "cloud manifest (test endpoint)"),
     ("/api/llm", Tier::Protected, "LLM helper settings"),
     ("/api/llm/profile/:name", Tier::Protected, "remove an LLM profile"),
     ("/api/llm/key", Tier::Protected, "store or remove the LLM API key"),

@@ -138,7 +138,7 @@ enum Commands {
     },
 
     /// Link project to canonical single-source context (~/.automemory/context/projects/<id>) via local .context symlink
-    #[command(next_help_heading = "Advanced")]
+    #[command(next_help_heading = "Advanced", hide = true)]
     Link {
         /// Project ID or slug (inferred from directory if omitted)
         project_id: Option<String>,
@@ -1094,132 +1094,11 @@ enum SyncCommands {
         no_connect: bool,
     },
 
-    /// (Hosted sync, not available yet; needs AUTOMEMORY_EXPERIMENTAL_CLOUD=1) Initialize cloud delta sync configuration
-    #[command(hide = true)]
-    Init {
-        /// Project ID or slug (defaults to folder name or config)
-        #[arg(short, long)]
-        project: Option<String>,
-
-        /// Cloud endpoint URL (Firebase Cloud Functions / Cloudflare Worker)
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// Authentication bearer token or API key
-        #[arg(short, long)]
-        token: Option<String>,
-    },
-
-    /// (Hosted sync, not available yet) Check cloud sync status and pending deltas
-    #[command(hide = true)]
-    Status {
-        /// Project slug (defaults to current project)
-        #[arg(short, long)]
-        project: Option<String>,
-    },
-
-    /// (Hosted sync, not available yet) Push local document deltas and memories to cloud
-    #[command(hide = true)]
-    Push {
-        /// Project slug (defaults to current project)
-        #[arg(short, long)]
-        project: Option<String>,
-
-        /// Custom endpoint override
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// Auth token override
-        #[arg(short, long)]
-        token: Option<String>,
-
-        /// Custom encryption key passphrase override
-        #[arg(short, long)]
-        key: Option<String>,
-    },
-
-    /// (Hosted sync, not available yet) Pull remote updates from cloud endpoint
-    #[command(hide = true)]
-    Pull {
-        /// Project slug (defaults to current project)
-        #[arg(short, long)]
-        project: Option<String>,
-
-        /// Custom endpoint override
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// Auth token override
-        #[arg(short, long)]
-        token: Option<String>,
-
-        /// Custom encryption key passphrase override
-        #[arg(short, long)]
-        key: Option<String>,
-    },
-
-    /// Disaster recovery: restore memories, skills, and product docs onto machine
-    #[command(hide = true)]
-    Restore {
-        /// Project ID to restore
-        #[arg(short, long)]
-        project: Option<String>,
-
-        /// Path to local backup or delta JSON archive
-        #[arg(short, long)]
-        from_file: Option<String>,
-
-        /// Cloud endpoint to fetch manifest from
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// Auth token for cloud endpoint
-        #[arg(short, long)]
-        token: Option<String>,
-
-        /// Custom encryption key passphrase override
-        #[arg(short, long)]
-        key: Option<String>,
-    },
-
-    /// (Legacy; use `automemory backup`) Export database to text-first JSONL & Markdown vault
-    #[command(hide = true)]
-    Export {
-        #[arg(short, long)]
-        path: Option<String>,
-    },
-
-    /// (Legacy; use `automemory backup restore`) Import text-first vault records into local database
-    #[command(hide = true)]
-    Import {
-        #[arg(short, long)]
-        path: Option<String>,
-    },
-
     /// Secure zero-knowledge multi-device pairing via BIP-39 mnemonic phrase and QR code
     Pair {
         /// Join an existing vault using a 12-word recovery seed phrase
         #[arg(long)]
         join: Option<String>,
-
-        /// Cloud endpoint URL
-        #[arg(short, long)]
-        endpoint: Option<String>,
-
-        /// Auth token or device token
-        #[arg(short, long)]
-        token: Option<String>,
-    },
-
-    /// Watch trackable files in background and automatically sync on change
-    Watch {
-        /// Project slug (defaults to current project)
-        #[arg(short, long)]
-        project: Option<String>,
-
-        /// Polling interval in seconds (default: 5)
-        #[arg(short, long, default_value_t = 5)]
-        interval: u64,
     },
 }
 
@@ -1383,55 +1262,8 @@ async fn main() -> Result<()> {
             SyncCommands::Bootstrap { remote, phrase, no_connect } => {
                 commands::sync::bootstrap(&remote, phrase, !no_connect)?
             }
-            SyncCommands::Init { .. } | SyncCommands::Status { .. } | SyncCommands::Push { .. } | SyncCommands::Pull { .. } if std::env::var("AUTOMEMORY_EXPERIMENTAL_CLOUD").is_err() => {
-                println!("Hosted sync is not available yet. Memory syncs between your computers with `automemory sync remote <git-url>` and `automemory sync auto` (end-to-end encrypted). To try the unfinished hosted-sync client anyway, set AUTOMEMORY_EXPERIMENTAL_CLOUD=1.");
-            }
-            SyncCommands::Init {
-                project,
-                endpoint,
-                token,
-            } => {
-                commands::sync::init(project, endpoint, token)?;
-            }
-            SyncCommands::Status { project } => {
-                commands::sync::status(project)?;
-            }
-            SyncCommands::Push {
-                project,
-                endpoint,
-                token,
-                key,
-            } => {
-                commands::sync::push(project, endpoint, token, key).await?;
-            }
-            SyncCommands::Pull {
-                project,
-                endpoint,
-                token,
-                key,
-            } => {
-                commands::sync::pull(project, endpoint, token, key).await?;
-            }
-            SyncCommands::Restore {
-                project,
-                from_file,
-                endpoint,
-                token,
-                key,
-            } => {
-                commands::sync::restore(project, from_file, endpoint, token, key).await?;
-            }
-            SyncCommands::Export { path } => commands::sync::export_vault(path)?,
-            SyncCommands::Import { path } => commands::sync::import_vault(path)?,
-            SyncCommands::Pair {
-                join,
-                endpoint,
-                token,
-            } => {
-                commands::sync::pair(join, endpoint, token).await?;
-            }
-            SyncCommands::Watch { project, interval } => {
-                commands::sync::watch(project, interval).await?;
+            SyncCommands::Pair { join } => {
+                commands::sync::pair(join)?;
             }
         },
         Commands::Mode { command } => match command {

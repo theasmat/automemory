@@ -1,25 +1,16 @@
 use crate::commands::serve::state::AppState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Query, State},
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::fs;
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectQuery {
     pub project_id: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MockCloudPayload {
-    pub project_id: String,
-    pub timestamp: String,
-    pub documents: Vec<serde_json::Value>,
-    pub memories: Vec<serde_json::Value>,
-    pub skills: Vec<serde_json::Value>,
 }
 
 pub async fn api_sync_trigger(State(state): State<AppState>) -> impl IntoResponse {
@@ -96,56 +87,3 @@ pub async fn api_sync_status(
 }
 
 // Local mock cloud endpoint for offline testing
-pub async fn api_mock_cloud_sync(
-    State(_state): State<AppState>,
-    Json(payload): Json<MockCloudPayload>,
-) -> impl IntoResponse {
-    let project_id = payload.project_id.clone();
-    let config = automemory_core::config::Config::default_config();
-    let mock_dir = config
-        .home_dir
-        .join("mock_cloud")
-        .join("projects")
-        .join(&project_id);
-    let _ = fs::create_dir_all(&mock_dir);
-    let manifest_path = mock_dir.join("manifest.json");
-    let _ = fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&payload).unwrap_or_default(),
-    );
-
-    Json(json!({
-        "status": "success",
-        "message": format!("Local mock cloud received delta for project '{}'", project_id),
-        "docs_received": payload.documents.len(),
-        "memories_received": payload.memories.len(),
-        "skills_received": payload.skills.len(),
-        "timestamp": payload.timestamp,
-    }))
-}
-
-pub async fn api_mock_cloud_manifest(
-    State(_state): State<AppState>,
-    Path(project_id): Path<String>,
-) -> impl IntoResponse {
-    let config = automemory_core::config::Config::default_config();
-    let manifest_path = config
-        .home_dir
-        .join("mock_cloud")
-        .join("projects")
-        .join(&project_id)
-        .join("manifest.json");
-    if let Ok(content) = fs::read_to_string(&manifest_path) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            return Json(val);
-        }
-    }
-
-    Json(json!({
-        "project_id": project_id,
-        "documents": [],
-        "memories": [],
-        "skills": [],
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-    }))
-}
