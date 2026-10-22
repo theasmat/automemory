@@ -29,24 +29,37 @@
         <Card>
           <p v-if="!data.files.length && !data.project_docs?.length" class="text-sm text-text-muted">The library is empty. Add a file, or list files to keep in place below.</p>
           <div v-for="g in groups" :key="g.folder" class="mb-3 last:mb-0">
-            <p v-if="g.folder" class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">{{ g.folder }}</p>
-            <ul>
+            <p v-if="g.folder" class="mb-1 text-xs font-semibold text-text-muted">{{ g.folder }}</p>
+            <ul class="space-y-0.5">
               <li v-for="f in g.files" :key="f.path">
-                <button type="button" class="w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2" :class="sel === f.path ? 'bg-surface-2 font-semibold text-text' : 'text-text-muted'" @click="open(f.path)">
-                  {{ f.path.split('/').pop() }}
-                  <Badge v-if="f.linked" variant="info">in place</Badge>
-                  <Badge v-if="f.personal" variant="neutral">this computer</Badge>
-                  <Badge v-if="f.origin === 'agent'" variant="warn">agent</Badge>
+                <button
+                  type="button"
+                  class="w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
+                  :class="sel === f.path ? 'bg-accent/10 font-semibold text-accent' : 'text-text-muted hover:text-text'"
+                  @click="open(f.path)"
+                >
+                  <span class="truncate">{{ f.path.split('/').pop() }}</span>
+                  <span class="flex items-center gap-1 flex-shrink-0">
+                    <Badge v-if="f.linked" variant="info">in place</Badge>
+                    <Badge v-if="f.personal" variant="neutral">this computer</Badge>
+                    <Badge v-if="f.origin === 'agent'" variant="warn">agent</Badge>
+                  </span>
                 </button>
               </li>
             </ul>
           </div>
           <div v-if="data.project_docs?.length" class="mt-4 border-t border-border/60 pt-3">
-            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Project documents (in the repository)</p>
-            <ul>
+            <p class="mb-1 text-xs font-semibold text-text-muted">Project documents (in the repository)</p>
+            <ul class="space-y-0.5">
               <li v-for="d in data.project_docs" :key="d.path">
-                <button type="button" class="w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2" :class="sel === d.path ? 'bg-surface-2 font-semibold text-text' : 'text-text-muted'" @click="open(d.path)">
-                  {{ d.path }} <Badge variant="neutral">{{ d.category }}</Badge>
+                <button
+                  type="button"
+                  class="w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
+                  :class="sel === d.path ? 'bg-accent/10 font-semibold text-accent' : 'text-text-muted hover:text-text'"
+                  @click="open(d.path)"
+                >
+                  <span class="truncate">{{ d.path }}</span>
+                  <Badge variant="neutral">{{ d.category }}</Badge>
                 </button>
               </li>
             </ul>

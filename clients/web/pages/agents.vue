@@ -20,12 +20,9 @@
       @retry="store.fetchCoordination()"
     />
 
-    <!-- Top Card: Who is Working -->
-    <Card title="Who is working right now">
-      <div v-if="activeWorkers.length === 0" class="text-sm text-text-muted py-2">
-        No agents currently holding file locks or running tasks.
-      </div>
-      <div v-else class="space-y-3 mt-2">
+    <!-- Top Card: Who is Working (only shown when active workers exist, avoiding duplicate empty cards) -->
+    <Card v-if="activeWorkers.length > 0" title="Who is working right now">
+      <div class="space-y-3 mt-1">
         <div
           v-for="worker in activeWorkers"
           :key="worker.agent + worker.scope"
@@ -63,14 +60,14 @@
       <div v-if="store.activeLeases.length === 0" class="py-2">
         <EmptyState
           title="No files currently locked"
-          description="When an agent edits a file or acquires an advisory lock, it appears here to prevent other agents from colliding."
+          description="When an agent edits a file or claims a scoped task, it locks the file here so parallel agents do not overwrite each other."
         />
       </div>
 
       <div v-else class="overflow-x-auto mt-2">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b border-border text-text-muted text-xs ">
+            <tr class="border-b border-border text-text-muted text-xs">
               <th class="py-2 px-3">File / Scope</th>
               <th class="py-2 px-3">Held by</th>
               <th class="py-2 px-3">Remaining</th>
@@ -105,50 +102,14 @@
           </tbody>
         </table>
       </div>
-    </Card>
 
-    <!-- Hand-offs (Batons) -->
-    <Card title="Recent hand-off notes">
-      <div v-if="store.coordination.batons.length === 0" class="text-xs text-text-muted py-2">
-        No hand-off notes passed between agent sessions yet.
-      </div>
-      <div v-else class="space-y-2 mt-2">
-        <div
-          v-for="baton in store.coordination.batons"
-          :key="baton.id"
-          class="p-3 rounded-xl bg-surface-2/60 text-xs space-y-1.5"
-        >
-          <div class="flex items-center justify-between">
-            <div class="font-semibold text-text flex items-center gap-2">
-              <span>{{ baton.agent || 'Agent' }}</span>
-              <span class="text-text-muted">&rarr; {{ baton.to_session || 'next session' }}</span>
-            </div>
-            <span class="text-text-muted font-mono text-xs">{{ baton.created_at }}</span>
-          </div>
-          <p class="text-text font-mono text-xs bg-surface p-2 rounded border border-border whitespace-pre-wrap">
-            {{ baton.packet }}
-          </p>
-        </div>
-      </div>
-    </Card>
-
-    <!-- Collapsible Explainer -->
-    <Card>
-      <div class="text-sm text-text-muted space-y-2">
-        <p class="font-semibold text-text">How file locks work:</p>
-        <p>
+      <details class="mt-4 pt-3 border-t border-border/60 text-xs text-text-muted">
+        <summary class="cursor-pointer text-accent font-medium">How file locks work</summary>
+        <p class="mt-2 leading-relaxed">
           Before modifying shared files, agents automatically acquire an advisory file lock with a time-to-live.
-          If another parallel worker attempts to edit the same file, it is notified with 0ms latency to coordinate rather than overwrite.
+          If another parallel worker attempts to edit the same file, it is notified immediately to coordinate rather than overwrite.
         </p>
-      </div>
-    </Card>
-
-    <!-- Emergency stop -->
-    <Card title="Pause all agents">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-text-muted max-w-md">Releases every file lock at once, so work in progress stops being protected. Asks for your password.</p>
-        <Button size="sm" variant="danger" lock="/api/locks/stop" @click="stopAll">Release all locks</Button>
-      </div>
+      </details>
     </Card>
 
     <!-- Set up an agent -->
@@ -158,7 +119,7 @@
       <ul v-else class="divide-y divide-border/60">
         <li v-for="a in setup.agents.filter((x: any) => x.native_hooks || x.registered_here)" :key="a.id" class="py-3 first:pt-0 last:pb-0 flex flex-wrap items-center justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-[15px] text-text">{{ agentName(a.id) }}</p>
+            <p class="text-[15px] font-medium text-text">{{ agentName(a.id) }}</p>
             <p class="text-sm text-text-muted">{{ a.native_hooks ? 'Automatic hooks and memory tools' : 'Memory tools only' }} · {{ a.registered_here ? 'Connected here' : 'Not connected' }}</p>
           </div>
           <div class="flex gap-2">
@@ -180,6 +141,36 @@
         </ul>
       </details>
       <pre v-if="agentOutput" class="mt-4 text-xs bg-surface-2 rounded-xl p-3 whitespace-pre-wrap max-h-56 overflow-auto">{{ agentOutput }}</pre>
+    </Card>
+
+    <!-- Hand-offs (Batons) -->
+    <Card v-if="store.coordination.batons.length > 0" title="Recent hand-off notes">
+      <div class="space-y-2 mt-1">
+        <div
+          v-for="baton in store.coordination.batons"
+          :key="baton.id"
+          class="p-3 rounded-xl bg-surface-2/60 text-xs space-y-1.5"
+        >
+          <div class="flex items-center justify-between">
+            <div class="font-semibold text-text flex items-center gap-2">
+              <span>{{ baton.agent || 'Agent' }}</span>
+              <span class="text-text-muted">&rarr; {{ baton.to_session || 'next session' }}</span>
+            </div>
+            <span class="text-text-muted font-mono text-xs">{{ baton.created_at }}</span>
+          </div>
+          <p class="text-text font-mono text-xs bg-surface p-2 rounded border border-border whitespace-pre-wrap">
+            {{ baton.packet }}
+          </p>
+        </div>
+      </div>
+    </Card>
+
+    <!-- Emergency stop -->
+    <Card title="Pause all agents">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="text-sm text-text-muted max-w-md">Releases every file lock at once, so work in progress stops being protected. Asks for your password.</p>
+        <Button size="sm" variant="danger" lock="/api/locks/stop" @click="stopAll">Release all locks</Button>
+      </div>
     </Card>
   </div>
 </template>

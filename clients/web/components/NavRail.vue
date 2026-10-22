@@ -154,6 +154,7 @@ import {
   MoreHorizontal as MoreHorizontalIcon,
   Settings as SettingsIcon,
   Wrench as ToolsIcon,
+  MessagesSquare as RoomsIcon,
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -185,7 +186,7 @@ const mobileNav = computed(() => [
 const advancedNav = [
   { path: '/continuity', label: 'Continuity', icon: SyncIcon },
   { path: '/library', label: 'Library', icon: DocsIcon },
-  { path: '/rooms', label: 'Planning rooms', icon: AgentsIcon },
+  { path: '/rooms', label: 'Planning rooms', icon: RoomsIcon },
   { path: '/activity', label: 'Activity', icon: HistoryIcon },
   { path: '/models', label: 'Models', icon: RecallIcon },
   { path: '/tools', label: 'Tools', icon: ToolsIcon },

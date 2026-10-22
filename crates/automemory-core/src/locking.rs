@@ -363,6 +363,7 @@ pub fn reconcile(
 ) -> Reconciled {
     let mut result = Reconciled::default();
     let ambiguous = db.other_command_in_flight(session_id, project_id);
+    let active_leases = db.list_active_leases(project_id).unwrap_or_default();
     for path in changed_between(before, after) {
         if settings.is_ignored(&path) {
             continue;
@@ -371,9 +372,7 @@ pub fn reconcile(
             db.record_write(project_id, session_id, &path, "unattributed");
             continue;
         }
-        let held_by_me = db
-            .list_active_leases(project_id)
-            .unwrap_or_default()
+        let held_by_me = active_leases
             .iter()
             .any(|l| l.session_id == session_id && crate::db::queries::leases::scope_covers(&l.scope, &l.scope_type, &path));
         let args = LeaseAcquireArgs {

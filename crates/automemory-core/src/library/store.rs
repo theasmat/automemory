@@ -121,9 +121,7 @@ fn add_pieces(tx: &rusqlite::Transaction, file_id: &str, content: &str) -> Resul
     Ok(())
 }
 
-fn fts_query(q: &str) -> String {
-    q.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(|w| format!("\"{w}\"*")).collect::<Vec<_>>().join(" ")
-}
+use crate::db::queries::fts_query;
 
 impl Database {
     /// Adds or updates a file. Refused: a path that is not plain text, content over the limits, a secret (a person may override), an agent
@@ -238,7 +236,13 @@ impl Database {
     }
 
     pub fn library_record(&self, id: &str) -> Result<Option<LibraryRecord>> {
-        Ok(self.library_records()?.into_iter().find(|r| r.id == id))
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT id, project_id, path, origin, author, link, status, content, created_at, updated_at FROM library_files WHERE id = ?1 AND scope != 'personal'")?;
+        let mut rows = stmt.query_map([id], |r| Ok(LibraryRecord {
+            id: r.get(0)?, project_id: r.get(1)?, path: r.get(2)?, origin: r.get(3)?, author: r.get(4)?, linked: r.get::<_, i64>(5)? != 0,
+            status: r.get(6)?, content: r.get(7)?, created_at: when(r.get(8)?), updated_at: when(r.get(9)?),
+        }))?;
+        Ok(rows.next().transpose()?)
     }
 
     /// Stores a record exactly as it arrived (sync): row, a revision when the text changed, search pieces. A removal clears the text.

@@ -22,7 +22,7 @@
       <NuxtLink
         to="/safety"
         data-tour="safety-mode"
-        class="hidden sm:inline-flex"
+        class="inline-flex"
         title="Click to change safety mode"
       >
         <Badge :variant="store.currentMode === 'strict' ? 'bad' : store.currentMode === 'review' ? 'accent' : 'ok'">
@@ -33,18 +33,29 @@
 
     <!-- Actions & Status -->
     <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-      <!-- Search / Command Palette Trigger -->
+      <!-- Search / Command Palette Trigger (Mobile Icon + Desktop Pill) -->
+      <button
+        type="button"
+        class="sm:hidden flex items-center justify-center w-8 h-8 rounded-pill bg-surface-2 hover:bg-border/70 text-text-muted hover:text-text transition-colors"
+        aria-label="Search or command (⌘K)"
+        title="Search or command (⌘K)"
+        @click="$emit('open-palette')"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </button>
       <button
         type="button"
         data-tour="search"
         class="hidden sm:flex items-center gap-2 bg-surface-2 hover:bg-border/70 rounded-pill px-3.5 py-1.5 text-xs text-text-muted transition-colors"
         @click="$emit('open-palette')"
       >
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <span>Search or command</span>
-        <kbd class="font-mono text-[10px] bg-surface px-1 py-0.5 rounded border border-border">⌘K</kbd>
+        <kbd class="font-mono text-xs bg-surface px-1.5 py-0.5 rounded border border-border">⌘K</kbd>
       </button>
 
       <JobsTray />

@@ -1,7 +1,85 @@
-# AutoMemory dashboard: UI/UX redesign spec
+# AutoMemory dashboard: UI/UX architecture & spec
 
-Status: plan, nothing built. Scope: `clients/web` (Nuxt 3, Tailwind, pinia) and the few REST routes it needs
-(`crates/automemory-cli/src/commands/serve/routes/`). Written Oct 2026 from an audit of the current code.
+Status: **Implemented & verified (Oct 2026)** — Phases P1–P5, Light Theme (§12), First-run Tour (§13), Cleaner/Calmer UI Pass (§14, `ui-ux-pro-max`), Library, Continuity, and Planning Rooms R1–R4 are live in `clients/web` and embedded into `crates/automemory-cli/src/dashboard/assets/`.
+
+---
+
+## 0. Current State & Agent Handoff Guide (Read First)
+
+This section documents how the WebUI works right now so any agent or future session can immediately modify, bundle, and test it without guesswork.
+
+### 0.1 Route & Component Map (`clients/web/`)
+
+The WebUI is a static Nuxt 3 SPA (`ssr: false`) using Tailwind CSS and Pinia (`stores/automemory.ts`). Navigation is split into primary items and a collapsible **More** section in `components/NavRail.vue` (with mobile bottom tabs + drawer below `768px`, icon rail at `768–1279px`, full rail at `1280px+`).
+
+| Route | File | Purpose & Key UI Features |
+|---|---|---|
+| `/` | `pages/index.vue` | **Home**: `WelcomeCard` + `CoachTour`, `Needs you` alert banner (rooms waiting for verdict, blocked agents, pending inbox items), `Agents` live card, `Setup checklist` (`/api/setup`), `What agents know` preview (`/api/context`), and live `Recent activity`. |
+| `/brain` | `pages/brain.vue` | **Project brain**: Filterable cards (`All`, `Decisions`, `Conventions`, `Gotchas`, `In flight`), inline edit, pin to rules, Undo archive toast, and a `Drawer` previewing/exporting `AGENTS.md` / `CLAUDE.md` (`/api/rules-preview`, `POST /api/rules-export`). |
+| `/library` | `pages/library.vue` | **Library**: Project docs & curated notes with 3-tier reading (`Summary`, `Outline`, `Full`), sentence-case folder tree with right-aligned `changed`/`curated` badges, `Sync folder` (Safe), and Protected inline edit/delete. |
+| `/continuity` | `pages/continuity.vue` | **Continuity**: Latest hand-off brief with author chip, one-click `Hand off now` (Safe), per-agent auto-resume toggles (Protected), and recent session hand-off history. |
+| `/agents` | `pages/agents.vue` | **Agents & locks**: Connected agents strip, active workers (shown only when locks exist), active file locks table with Protected `Release`, lock coverage metric, collapsible `<details>` *"How file locks work"*, recent hand-offs, agent setup snippet, and Emergency `Pause all agents`. |
+| `/rooms` | `pages/rooms.vue` | **Planning rooms (R1–R4)**:<ul><li>**New room modal**: Topic, required question, invited agents, starting evidence search (`/api/memories`), files/symbols in scope, constraints, and round limit (`1–3`).</li><li>**Discussion card**: Visual 4-stage progress strip (`1. Propose → 2. Critique → 3. Revise → 4. Your verdict`), round/critic progress badge (`Critic X of Y`), human `Skip turn` (`POST /api/rooms/:id/skip`) and `End room` (`POST /api/rooms/:id/end`), evidence chips, and human steering notes (`POST /api/rooms/:id/note`).</li><li>**Decision & Progressive-Disclosure Step Editor**: Single-row step editor (`#`, title, owner agent select, `Options`/`Scoped` toggle pill, SVG up/down/remove buttons). Clicking `Options` expands scoped file locks and verification `check_command`. Supports `Save draft` (`PUT /api/rooms/:id/draft`), `Approve plan`, `Another round`, and `Reject`.</li><li>**Post-approval Plan tasks**: Checklist with `X of Y done` badge, inline step editing (`PATCH /api/tasks/:id`), locked file badges with vector lock icons, `check_status` / `check_output` display, `Revise plan` follow-up room modal (`POST /api/rooms/:id/revise`), and `superseded_by` room links.</li></ul> |
+| `/inbox` | `pages/inbox.vue` | **Inbox**: Queue of agent suggestions (`/api/proposals`) with keyboard navigation (`J`/`K`, `A` approve, `R` reject with optional reason, `E` edit), bulk bar, and source evidence. |
+| `/activity` | `pages/activity.vue` | **Activity**: Tabbed view consolidating `ReplayPanel` (`?tab=sessions`), `TracesPanel` (`?tab=traces`, *"What worked"*), `FailuresPanel` (`?tab=problems`, *"Problems & fixes"*), `SkillsPanel` (`?tab=skills`, *"Learned skills"*), and `BlockedPanel`. |
+| `/tools` | `pages/tools.vue` | **Tools & rules**: Consolidates Project rules (`constitution`), Documents (`docs`), and Knowledge graph (`graph`). |
+| `/models` | `pages/models.vue` | **Models & search**: Tabbed view for `SearchModelPanel` (hybrid/keyword recall + embeddings) and `AiHelperPanel` (`?tab=helper`). |
+| `/safety` | `pages/safety.vue` | **Safety**: Mode selector cards (`Relaxed` / `Balanced` / `Strict`), human password setup/change, guardrail rules table + live command tester, and blocked command log. |
+| `/sync` | `pages/sync.vue` | **Sync & devices**: 3-step git remote wizard, `Sync now` trigger with synchronous result, encryption status, connected device list, and readable laptop resume preview. |
+| `/settings` | `pages/settings.vue` | **Settings**: Theme selector (`System` / `Light` / `Dark`), sample data toggle, and diagnostics. |
+
+> **Legacy Route Redirects**: `middleware/legacy-routes.global.ts` automatically forwards `/replay`, `/traces`, `/failures`, `/skills`, `/memories`, `/docs`, `/constitution`, and `/graph` to their consolidated homes (`/activity`, `/brain`, `/tools`), verified by `tests/ui/smoke.py`.
+
+### 0.2 Design Tokens, Form Boundaries & Accessibility Rules (`ui-ux-pro-max`)
+
+1. **Theme Tokens (`assets/css/main.css` & `tailwind.config.js`)**:
+   - Defined on `:root` / `.dark` (obsidian + gold) and `.light` (warm paper `#f6f5f1` + deep amber `#8a5a00` text accent + `#f2b100` solid button fill).
+   - Never use raw Tailwind palette classes (`bg-black`, `text-white`, `bg-dark-*`, `text-gold-*`). Always use semantic tokens (`bg-bg`, `bg-surface`, `bg-surface-2`, `border-border`, `border-border-strong`, `text-text`, `text-text-muted`, `text-accent`, `bg-accent-solid`, `text-accent-fg`, `text-ok`, `text-warn`, `text-bad`, `text-info`).
+2. **Global Form Input Styling (`assets/css/main.css`)**:
+   - All `input:not([type="checkbox"]):not([type="radio"])`, `select`, and `textarea` elements automatically receive `1px solid var(--border)`, hover `var(--border-strong)`, and `:focus-visible` `2px solid var(--accent)` outlines so inputs never blend into card backgrounds in light or dark mode.
+3. **Typography & Micro-Copy**:
+   - **12px floor**: Never use `text-[10px]` or `text-[11px]`; `text-xs` (`12px`) is the smallest permitted font size.
+   - **Sentence case**: Do not use `uppercase tracking-wider` on section headers, table headers, or folder names.
+   - **Monospace**: Use `font-mono` strictly for code, file paths, CLI commands, and IDs.
+4. **Icons & Touch/Keyboard Targets**:
+   - Use `lucide-vue-next` components or accessible inline vector SVGs (`aria-hidden="true"`). Never use raw emoji (`🔒`, `⚠️`, etc.) or plain text glyphs (`↑`, `↓`, `✕`) for interactive controls.
+   - Every icon-only button must include both `title` and `aria-label`.
+   - In `TopBar.vue`, the Safety Mode pill and Search (`⌘K`) trigger remain accessible on mobile viewports (`sm:hidden` compact buttons alongside desktop controls).
+
+### 0.3 Action Policy & Human Password Gate (`Protected` vs `Safe`)
+
+- Every mutating or action `<Button>` declares its backend policy path via `policyPath="METHOD /api/..."` (e.g. `policyPath="POST /api/rooms/:id/approve"`).
+- `composables/usePolicy.ts` fetches `/api/policy` on startup:
+  - **`Protected` routes** render a small lock icon inside `<Button>` (`title="Requires human password"`).
+  - **`Safe` routes** (e.g., `POST /api/continuity/save`, `POST /api/library/sync`) render no lock icon and execute immediately.
+  - Every `policyPath` used in Vue templates **must** exist in `/api/policy` (`crates/automemory-cli/src/commands/serve/policy.rs`); `tests/ui/smoke.py` asserts that every lock path on every tested page is registered in `/api/policy`.
+- Never render an inline password `<input>` before an action. When a `Protected` request via `humanFetch` (`utils/api.ts`) receives HTTP `403`, `composables/usePasswordModal.ts` opens `components/PasswordModal.vue`, prompts once, and caches the verified password in `sessionStorage` (`am_pw`) for 10 minutes.
+
+### 0.4 Build, Bundle & Verification Workflow
+
+Whenever you modify any file under `clients/web/`, run this exact pipeline before finishing:
+
+```bash
+# 1. Generate static SPA and copy into the Rust binary's embedded asset folder
+pnpm --dir clients/web run generate
+rm -rf crates/automemory-cli/src/dashboard/assets/*
+cp -R clients/web/dist/* crates/automemory-cli/src/dashboard/assets/
+
+# 2. Build the release binary (REQUIRED: harness.py prefers target/release/automemory,
+#    and PBKDF2 600k-iteration password checks need release optimization to finish <1500ms in Playwright)
+cargo build --release --bin automemory
+
+# 3. Run WCAG 2.2 AA token contrast audit (22 light + dark checks)
+python3 tests/ui/contrast.py
+
+# 4. Run headless Playwright browser smoke tests (all routes in light + dark, policy locks, rooms, library, continuity)
+tests/ui/.venv/bin/python3 tests/ui/smoke.py
+
+# 5. Run Planning Rooms R1–R4 end-to-end scenario tests
+python3 tests/scenarios/planning_room.py
+```
+
+---
 
 ## 1. Why, and for whom
 
@@ -367,11 +445,9 @@ spot check, both themes). A headless screenshot pass with the in-app browser at 
 - Open: brand name for the Project brain area ("Project brain" vs "Knowledge")? Whether Inbox should also surface failed
   syncs and blocked commands (proposed: yes, as read-only items).
 
-## 12. Light theme (plan)
+## 12. Light theme (implemented)
 
-Status: tokens exist (`.light` in `clients/web/assets/css/main.css`) and now load, but the palette was picked without a
-contrast check and the two themes are not designed as a pair. Dark stays as is (it is the signature look); light is
-designed to feel like the same product on paper, not an inverted copy.
+Status: **Implemented & verified (`tests/ui/contrast.py`, `tests/ui/smoke.py`)**. Tokens live in `.light` and `.dark` in `clients/web/assets/css/main.css` with all 22 contrast ratios verified against WCAG 2.2 AA. Dark stays as the signature obsidian+gold look; light is designed to feel like the same product on warm paper (`#f6f5f1`), not an inverted copy.
 
 ### 12.1 Principles
 - **Same structure, same accent hue.** Gold stays the "act on this" colour; in light it is a deep amber so it reads as text.
@@ -440,11 +516,9 @@ border token and a card shadow; page background nudged to #f6f5f1.
 - Toggling themes never shows unstyled flash or a mixed page (old dark classes on a light background).
 - A screenshot of each page in each theme is attached to the phase's PR.
 
-## 13. First-run learning: interactive tour in the dashboard and the CLI
+## 13. First-run learning: interactive tour in the dashboard and the CLI (implemented)
 
-Status: plan, nothing built. Today a new user gets a stat page and one command (`connect agy`); nothing explains what
-AutoMemory does or lets them try it. Goal: from install to "I felt it work" in 5 minutes, by doing, without touching
-their real data, in whichever place they start (terminal or browser).
+Status: **Implemented & verified (`tests/scenarios/tour.py`, `tests/scenarios/onboarding.py`, `WelcomeCard.vue`, `CoachTour.vue`, `HelpDrawer.vue`)**. Goal: from install to "I felt it work" in 5 minutes, by doing, without touching their real data, in whichever place they start (terminal or browser).
 
 ### 13.1 What "learned" means (the five moments)
 1. **Connected**: an agent is registered and I know how to check it.
@@ -571,23 +645,23 @@ Typed-command steps accept near matches and explain differences (an extra flag i
 - **Scope**: L1 alone (real checklist + `next`) delivers about half the value; do it before the dashboard tour.
 - **Open**: should `connect` offer to start the tour right after a successful connection (proposed: yes, one line, once)?
 
-## 14. Cleaner, calmer UI pass (audit and plan)
+## 14. Cleaner, calmer UI pass & `ui-ux-pro-max` audit (implemented)
 
-Audit of every page with sample data loaded (Oct 2026). Home, Brain, Settings and the tour already follow the new look; the rest
-still carry the old "console" feel.
+Status: **Implemented & verified (Oct 2026)**. Every page follows the calm, plain-language, WCAG 2.2 AA design system in both light and dark modes.
 
-| Finding | Where | Fix |
+| Finding | Where | Fix (Implemented) |
 |---|---|---|
 | Page descriptions never render: 7 pages pass `subtitle`, the header only reads `description`; descriptions that exist are long jargon | What worked, Problems, Documents, Graph, Rules, Recall, Skills | One short plain sentence per page, passed as `description` |
 | Empty states say nothing: pages pass `message`, the component reads `description` | What worked, Documents, Graph, … | Use `description`; add a next step |
-| What worked shows an empty card: it reads `task_intent` / `golden_steps`, the API returns `title` / `steps` | `traces.vue` | Read the real fields; title, category, score, numbered steps, collapsible |
-| Raw markdown in monospace | Rules of the project | Render headings, lists and bold as normal text |
+| What worked shows an empty card: it reads `task_intent` / `golden_steps`, the API returns `title` / `steps` | `TracesPanel.vue` | Read the real fields; title, category, score, numbered steps, collapsible |
+| Raw markdown in monospace | Rules of the project | Render headings, lists and bold as normal text (`Prose.vue`) |
 | Raw dump text | Sync "Laptop resume preview" (`=== AutoMemory Resume Pack ===`), Recall preview with literal `\n` | Show as readable lines and a plain list |
-| Dense, shouty labels: ALL-CAPS micro headings, 10-11 px text, mono for prose | Safety, Agents, Inbox, Graph, Replay, Docs | Sentence-case 12-14 px labels; mono only for code, paths and ids |
+| Dense, shouty labels: ALL-CAPS micro headings, 10-11 px text, mono for prose | Safety, Agents, Inbox, Graph, Replay, Docs, TopBar, JobsTray, Library, Rooms | Sentence-case 12-14 px labels (`text-xs` minimum); mono only for code, paths and ids |
 | Heavy selected states and borders | Safety modes, list rows | Soft tint + ring, no thick accent border |
 | Stat tiles of zeros | Graph | One summary line; empty state explains when it fills |
-| Recall settings: three columns, tiny controls | Recall | One column of cards; advanced options collapsed |
-
-Order of work: (1) shared pieces: `PageHeader`, `EmptyState`, global tiny-text and uppercase cleanup; (2) pages: What worked, Rules,
-Graph, Sync, Safety, Recall, Agents, Inbox; (3) check dark and light, 360 px and the contrast script; (4) `tests/ui/contrast.py` and
-the dashboard scenario stay green.
+| Recall settings: three columns, tiny controls | Models & search (`models.vue`) | One column of cards; advanced options collapsed |
+| Form controls blend into card surfaces in light/dark themes | `assets/css/main.css` | Global `1px solid var(--border)`, hover `var(--border-strong)`, and `:focus-visible` `2px solid var(--accent)` ring on `input`, `select`, `textarea` |
+| Duplicate nav icon (`Users` used for both Agents and Planning rooms) | `NavRail.vue` | Assigned `MessagesSquare` to **Planning rooms** |
+| Safety mode and Search (`⌘K`) hidden on mobile screens | `TopBar.vue` | Exposed Safety mode pill and compact `Search` icon button on `<640px` (`sm:hidden`) |
+| Planning rooms step editor & stage awareness | `rooms.vue` | Added 4-stage visual progress strip (`1. Propose → 2. Critique → 3. Revise → 4. Your verdict`); progressive disclosure for step editor (`Options`/`Scoped` toggle keeps each step to 1 row by default); inline vector SVGs instead of `🔒`/`↑`/`↓`/`✕`; `X of Y done` task badge |
+| Redundant empty state & visual clutter on Agents page | `agents.vue` | Hid empty *"Who is working right now"* card when `activeWorkers.length === 0`; tucked *"How file locks work"* into collapsible `<details>`; moved *"Set up an agent"* above emergency *"Pause all agents"* |

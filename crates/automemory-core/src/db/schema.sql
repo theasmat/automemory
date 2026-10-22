@@ -41,12 +41,20 @@ CREATE TABLE IF NOT EXISTS tasks (
     owner_session TEXT,
     result TEXT,
     status TEXT NOT NULL,
+    room_id TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    assigned_agent TEXT,
+    files TEXT NOT NULL DEFAULT '[]',
+    check_cmd TEXT,
+    check_status TEXT,
+    cancelled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_session);
+CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id, position);
 
 CREATE TABLE IF NOT EXISTS tool_events (
     event_id TEXT PRIMARY KEY,
@@ -374,6 +382,9 @@ CREATE TABLE IF NOT EXISTS rooms (
     members TEXT NOT NULL DEFAULT '[]',
     turn_holder TEXT,
     round INTEGER NOT NULL DEFAULT 0,
+    rounds INTEGER NOT NULL DEFAULT 1,
+    parent_room TEXT,
+    turn_started_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

@@ -43,10 +43,7 @@ pub fn session_id(agent: &str, native_id: &str) -> String {
     format!("{agent}:{native_id}")
 }
 
-/// FTS5 query from free text: every word as a prefix term (same rule as note search).
-fn fts_query(q: &str) -> String {
-    q.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(|w| format!("\"{w}\"*")).collect::<Vec<_>>().join(" ")
-}
+use crate::db::queries::fts_query;
 
 impl Database {
     pub fn chat_session(&self, id: &str) -> Result<Option<ChatSession>> {

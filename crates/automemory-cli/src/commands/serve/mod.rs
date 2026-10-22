@@ -108,17 +108,28 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
     let pulse_tx = broadcast_tx.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(2000));
+        let mut last_room_wm = pulse_db.room_activity_watermark();
         loop {
             interval.tick().await;
             if pulse_tx.receiver_count() > 0 {
+                let wm = pulse_db.room_activity_watermark();
+                if wm != last_room_wm {
+                    last_room_wm = wm;
+                    let _ = pulse_tx.send(
+                        json!({
+                            "type": "room_updated",
+                            "event": "db_change",
+                            "timestamp": Utc::now().to_rfc3339(),
+                        })
+                        .to_string(),
+                    );
+                }
+
                 let (active_mem, archived_mem) = pulse_db.count_memories(None).unwrap_or((0, 0));
                 let (mem_tokens, event_tokens) = pulse_db.get_token_stats(None).unwrap_or((0, 0));
                 let events = pulse_db.list_recent_events(10).unwrap_or_default();
-                let proposals = pulse_db.list_pending_proposals(None).unwrap_or_default();
-                let traces = pulse_db.list_traces(None, 1000).unwrap_or_default();
-                let failures = pulse_db
-                    .list_failures(None, Some("unresolved"), 1000)
-                    .unwrap_or_default();
+                let (active_traces, unresolved_failures, pending_proposals) =
+                    pulse_db.pulse_counts(None).unwrap_or((0, 0, 0));
 
                 let pulse = json!({
                     "type": "pulse",
@@ -127,9 +138,9 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
                     "total_memory_tokens": mem_tokens,
                     "total_event_tokens": event_tokens,
                     "tokens_saved_estimate": event_tokens.saturating_sub(mem_tokens),
-                    "active_traces": traces.len(),
-                    "unresolved_failures": failures.len(),
-                    "pending_proposals": proposals.len(),
+                    "active_traces": active_traces,
+                    "unresolved_failures": unresolved_failures,
+                    "pending_proposals": pending_proposals,
                     "recent_events": events,
                     "timestamp": Utc::now().to_rfc3339(),
                 });

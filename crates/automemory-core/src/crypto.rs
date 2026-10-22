@@ -87,31 +87,7 @@ pub struct BlindCrypto;
 impl BlindCrypto {
     /// Derive a 256-bit master encryption key from a user secret and salt using PBKDF2-HMAC-SHA256.
     pub fn derive_key(secret: &str, salt: &[u8]) -> [u8; 32] {
-        use hmac::digest::Mac;
-
-        let mut key = [0u8; 32];
-        let mut block = [0u8; 32];
-
-        // Iterative HMAC-SHA256 (PBKDF2 style, 10,000 iterations)
-        let mut hmac = <HmacSha256 as KeyInit>::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
-        hmac.update(salt);
-        hmac.update(&[0, 0, 0, 1]);
-        let mut u = hmac.finalize().into_bytes();
-        block.copy_from_slice(&u);
-
-        for _ in 1..10_000 {
-            let mut hmac = <HmacSha256 as KeyInit>::new_from_slice(secret.as_bytes())
-                .expect("HMAC can take key of any size");
-            hmac.update(&u);
-            u = hmac.finalize().into_bytes();
-            for i in 0..32 {
-                block[i] ^= u[i];
-            }
-        }
-
-        key.copy_from_slice(&block);
-        key
+        crate::auth::pbkdf2_hmac_sha256(secret.as_bytes(), salt, 100_000)
     }
 
     /// Retrieve or automatically generate a 256-bit zero-knowledge master key.
@@ -154,7 +130,8 @@ impl BlindCrypto {
         use aes_gcm::aead::rand_core::RngCore;
         aes_gcm::aead::OsRng.fill_bytes(&mut raw_key);
 
-        let _ = crate::keychain::set_master_key(&raw_key);
+        // A key that was not saved is lost with the process, and so is everything encrypted with it.
+        crate::keychain::set_master_key(&raw_key)?;
 
         Ok(raw_key)
     }

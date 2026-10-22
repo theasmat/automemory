@@ -4,6 +4,15 @@ pub(crate) fn sql_str(v: impl std::fmt::Display) -> String {
     v.to_string().replace('\'', "''")
 }
 
+/// Builds an FTS5 prefix query where every alphanumeric word is a quoted prefix term.
+pub(crate) fn fts_query(q: &str) -> String {
+    q.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{w}\"*"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub mod batons;
 pub mod decisions;
 pub mod documents;

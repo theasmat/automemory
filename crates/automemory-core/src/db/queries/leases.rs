@@ -333,7 +333,7 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, project_id, agent, session_id, scope, scope_type, goal, ttl_seconds, acquired_at, heartbeat_at, expires_at
              FROM leases
-             WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2)
+             WHERE (?1 IS NULL OR project_id = ?1 OR project_id = ?2 OR project_id IS NULL)
              ORDER BY acquired_at DESC",
         )?;
 
@@ -385,13 +385,15 @@ fn scope_matches(scope: &str, scope_type: &LeaseScopeType, target: &str) -> bool
             if clean_scope == clean_target {
                 return true;
             }
-            if clean_target.ends_with(clean_scope) {
+            let is_abs_target = target.trim().starts_with('/') || (target.len() > 2 && target.as_bytes()[1] == b':');
+            let is_abs_scope = scope.trim().starts_with('/') || (scope.len() > 2 && scope.as_bytes()[1] == b':');
+            if is_abs_target && clean_target.ends_with(clean_scope) {
                 let prefix_len = clean_target.len() - clean_scope.len();
                 if prefix_len == 0 || clean_target.as_bytes()[prefix_len - 1] == b'/' {
                     return true;
                 }
             }
-            if clean_scope.ends_with(clean_target) {
+            if is_abs_scope && clean_scope.ends_with(clean_target) {
                 let prefix_len = clean_scope.len() - clean_target.len();
                 if prefix_len == 0 || clean_scope.as_bytes()[prefix_len - 1] == b'/' {
                     return true;
@@ -512,6 +514,16 @@ mod tests {
             "src/auth/session.ts",
             &LeaseScopeType::File,
             "src/auth/token.ts"
+        ));
+        assert!(!scope_matches(
+            "crates/a/src/lib.rs",
+            &LeaseScopeType::File,
+            "crates/b/src/lib.rs"
+        ));
+        assert!(!scope_matches(
+            "lib.rs",
+            &LeaseScopeType::File,
+            "crates/a/src/lib.rs"
         ));
 
         // Glob matching

@@ -2187,7 +2187,11 @@ impl ToolRegistry {
             }
 
             "task.submit" => {
-                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                let id = match arguments
+                    .get("id")
+                    .or_else(|| arguments.get("task_id"))
+                    .and_then(|v| v.as_str())
+                {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: id"),
                 };
@@ -2195,9 +2199,13 @@ impl ToolRegistry {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: session_id"),
                 };
-                let result = arguments.get("result").and_then(|v| v.as_str());
+                let result = arguments
+                    .get("result")
+                    .or_else(|| arguments.get("notes"))
+                    .and_then(|v| v.as_str());
+                let check_status = arguments.get("check_status").and_then(|v| v.as_str());
 
-                match self.db.submit_task(id, session_id, result) {
+                match self.db.submit_task_with_check(id, session_id, result, check_status) {
                     Ok(true) => ToolCallResult::json(&json!({
                         "status": "submitted",
                         "id": id,

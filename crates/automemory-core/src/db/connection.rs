@@ -542,6 +542,25 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
         step(conn, "PRAGMA user_version = 18", [])?;
     }
 
+    if version < 19 {
+        for ddl in [
+            "ALTER TABLE rooms ADD COLUMN rounds INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE rooms ADD COLUMN parent_room TEXT",
+            "ALTER TABLE rooms ADD COLUMN turn_started_at TEXT",
+            "ALTER TABLE tasks ADD COLUMN room_id TEXT",
+            "ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN assigned_agent TEXT",
+            "ALTER TABLE tasks ADD COLUMN files TEXT NOT NULL DEFAULT '[]'",
+            "ALTER TABLE tasks ADD COLUMN check_cmd TEXT",
+            "ALTER TABLE tasks ADD COLUMN check_status TEXT",
+            "ALTER TABLE tasks ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0",
+            "CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id, position)",
+        ] {
+            step(conn, ddl, [])?;
+        }
+        step(conn, "PRAGMA user_version = 19", [])?;
+    }
+
     if version < 20 {
         // AutoMemory no longer builds its own code index (the codebase-memory server answers symbol questions); the tables were derived data.
         step(conn, "DROP TABLE IF EXISTS graph_edges", [])?;

@@ -11,7 +11,7 @@
         <path v-if="running.length" d="M21 12a9 9 0 11-6.2-8.55" />
         <path v-else d="M4 6h16M4 12h16M4 18h10" />
       </svg>
-      <span v-if="running.length" class="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-accent-solid text-accent-fg text-[11px] font-semibold grid place-items-center">{{ running.length }}</span>
+      <span v-if="running.length" class="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-accent-solid text-accent-fg text-xs font-semibold grid place-items-center">{{ running.length }}</span>
     </button>
 
     <div v-if="open" class="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-card bg-surface border border-border shadow-2xl z-40 p-3 space-y-2" role="dialog" aria-label="Background jobs">

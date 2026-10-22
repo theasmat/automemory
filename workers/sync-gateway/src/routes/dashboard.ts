@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { verifyFirebaseAuth } from '../auth/firebase';
 import { resolveUserContext } from '../auth/quota';
+import { computeHmacSha256 } from './sync';
 
 export const dashboardRouter = new Hono<AppEnv>();
 
@@ -190,6 +191,30 @@ dashboardRouter.post('/api/v1/dashboard/webhooks/test', async (c) => {
     return c.json({ error: 'BAD_REQUEST', message: 'Target URL is required' }, 400);
   }
 
+  // SSRF Protection: only allow valid http(s) and block private/loopback/cloud metadata ranges
+  try {
+    const parsed = new URL(body.url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return c.json({ error: 'BAD_REQUEST', message: 'Only http and https protocols are supported' }, 400);
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host.startsWith('10.') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('172.16.') ||
+      host.startsWith('169.254.') ||
+      host.endsWith('.internal') ||
+      host.endsWith('.local')
+    ) {
+      return c.json({ error: 'BAD_REQUEST', message: 'Target address is blocked (private or loopback IP)' }, 400);
+    }
+  } catch {
+    return c.json({ error: 'BAD_REQUEST', message: 'Invalid URL format' }, 400);
+  }
+
   const testPayload = JSON.stringify({
     event: 'guardrail.test_ping',
     source: 'automemory-sync-gateway',
@@ -198,13 +223,15 @@ dashboardRouter.post('/api/v1/dashboard/webhooks/test', async (c) => {
     message: 'AutoMemory Webhook Connectivity Verification Test',
   });
 
+  const sig = body.secret ? `sha256=${await computeHmacSha256(body.secret, testPayload)}` : undefined;
+
   const startTime = Date.now();
   try {
     const res = await fetch(body.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(body.secret ? { 'X-AutoMemory-Signature': body.secret } : {}),
+        ...(sig ? { 'X-AutoMemory-Signature': sig } : {}),
       },
       body: testPayload,
     });
@@ -225,8 +252,11 @@ dashboardRouter.post('/api/v1/dashboard/webhooks/test', async (c) => {
   }
 });
 
-// POST /api/v1/dashboard/upgrade-simulation - Simulate tier change for testing
+// POST /api/v1/dashboard/upgrade-simulation - Simulate tier change for testing (dev/test only)
 dashboardRouter.post('/api/v1/dashboard/upgrade-simulation', async (c) => {
+  if (c.env.ENABLE_DEV_AUTH_BYPASS !== 'true' && c.env.ENVIRONMENT !== 'development' && c.env.ENVIRONMENT !== 'test') {
+    return c.json({ error: 'FORBIDDEN', message: 'Upgrade simulation is disabled in production' }, 403);
+  }
   const userCtx = c.get('userCtx');
   const body = await c.req.json<{ plan_id: string }>();
 
@@ -647,6 +677,16 @@ dashboardRouter.get('/dashboard', (c) => {
       return res;
     }
 
+    function esc(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     async function loadStats() {
       try {
         const res = await fetchApi('/api/v1/dashboard/stats');
@@ -698,9 +738,9 @@ dashboardRouter.get('/dashboard', (c) => {
           <tr class="hover:bg-slate-900/40">
             <td class="p-3.5 pl-5 font-medium text-white flex items-center gap-2">
               <span class="w-2 h-2 rounded-full \${d.is_active ? 'bg-emerald-400' : 'bg-slate-500'}"></span>
-              \${d.device_name || 'Agent Device'}
+              \${esc(d.device_name) || 'Agent Device'}
             </td>
-            <td class="p-3.5 font-mono text-slate-400">\${d.device_id}</td>
+            <td class="p-3.5 font-mono text-slate-400">\${esc(d.device_id)}</td>
             <td class="p-3.5 text-slate-400 font-mono">\${new Date(d.last_seen_at).toLocaleTimeString()}</td>
             <td class="p-3.5 text-slate-400 font-mono">\${new Date(d.expires_at).toLocaleDateString()}</td>
             <td class="p-3.5">
@@ -709,7 +749,7 @@ dashboardRouter.get('/dashboard', (c) => {
               </span>
             </td>
             <td class="p-3.5 pr-5 text-right">
-              <button onclick="revokeDevice('\${d.device_id}')" class="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs border border-red-500/20">
+              <button onclick="revokeDevice('\${esc(d.device_id)}')" class="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs border border-red-500/20">
                 Revoke
               </button>
             </td>
@@ -744,12 +784,12 @@ dashboardRouter.get('/dashboard', (c) => {
             <td class="p-3.5 pl-5 text-slate-300">\${new Date(e.created_at).toLocaleTimeString()}</td>
             <td class="p-3.5">
               <span class="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px]">
-                \${e.event_type}
+                \${esc(e.event_type)}
               </span>
             </td>
-            <td class="p-3.5 text-white font-medium">\${e.project_slug}</td>
-            <td class="p-3.5 text-slate-400">\${e.device_name || e.device_id || 'Unknown'}</td>
-            <td class="p-3.5 text-slate-400 text-[11px]">\${(e.manifest_hash || '').substring(0, 16)}...</td>
+            <td class="p-3.5 text-white font-medium">\${esc(e.project_slug)}</td>
+            <td class="p-3.5 text-slate-400">\${esc(e.device_name || e.device_id || 'Unknown')}</td>
+            <td class="p-3.5 text-slate-400 text-[11px]">\${esc((e.manifest_hash || '').substring(0, 16))}...</td>
             <td class="p-3.5 pr-5 text-right text-slate-300">
               \${e.blind_memories_count} mems · \${e.blind_skills_count} skills · \${e.deltas_count} files
             </td>
@@ -774,19 +814,19 @@ dashboardRouter.get('/dashboard', (c) => {
 
         tbody.innerHTML = hooks.map(h => \`
           <tr class="hover:bg-slate-900/40">
-            <td class="p-3.5 pl-5 font-mono text-slate-200">\${h.url}</td>
-            <td class="p-3.5 font-mono text-slate-400 text-[11px]">\${h.event_types}</td>
-            <td class="p-3.5 font-mono text-slate-500 text-[11px]">\${(h.secret || '').substring(0, 10)}...</td>
+            <td class="p-3.5 pl-5 font-mono text-slate-200">\${esc(h.url)}</td>
+            <td class="p-3.5 font-mono text-slate-400 text-[11px]">\${esc(h.event_types)}</td>
+            <td class="p-3.5 font-mono text-slate-500 text-[11px]">\${esc((h.secret || '').substring(0, 10))}...</td>
             <td class="p-3.5">
               <span class="px-2 py-0.5 rounded text-[10px] font-medium \${h.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'}">
                 \${h.is_active ? 'ACTIVE' : 'DISABLED'}
               </span>
             </td>
             <td class="p-3.5 pr-5 text-right space-x-2">
-              <button onclick="testWebhook('\${h.url}', '\${h.secret}')" class="px-2 py-1 rounded bg-slate-800 text-indigo-400 hover:bg-slate-700 text-xs border border-slate-700">
+              <button onclick="testWebhook('\${esc(h.url)}', '\${esc(h.secret)}')" class="px-2 py-1 rounded bg-slate-800 text-indigo-400 hover:bg-slate-700 text-xs border border-slate-700">
                 Ping
               </button>
-              <button onclick="deleteWebhook('\${h.id}')" class="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs border border-red-500/20">
+              <button onclick="deleteWebhook('\${esc(h.id)}')" class="px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs border border-red-500/20">
                 Delete
               </button>
             </td>

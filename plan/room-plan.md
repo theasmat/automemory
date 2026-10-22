@@ -1,28 +1,16 @@
 # Planning rooms: spec
 
-Status: R1 built (Oct 2026); the rest is a plan. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
-another agent needs to build it. Tasks R1–R5 are in [docs/TASKS.md](../docs/TASKS.md).
+Status: **R1–R4 built & verified (Oct 2026)**; R5–R7 are planned. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
+another agent needs to build or extend it. Tasks R1–R5 are in [docs/TASKS.md](../docs/TASKS.md).
 
 ## 1. Where we are
 
-Built (commit `16ff6e9`):
-- A room is a turn-gated state machine: **propose → critique → revise → decided**, one round, posts need evidence ids
-  (memory, trace or failure) and are capped at 2000 characters (`crates/automemory-core/src/db/queries/rooms.rs`).
-- MCP tools `room.join`, `room.pending`, `room.post` and `room.status` (`crates/automemory-mcp/src/tools.rs`).
-- Human verdict on a decided room: **approve** records one decision (the last critique as dissent, agent `room`) and one
-  task per `- step` / `1. step` line of the final revision; **reject** stores nothing; **another round** reopens the
-  critique. The verdict is kept in `sync_kv` as `room_outcome:<id>`, so a second verdict is refused.
-- `automemory room list|show|approve|reject|again`, `/api/rooms*`, a dashboard **Planning rooms** page, a Home banner
-  when a room waits for you, and a rules paragraph that tells agents how rooms work.
-- Tests: `rooms.rs` unit tests, `tests/scenarios/planning_room.py` (two simulated agents and the human),
-  `tests/ui/smoke.py` (page renders, approve asks the password). Live trial **T11** is written, not run.
-
-What hurts today:
-1. Only an agent can open a room, and you must paste the room id into the other agent by hand.
-2. You can judge the plan, but not shape it: no way to add a constraint mid-discussion or fix one step before approving.
-3. After approval, the plan disappears into a decision and a flat task list. Nobody sees progress, and changing the plan
-   later means starting from nothing.
-4. One fixed round and two agents. A third agent cannot review, a stalled agent blocks the room forever.
+Built (R1–R4):
+- **R1 (Core Room + Dashboard Start)**: A room is a turn-gated state machine: **propose → critique → revise → decided** (`crates/automemory-core/src/db/queries/rooms.rs`). Posts require valid evidence ids (memory, trace, or failure) and are capped at 2000 characters. You can start a room from the dashboard (`POST /api/rooms` / `New room` modal in `clients/web/pages/rooms.vue`) with a topic, required question, invited agents, starting evidence, files/symbols in scope, constraints, and `max_rounds` (`1–3`). Invited agents are notified automatically on their next prompt hook once per turn.
+- **R2 (Steer & Draft Editor)**: Human steering notes (`POST /api/rooms/:id/note`) appear in `room.status` (`trust_tier: 3`) without consuming an agent turn. Before approving, you can edit the decision summary and structured plan steps (title, owner agent, scoped file locks, verification `check_command`), save a draft (`PUT /api/rooms/:id/draft`), and approve (`POST /api/rooms/:id/approve`), which records `edited_by_human: true` and creates structured tasks.
+- **R3 (Living Plan, Scoped File Locks & Revise)**: Approved rooms display a live **Plan tasks** checklist (`GET /api/rooms/:id`) with inline editing (`PATCH /api/tasks/:id`), `X of Y done` progress, automatic file lease acquisition on `task.claim` for `files` in scope, verification `check_status`/`check_output` recording on `task.submit`, and a **Revise plan** follow-up room workflow (`POST /api/rooms/:id/revise`) that links `supersedes`/`superseded_by` and cancels only unclaimed tasks when the follow-up room is approved.
+- **R4 (Multi-Critic Rotation, Skip Turn & End Room)**: Rooms with 3+ invited agents rotate through every critic (`critique_index` / `Critic X of Y`) before advancing to `revise`. Stalled turns display a 15-minute warning and can be bypassed with `POST /api/rooms/:id/skip` (`automemory room skip`), or an undecided room can be closed cleanly with `POST /api/rooms/:id/end` (`automemory room end`).
+- **Tests**: `rooms.rs` unit tests, `tests/scenarios/planning_room.py` (49 end-to-end assertions covering R1–R4), and `tests/ui/smoke.py` (Playwright browser checks). Live trial **T11** is written, not run.
 
 ## 2. Goals and non-goals
 

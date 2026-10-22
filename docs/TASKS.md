@@ -80,13 +80,13 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] `automemory note`, dashboard **+ Add memory** (`POST /api/memories`)
 - [ ] Hook adapters per agent (Gemini CLI, Cursor, Copilot, Cline, Kiro, OpenCode, Windsurf): read each vendor's hook docs first; replace the `matches!` helpers in `hook.rs` with a per-agent schema
 - [ ] `rules_target()`/`disconnect()` on the adapter trait (connect and disconnect are still two parallel per-agent lists)
-- [ ] Dashboard "Project brain" page (plain-language Decisions / Conventions / In flight; which agent saw what)
+- [x] Dashboard "Project brain" page (plain-language Decisions / Conventions / In flight; which agent saw what)
 - [ ] Skills install for agents with a skills folder; refresh from MCP `decision.record` (today: next session start or `export-rules`)
 
 ## Dashboard UI/UX redesign (spec: [plan/ui-ux.md](../plan/ui-ux.md))
 
 - [x] First-run tour (CLI + dashboard): brief for an implementing agent in [plan/onboarding-tour-brief.md](../plan/onboarding-tour-brief.md) (L1 shared core, L2 CLI tour, L3 dashboard, L4 agent notice)
-- [ ] P1 foundation + Home, P2 Project brain, P3 Agents & locks + Inbox, P4 Sync wizard + Safety, P5 polish
+- [x] P1 foundation + Home, P2 Project brain, P3 Agents & locks + Inbox, P4 Sync wizard + Safety, P5 polish, §12 Light theme (WCAG 2.2 AA), §14 Cleaner/calmer `ui-ux-pro-max` pass (progressive-disclosure step editor, global form boundaries, mobile TopBar, vector icons)
 
 ## Configurable embeddings and secure keys (plan: PLAN §10)
 
@@ -132,9 +132,9 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 ## Planning rooms people use (plan: PLAN §14, spec: plan/room-plan.md)
 
 - [x] R1 Start a room from the dashboard (topic, question, invited agents, evidence picker, scope, constraints); the prompt hook tells an invited agent once per turn, with its own session id; `room.join`/`room.status` return the brief. Brief kept in `sync_kv` (rooms do not sync)
-- [ ] R2 Human notes in a room; edit the plan (decision, steps with owner/files/check) before approving
-- [ ] R3 Tasks with order/owner/files/check and live state on the room page; claiming locks files; Revise → follow-up room supersedes
-- [ ] R4 1–3 rounds, multi-critic, turn timeout; WebSocket updates (only if the A/B favours rooms)
+- [x] R2 Human notes in a room; edit the plan (decision, steps with owner/files/check, persistent drafts, `edited_by_human` provenance) before approving
+- [x] R3 Tasks with order/owner/files/check and live state on the room page; claiming locks files and submitting releases them; Revise → follow-up room supersedes prior decision and cancels unclaimed tasks
+- [x] R4 1–3 rounds, multi-critic rotation, 30-min turn timeout with Skip turn / End room; live WebSocket `room_updated` updates
 - [ ] R5 Decision-record export, value-report counts, Planning Room A/B on R1–R3
 - [ ] R6 Room types, roles (chair/member/observer), versioned draft editable by the chair, `room.amend`, deep link by id, opt-in delegated approval
 - [ ] R7 Chat-style ownership: edit/delete own posts (history, placeholder), reply, @mention via hook, agree/object, seen/unread; others' posts untouchable (chair collapses, human deletes with password)
@@ -196,7 +196,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Y8 Session checkpoints say what happened: files edited (relative), tests passed/failed, what is still failing, the brief's next step. Also fixed: the digest never saw Antigravity's `Path` or Claude Code's `file_path`, so it reported "edits across 0 files"
 - [x] Y9 Agent-written notes not recalled for 60 days rank at half (a quarter after 120) and are offered in the Inbox as "archive this?" (5 per session start, 15 waiting at most, each note once); a person's notes, pinned notes and decisions never fade; keeping a note counts as a use
 - [x] R1 Removed: the 19 retired MCP names (old names answer "was removed, use …"), cross-review (tools, queries, models and the Stop nudge; the unused `reviews` table stays in the schema)
-- [x] R2 Legacy vault and cloud client removed from the CLI and dashboard server (`sync export/import/restore/init/status/push/pull/watch`, `/api/cloud/*`, the edge branch of `memory search --semantic`); `sync pair` keeps the recovery phrase and no longer talks to a cloud. Kept on purpose: the `Exporter` port and its built-in vault writer (part of the port set, no command uses it), `[cloud] encryption_key` in config (it can still be the vault key), and the `link` command (hidden, superseded by the Library)
+- [x] R2 Legacy vault and cloud client removed from the CLI and dashboard server (`sync export/import/restore/init/status/push/pull/watch`, `/api/cloud/*`, the edge branch of `memory search --semantic`); `sync pair` keeps the recovery phrase and no longer talks to a cloud. Kept on purpose: `[cloud] encryption_key` in config (it can still be the vault key), and the `link` command (hidden, superseded by the Library)
 - [x] R3 `connect` for kilo, aider, warp, devin, openclaw and hermes removed (`disconnect` still removes what an older version wrote); `connect other --mcp-file <path> --name <agent>` covers any tool that reads an MCP servers JSON file. The audit said 19 of 22 targets were untested: wrong, 13 of them have a connect/disconnect/instruction-file check in `tests/scenarios/agents_matrix.py` (still no live-agent trial), so those were kept
 - [x] R4 Own code graph code deleted (`graph/`, graph tables via schema v20, `/api/graph`, the "Index the code graph" job; `NoCodeIntel` replaces the file-hash fallback); skills are no longer written by the daemon unless `[skills] auto = true`; `plugin` and `adapter` hidden from `--help`
 

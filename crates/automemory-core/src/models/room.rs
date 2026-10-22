@@ -83,6 +83,10 @@ impl PostKind {
     }
 }
 
+fn default_rounds() -> i64 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Room {
     pub id: String,
@@ -93,6 +97,12 @@ pub struct Room {
     pub members: Vec<String>,
     pub turn_holder: Option<String>,
     pub round: i64,
+    #[serde(default = "default_rounds")]
+    pub rounds: i64,
+    #[serde(default)]
+    pub parent_room: Option<String>,
+    #[serde(default)]
+    pub turn_started_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

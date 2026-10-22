@@ -38,6 +38,14 @@ impl ConsolidationWorker {
         let mut proposals_created = 0;
         let mut archived_stale = 0;
 
+        let mut existing_targets: std::collections::HashSet<String> = self
+            .db
+            .list_pending_proposals(project_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.target_id)
+            .collect();
+
         for i in 0..memories.len() {
             for j in (i + 1)..memories.len() {
                 let m1 = &memories[i];
@@ -54,23 +62,26 @@ impl ConsolidationWorker {
                         (m2, m1)
                     };
 
-                    let prop = ReviewProposal {
-                        id: Uuid::now_v7().to_string(),
-                        project_id: project_id.map(String::from),
-                        proposal_type: "duplicate_merge".to_string(),
-                        target_id: loser.id.clone(),
-                        description: format!(
-                            "Duplicate memory found:\nPrimary: {} ({})\nDuplicate: {} ({})",
-                            winner.summary, winner.id, loser.summary, loser.id
-                        ),
-                        suggested_action: format!("archive {}", loser.id),
-                        status: "pending".to_string(),
-                        created_at: Utc::now(),
-                        decided_at: None,
-                    };
+                    if !existing_targets.contains(&loser.id) {
+                        existing_targets.insert(loser.id.clone());
+                        let prop = ReviewProposal {
+                            id: Uuid::now_v7().to_string(),
+                            project_id: project_id.map(String::from),
+                            proposal_type: "duplicate_merge".to_string(),
+                            target_id: loser.id.clone(),
+                            description: format!(
+                                "Duplicate memory found:\nPrimary: {} ({})\nDuplicate: {} ({})",
+                                winner.summary, winner.id, loser.summary, loser.id
+                            ),
+                            suggested_action: format!("archive {}", loser.id),
+                            status: "pending".to_string(),
+                            created_at: Utc::now(),
+                            decided_at: None,
+                        };
 
-                    let _ = self.db.save_proposal(&prop);
-                    proposals_created += 1;
+                        let _ = self.db.save_proposal(&prop);
+                        proposals_created += 1;
+                    }
                     duplicates_merged += 1;
                     continue;
                 }
@@ -83,33 +94,36 @@ impl ConsolidationWorker {
                         (m2, m1)
                     };
 
-                    let prop = ReviewProposal {
-                        id: Uuid::now_v7().to_string(),
-                        project_id: project_id.map(String::from),
-                        proposal_type: "contradiction_resolution".to_string(),
-                        target_id: older.id.clone(),
-                        description: format!(
-                            "Architectural contradiction detected:\nActive (newer): {} ({})\nActive (older): {} ({})\nReason: {}",
-                            newer.summary, newer.id, older.summary, older.id, reason
-                        ),
-                        suggested_action: format!("archive {}", older.id),
-                        status: "pending".to_string(),
-                        created_at: Utc::now(),
-                        decided_at: None,
-                    };
+                    if !existing_targets.contains(&older.id) {
+                        existing_targets.insert(older.id.clone());
+                        let prop = ReviewProposal {
+                            id: Uuid::now_v7().to_string(),
+                            project_id: project_id.map(String::from),
+                            proposal_type: "contradiction_resolution".to_string(),
+                            target_id: older.id.clone(),
+                            description: format!(
+                                "Architectural contradiction detected:\nActive (newer): {} ({})\nActive (older): {} ({})\nReason: {}",
+                                newer.summary, newer.id, older.summary, older.id, reason
+                            ),
+                            suggested_action: format!("archive {}", older.id),
+                            status: "pending".to_string(),
+                            created_at: Utc::now(),
+                            decided_at: None,
+                        };
 
-                    let _ = self.db.save_proposal(&prop);
+                        let _ = self.db.save_proposal(&prop);
 
-                    // Penalize the older memory's confidence by 0.25x
-                    let mut penalized = older.clone();
-                    penalized.confidence = (penalized.confidence * 0.25).clamp(0.05, 1.0);
-                    let _ = self.db.update_memory(
-                        &penalized,
-                        Some("Contradiction penalty applied"),
-                        &[],
-                    );
+                        // Penalize the older memory's confidence by 0.25x
+                        let mut penalized = older.clone();
+                        penalized.confidence = (penalized.confidence * 0.25).clamp(0.05, 1.0);
+                        let _ = self.db.update_memory(
+                            &penalized,
+                            Some("Contradiction penalty applied"),
+                            &[],
+                        );
 
-                    proposals_created += 1;
+                        proposals_created += 1;
+                    }
                     contradictions_resolved += 1;
                 }
             }
@@ -163,13 +177,25 @@ pub fn detect_heuristic_contradiction(m1: &Memory, m2: &Memory) -> Option<String
             let mut shared_terms = Vec::new();
             for tag in &m1.tags {
                 let tag_lower = tag.to_lowercase();
-                if (t2.contains(&tag_lower) || t1.contains(&tag_lower)) && tag_lower.len() > 2 {
+                if t2.contains(&tag_lower) && tag_lower.len() > 2 {
                     shared_terms.push(tag.clone());
                 }
             }
             for entity in &m1.entities {
                 let ent_lower = entity.to_lowercase();
-                if (t2.contains(&ent_lower) || t1.contains(&ent_lower)) && ent_lower.len() > 2 {
+                if t2.contains(&ent_lower) && ent_lower.len() > 2 && !shared_terms.contains(entity) {
+                    shared_terms.push(entity.clone());
+                }
+            }
+            for tag in &m2.tags {
+                let tag_lower = tag.to_lowercase();
+                if t1.contains(&tag_lower) && tag_lower.len() > 2 && !shared_terms.contains(tag) {
+                    shared_terms.push(tag.clone());
+                }
+            }
+            for entity in &m2.entities {
+                let ent_lower = entity.to_lowercase();
+                if t1.contains(&ent_lower) && ent_lower.len() > 2 && !shared_terms.contains(entity) {
                     shared_terms.push(entity.clone());
                 }
             }
@@ -330,5 +356,50 @@ mod tests {
         assert_eq!(proposals.len(), 1);
         assert_eq!(proposals[0].proposal_type, "contradiction_resolution");
         assert_eq!(proposals[0].target_id, "mem_vue2");
+    }
+
+    #[test]
+    fn test_unrelated_memory_with_replacement_cue_does_not_conflict() {
+        let m1 = Memory {
+            id: "m_rustls".to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("proj_p".to_string()),
+            memory_type: MemoryType::Decision,
+            content: "Use rustls instead of openssl for networking.".to_string(),
+            summary: "Networking: rustls instead of openssl".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 0.8,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::TaskReflection,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec!["tls".to_string(), "rustls".to_string()],
+            entities: vec!["rustls".to_string()],
+            metadata: serde_json::json!({}),
+        };
+        let m2 = Memory {
+            id: "m_db".to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("proj_p".to_string()),
+            memory_type: MemoryType::Fact,
+            content: "Database migrations are in sql/ migrations folder.".to_string(),
+            summary: "Database migrations path".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 0.8,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::TaskReflection,
+            version: Some(1),
+            created_at: Utc::now() - Duration::days(5),
+            updated_at: Utc::now() - Duration::days(5),
+            last_recalled_at: None,
+            tags: vec!["database".to_string(), "migrations".to_string()],
+            entities: vec!["SQL".to_string()],
+            metadata: serde_json::json!({}),
+        };
+        assert!(detect_heuristic_contradiction(&m1, &m2).is_none());
     }
 }

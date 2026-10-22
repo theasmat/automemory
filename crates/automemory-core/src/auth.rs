@@ -32,14 +32,8 @@ pub fn hash_password(password: &str) -> String {
 
 fn hash_password_with_rounds(password: &str, rounds: u32) -> String {
     let mut salt = [0u8; SALT_LEN];
-    for (i, b) in salt.iter_mut().enumerate() {
-        // Non-secret uniqueness only; secrecy comes from the password.
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos() ^ ((i as u32).wrapping_mul(0x9E3779B9)))
-            .unwrap_or(i as u32);
-        *b = (t ^ (t >> 8) ^ (t >> 16) ^ (t >> 24)) as u8;
-    }
+    use aes_gcm::aead::rand_core::RngCore;
+    aes_gcm::aead::OsRng.fill_bytes(&mut salt);
     let hash = pbkdf2_hmac_sha256(password.as_bytes(), &salt, rounds);
     format!(
         "{HASH_PREFIX}${rounds}${}${}",
@@ -78,7 +72,7 @@ pub fn verify_password(password: &str, stored: &str) -> bool {
 
 /// PBKDF2-HMAC-SHA256 (RFC 2898 §5.2). Minimal local implementation over the
 /// existing hmac+sha2 deps to avoid a new dependency for one function.
-fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], rounds: u32) -> [u8; 32] {
+pub(crate) fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], rounds: u32) -> [u8; 32] {
     let mut block = Vec::with_capacity(salt.len() + 4);
     block.extend_from_slice(salt);
     block.extend_from_slice(&1u32.to_be_bytes());

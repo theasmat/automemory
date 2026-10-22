@@ -77,27 +77,25 @@ pub fn pair(join_phrase: Option<String>) -> Result<()> {
         Ok(())
     } else {
         // --- Displaying pairing code from current device ---
-        let master_key = match automemory_core::keychain::get_master_key() {
-            Some(k) => k,
+        let (master_key, initial_phrase) = match automemory_core::keychain::get_master_key() {
+            Some(k) => (k, None),
             None => {
                 let (phrase, key) = automemory_core::bip39::generate_pairing_seed_12()?;
                 automemory_core::keychain::set_master_key(&key)?;
-                let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-                let _ = std::fs::create_dir_all(home.join(".automemory"));
-                let _ = std::fs::write(home.join(".automemory").join("pairing_seed.txt"), &phrase);
-                key
+                (key, Some(phrase))
             }
         };
 
+        // If an old plaintext pairing_seed.txt file exists on disk from earlier versions, clean it up
         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let saved_seed_file = home.join(".automemory").join("pairing_seed.txt");
-        let phrase = if saved_seed_file.exists() {
-            std::fs::read_to_string(&saved_seed_file)
-                .unwrap_or_default()
-                .trim()
-                .to_string()
-        } else {
-            automemory_core::bip39::master_key_to_mnemonic_24(&master_key)?
+        if saved_seed_file.exists() {
+            let _ = std::fs::remove_file(&saved_seed_file);
+        }
+
+        let phrase = match initial_phrase {
+            Some(p) => p,
+            None => automemory_core::bip39::master_key_to_mnemonic_24(&master_key)?,
         };
 
         let qr_art = automemory_core::bip39::render_terminal_qr(&phrase);

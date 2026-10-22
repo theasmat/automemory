@@ -70,4 +70,24 @@ impl Database {
 
         Ok((mem_tokens, event_tokens))
     }
+
+    pub fn pulse_counts(&self, project_id: Option<&str>) -> Result<(usize, usize, usize)> {
+        let conn = self.conn();
+        let traces: i64 = if let Some(pid) = project_id {
+            conn.query_row("SELECT COUNT(*) FROM success_traces WHERE project_id = ?1", params![pid], |r| r.get(0)).unwrap_or(0)
+        } else {
+            conn.query_row("SELECT COUNT(*) FROM success_traces", [], |r| r.get(0)).unwrap_or(0)
+        };
+        let failures: i64 = if let Some(pid) = project_id {
+            conn.query_row("SELECT COUNT(*) FROM failure_records WHERE status = 'unresolved' AND project_id = ?1", params![pid], |r| r.get(0)).unwrap_or(0)
+        } else {
+            conn.query_row("SELECT COUNT(*) FROM failure_records WHERE status = 'unresolved'", [], |r| r.get(0)).unwrap_or(0)
+        };
+        let proposals: i64 = if let Some(pid) = project_id {
+            conn.query_row("SELECT COUNT(*) FROM review_proposals WHERE status = 'pending' AND (project_id IS NULL OR project_id = ?1)", params![pid], |r| r.get(0)).unwrap_or(0)
+        } else {
+            conn.query_row("SELECT COUNT(*) FROM review_proposals WHERE status = 'pending'", [], |r| r.get(0)).unwrap_or(0)
+        };
+        Ok((traces as usize, failures as usize, proposals as usize))
+    }
 }

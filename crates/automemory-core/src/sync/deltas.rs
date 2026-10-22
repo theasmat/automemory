@@ -400,7 +400,14 @@ pub fn list_delta_files(vault_root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    files.sort();
+    files.sort_by(|a, b| {
+        let ma = fs::metadata(a).and_then(|m| m.modified()).ok();
+        let mb = fs::metadata(b).and_then(|m| m.modified()).ok();
+        match (ma, mb) {
+            (Some(ta), Some(tb)) if ta != tb => ta.cmp(&tb),
+            _ => a.cmp(b),
+        }
+    });
     files
 }
 
@@ -630,8 +637,8 @@ pub fn apply_all_deltas_keyed(
     self_device: &str,
     key: Option<&[u8; 32]>,
 ) -> Result<ApplyReport> {
-    let applied = get_applied(db)?;
-    let seen = get_seen(db)?;
+    let mut applied = get_applied(db)?;
+    let mut seen = get_seen(db)?;
     let mut cache = KeyCache::new();
     let mut report = ApplyReport::default();
     // Only records that now match the remote (applied or already converged) may be
@@ -639,16 +646,34 @@ pub fn apply_all_deltas_keyed(
     // stay "changed locally", or the next collect would never push our edit.
     let mut settled: Vec<(String, String)> = Vec::new();
     let mut newly_seen: Vec<String> = Vec::new();
+
+    let mut all_ops = Vec::new();
     for path in list_delta_files(vault_root) {
         for op in read_delta_file_keyed(&path, key) {
             if op.device_id == self_device {
                 report.skipped_own += 1;
                 continue;
             }
-            if apply_op(db, &mut cache, &applied, &seen, &op, &mut report)?.is_some() {
-                settled.push((op.kind.clone(), op.id.clone()));
-                newly_seen.push(op.fingerprint.clone());
-            }
+            all_ops.push(op);
+        }
+    }
+
+    // Sort ops oldest first by updated_at so earlier revisions are applied before later ones
+    all_ops.sort_by(|a, b| {
+        let ta = DateTime::parse_from_rfc3339(&a.updated_at).ok();
+        let tb = DateTime::parse_from_rfc3339(&b.updated_at).ok();
+        match (ta, tb) {
+            (Some(ta), Some(tb)) if ta != tb => ta.cmp(&tb),
+            _ => a.fingerprint.cmp(&b.fingerprint),
+        }
+    });
+
+    for op in all_ops {
+        if let Some((id, fp)) = apply_op(db, &mut cache, &applied, &seen, &op, &mut report)? {
+            settled.push((op.kind.clone(), id.clone()));
+            newly_seen.push(op.fingerprint.clone());
+            seen.insert(op.fingerprint.clone());
+            applied.insert(id, fp);
         }
     }
     // Fingerprints are recomputed from the local row, keeping the map exact.
@@ -661,6 +686,8 @@ pub fn apply_all_deltas_keyed(
             "skill" => db.get_skill_by_id(&id)?.map(|s| local_fp(db, &mut cache, &s)),
             "decision" => db.get_decision_by_id(&id)?.map(|d| local_fp(db, &mut cache, &d)),
             "baton" => db.get_baton_by_id(&id)?.map(|b| local_fp(db, &mut cache, &b)),
+            "brief" => db.brief_get(&id)?.map(|item| local_fp(db, &mut cache, &item)),
+            "library" => db.library_record(&id)?.map(|rec| local_fp(db, &mut cache, &rec)),
             _ => None,
         };
         if let Some(fp) = current {
@@ -1126,6 +1153,55 @@ mod tests {
         let pid = b.project_id_for_key("git:github.com/me/shop").unwrap();
         let baton = b.latest_baton(Some(&pid), None).unwrap().expect("baton on B");
         assert!(baton.packet.contains("finish checkout"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sequential_deltas_in_one_pass_preserve_newest_edit() {
+        let dir = test_vault("sequential");
+        let (dev_a, dev_b) = (test_db(), test_db());
+        register_project(&dev_a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&dev_b, "pb", "shop", Some("git:github.com/team/shop"));
+
+        let mut mem = Memory {
+            id: "m-versioned".to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("pa".to_string()),
+            memory_type: MemoryType::Fact,
+            content: "version 1".to_string(),
+            summary: "v1 summary".to_string(),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 0.8,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::TaskReflection,
+            version: Some(1),
+            created_at: Utc::now() - chrono::Duration::seconds(10),
+            updated_at: Utc::now() - chrono::Duration::seconds(10),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+        dev_a.save_memory(&mem).unwrap();
+        // First sync pushes v1 to delta file 1
+        sync_cycle(&dev_a, &dir).unwrap();
+
+        // Now device A updates to v2
+        mem.content = "version 2".to_string();
+        mem.summary = "v2 summary".to_string();
+        mem.updated_at = Utc::now();
+        dev_a.save_memory(&mem).unwrap();
+        // Second sync pushes v2 to delta file 2
+        sync_cycle(&dev_a, &dir).unwrap();
+
+        // Device B now pulls both delta files in a single pass
+        let report = sync_cycle(&dev_b, &dir).unwrap();
+        assert_eq!(report.conflicts, 0, "no conflict when applying sequential updates");
+        let _target_pid = dev_b.project_id_for_key("git:github.com/team/shop").unwrap();
+        let b_mem = dev_b.get_memory_by_id("m-versioned").unwrap().expect("mem exists on b");
+        assert_eq!(b_mem.content, "version 2", "newest version must be kept");
+        assert_eq!(b_mem.summary, "v2 summary");
         let _ = fs::remove_dir_all(&dir);
     }
 }

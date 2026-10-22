@@ -84,6 +84,7 @@ export const useAutoMemoryStore = defineStore('automemory', {
     isTourActive: false,
     tourKind: 'intro' as 'intro' | 'showcase',
     isHelpDrawerOpen: false,
+    roomVersion: 0,
   }),
 
   getters: {
@@ -693,6 +694,12 @@ export const useAutoMemoryStore = defineStore('automemory', {
     },
 
     handleIncomingWsMessage(msg: any) {
+      if (msg.type === 'room_updated') {
+        this.roomVersion += 1;
+        this.fetchCoordination();
+        return;
+      }
+
       if (msg.type === 'setup_changed' || msg.type === 'memory_added' || msg.type === 'lock_alert') {
         this.fetchSetup();
         this.fetchOnboarding();

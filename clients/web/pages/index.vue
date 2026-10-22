@@ -78,6 +78,11 @@
       <NuxtLink to="/rooms"><Button size="sm" variant="secondary">Review</Button></NuxtLink>
     </div>
 
+    <div v-if="roomsStalled > 0" class="flex items-center justify-between gap-3 rounded-card bg-warn-bg px-5 py-4">
+      <p class="text-sm text-text">{{ roomsStalled }} planning room{{ roomsStalled === 1 ? ' has' : 's have' }} a stalled turn and may need you to skip or end.</p>
+      <NuxtLink to="/rooms"><Button size="sm" variant="secondary">Open rooms</Button></NuxtLink>
+    </div>
+
     <!-- Guided setup -->
     <div data-tour="setup-card">
       <Checklist title="Get started" :items="store.setupChecklist" />
@@ -145,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { request } from '~/utils/api';
 import { useAutoMemoryStore, agentLabel } from '~/stores/automemory';
 
@@ -198,7 +203,16 @@ const agentsLine = computed(() => {
   return `${workingCount.value > 0 ? 'working now' : 'idle'} · ${linkedCount.value} connected`;
 });
 const roomsWaiting = ref(0);
+const roomsStalled = ref(0);
 const continuityLine = ref('');
+async function loadRoomsSummary() {
+  const r = await request<any[]>('/api/rooms');
+  if (r.ok && Array.isArray(r.data)) {
+    roomsWaiting.value = r.data.filter((x) => x.needs_you).length;
+    roomsStalled.value = r.data.filter((x) => x.turn_stalled).length;
+  }
+}
+watch(() => store.roomVersion, loadRoomsSummary);
 onMounted(async () => {
   const c = await request<any>('/api/continuity');
   if (c.ok && c.data.project) {
@@ -206,10 +220,9 @@ onMounted(async () => {
     const st = c.data.stale?.[0];
     continuityLine.value = st ? `${st.label} has worked since the hand-off brief was last updated. Open Continuity to bring it up to date.` : drafts ? `${drafts} drafted hand-off item${drafts === 1 ? '' : 's'} to confirm on Continuity.` : '';
   }
-  const r = await request<any[]>('/api/rooms');
-  if (r.ok && Array.isArray(r.data)) roomsWaiting.value = r.data.filter((x) => x.needs_you).length;
+  await loadRoomsSummary();
 });
-const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length + roomsWaiting.value);
+const needsCount = computed(() => store.stats.pending_proposals + longHeldLocks.value.length + roomsWaiting.value + roomsStalled.value);
 
 const hasNeedsYou = computed(() => {
   return store.stats.pending_proposals > 0 || longHeldLocks.value.length > 0;

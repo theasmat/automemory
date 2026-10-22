@@ -3,6 +3,21 @@ import type { AppEnv, SyncPushPayload, DeviceLease, BlindMemoryRecord, BlindSkil
 import { verifyFirebaseAuth } from '../auth/firebase';
 import { resolveUserContext } from '../auth/quota';
 
+export async function computeHmacSha256(secret: string, payload: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export const syncRouter = new Hono<AppEnv>();
 
 // Middleware: Authenticate user
@@ -65,7 +80,8 @@ syncRouter.post('/sync/push', async (c) => {
            confidence = excluded.confidence,
            importance = excluded.importance,
            status = excluded.status,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at
+         WHERE blind_memories.owner_uid = excluded.owner_uid`
       )
         .bind(
           bm.id,
@@ -93,7 +109,8 @@ syncRouter.post('/sync/push', async (c) => {
            ON CONFLICT(id) DO UPDATE SET
              owner_uid = excluded.owner_uid,
              blind_project_id = excluded.blind_project_id,
-             vector_json = excluded.vector_json`
+             vector_json = excluded.vector_json
+           WHERE blind_vector_index.owner_uid = excluded.owner_uid`
         )
           .bind(bm.id, userCtx.uid, bm.blind_project_id || projectSlug, JSON.stringify(bm.embedding))
           .run();
@@ -129,7 +146,8 @@ syncRouter.post('/sync/push', async (c) => {
            nonce_base64 = excluded.nonce_base64,
            success_count = excluded.success_count,
            failure_count = excluded.failure_count,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at
+         WHERE blind_skills.owner_uid = excluded.owner_uid`
       )
         .bind(
           bs.id,
@@ -212,7 +230,7 @@ syncRouter.post('/sync/push', async (c) => {
     // Encrypted deltas (Zero-Knowledge Blind Mode)
     if (body.encrypted_deltas && Array.isArray(body.encrypted_deltas)) {
       for (const ed of body.encrypted_deltas) {
-        const key = `blobs/${projectSlug}/${ed.sha256}`;
+        const key = `blobs/${userCtx.uid}/${projectSlug}/${ed.sha256}`;
         const binary = Uint8Array.from(atob(ed.ciphertext_base64), (m) => m.charCodeAt(0));
         await c.env.STORAGE.put(key, binary, {
           customMetadata: {
@@ -235,7 +253,7 @@ syncRouter.post('/sync/push', async (c) => {
 
     for (const delta of deltas) {
       if (delta.content_base64) {
-        const key = `blobs/${projectSlug}/${delta.sha256}`;
+        const key = `blobs/${userCtx.uid}/${projectSlug}/${delta.sha256}`;
         const binary = Uint8Array.from(atob(delta.content_base64), (m) => m.charCodeAt(0));
         await c.env.STORAGE.put(key, binary, {
           customMetadata: {
@@ -297,14 +315,17 @@ syncRouter.post('/sync/push', async (c) => {
       });
 
       for (const hook of webhooks.results) {
-        fetch(hook.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(hook.secret ? { 'X-AutoMemory-Signature': hook.secret } : {}),
-          },
-          body: webhookPayload,
-        }).catch((e) => console.error('Webhook dispatch error:', e));
+        (async () => {
+          const sig = hook.secret ? `sha256=${await computeHmacSha256(hook.secret, webhookPayload)}` : undefined;
+          await fetch(hook.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(sig ? { 'X-AutoMemory-Signature': sig } : {}),
+            },
+            body: webhookPayload,
+          });
+        })().catch((e) => console.error('Webhook dispatch error:', e));
       }
     }
   } catch (err) {
@@ -404,8 +425,17 @@ syncRouter.get('/sync/blob/:project/:sha256', async (c) => {
   const projectSlug = c.req.param('project');
   const sha256 = c.req.param('sha256');
 
-  const key = `blobs/${projectSlug}/${sha256}`;
-  const obj = await c.env.STORAGE?.get(key);
+  // Key is user-scoped to prevent cross-tenant blob access
+  const userKey = `blobs/${userCtx.uid}/${projectSlug}/${sha256}`;
+  const legacyKey = `blobs/${projectSlug}/${sha256}`;
+  let obj = await c.env.STORAGE?.get(userKey);
+  if (!obj) {
+    obj = await c.env.STORAGE?.get(legacyKey);
+    // If legacy key found, verify ownership
+    if (obj && obj.customMetadata?.owner_uid && obj.customMetadata.owner_uid !== userCtx.uid) {
+      return c.json({ error: 'FORBIDDEN', message: 'Access denied' }, 403);
+    }
+  }
   if (!obj) {
     return c.json({ error: 'NOT_FOUND', message: 'Encrypted chunk not found in R2' }, 404);
   }

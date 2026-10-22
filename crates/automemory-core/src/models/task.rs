@@ -47,6 +47,20 @@ pub struct WorkTask {
     pub owner_session: Option<String>,
     pub result: Option<String>,
     pub status: TaskState,
+    #[serde(default)]
+    pub room_id: Option<String>,
+    #[serde(default)]
+    pub position: i64,
+    #[serde(default)]
+    pub assigned_agent: Option<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub check_cmd: Option<String>,
+    #[serde(default)]
+    pub check_status: Option<String>,
+    #[serde(default)]
+    pub cancelled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

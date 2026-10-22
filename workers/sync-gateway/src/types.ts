@@ -4,6 +4,7 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   ADMIN_SECRET: string;
   ENABLE_DEV_AUTH_BYPASS?: string;
+  ENVIRONMENT?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   LEMONSQUEEZY_WEBHOOK_SECRET?: string;
   VECTOR_INDEX?: any;

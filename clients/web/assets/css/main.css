@@ -96,6 +96,27 @@
     outline-offset: 2px;
   }
 
+  /* Crisp, consistent control boundaries across light and dark themes */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    border: 1px solid var(--border);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):hover,
+  select:hover,
+  textarea:hover {
+    border-color: var(--border-strong);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
   /* Theme transition, disabled under prefers-reduced-motion */
   body, header, nav, aside, button, input, select, textarea {
     transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;

@@ -146,6 +146,64 @@ def main():
         code, body = http(port, f"/api/rooms/{r2}/another-round", "POST", PW, {})
         room2 = json.loads(body).get("room", {})
         rep.check(code == 200 and room2.get("state") == "critique" and room2.get("turn_holder") == "agent-b", "another round hands the critique to the other agent", f"{code} {body[:140]}")
+
+        # R2 + R3: Draft saving, structured steps with owner/files/check, lease acquisition on claim, and Revise plan superseding.
+        draft_steps = [
+            {"title": "Build Redis cache wrapper", "assigned_agent": "claude", "files": ["src/cache.rs"], "check_cmd": "cargo test"},
+            {"title": "Add cache invalidation", "assigned_agent": None, "files": [], "check_cmd": None},
+        ]
+        code, _ = http(port, f"/api/rooms/{r2}/draft", "PUT", {}, {"decision": "Use Redis cache", "steps": draft_steps})
+        rep.check(code == 403, "Protected: saving a draft needs the password")
+        code, body = http(port, f"/api/rooms/{r2}/draft", "PUT", PW, {"decision": "Use Redis cache", "steps": draft_steps})
+        rep.check(code == 200 and json.loads(body).get("draft", {}).get("decision") == "Use Redis cache", "R2: PUT /api/rooms/:id/draft persists structured steps", body[:160])
+        code, body = http(port, f"/api/rooms/{r2}/approve", "POST", PW, {})
+        out2 = json.loads(body).get("outcome", {})
+        rep.check(code == 200 and out2.get("edited_by_human") is True and len(out2.get("task_ids", [])) == 2, "R2: approving with a saved draft marks edited_by_human and creates structured tasks", body[:180])
+
+        # R3: Check tasks on GET /api/rooms/:id, inline PATCH, assigned_agent filtering, and file lease locking on claim.
+        d_r2 = json.loads(http(port, f"/api/rooms/{r2}")[1])
+        tasks_r2 = d_r2.get("tasks", [])
+        rep.check(len(tasks_r2) == 2 and tasks_r2[0]["files"] == ["src/cache.rs"] and tasks_r2[0]["assigned_agent"] == "claude", "R3: GET /api/rooms/:id returns structured tasks", json.dumps(tasks_r2)[:180])
+        t1_id, t2_id = tasks_r2[0]["id"], tasks_r2[1]["id"]
+        code, body = http(port, f"/api/tasks/{t2_id}", "PATCH", PW, {"title": "Add TTL cache invalidation"})
+        rep.check(code == 200 and json.loads(body).get("task", {}).get("title") == "Add TTL cache invalidation", "R3: PATCH /api/tasks/:id updates a task inline", body[:160])
+
+        # Claude claims task #1 (assigned to claude) and locks src/cache.rs.
+        claimed_cl = j(sb.mcp("task.next", session_id="claude-worker", project_id="app"))
+        rep.check(claimed_cl.get("task", {}).get("id") == t1_id, "R3: assigned agent claims its scoped task", json.dumps(claimed_cl)[:160])
+        coord = json.loads(http(port, "/api/coordination")[1])
+        leases = [l["scope"] for l in coord.get("leases", [])]
+        rep.check("src/cache.rs" in leases, "R3: claiming a task acquires file leases for its scoped files", json.dumps(leases))
+        j(sb.mcp("task.submit", session_id="claude-worker", id=t1_id, result="cargo test passed (0 failed)"))
+        d_r2_after = json.loads(http(port, f"/api/rooms/{r2}")[1])
+        t1_after = [t for t in d_r2_after["tasks"] if t["id"] == t1_id][0]
+        rep.check(t1_after["status"] == "submitted" and t1_after["check_status"] == "passed", "R3: submitting a task records check_status and releases leases", json.dumps(t1_after)[:160])
+
+        # R3: Revise this plan opens a follow-up room; approving it supersedes the prior decision and cancels unclaimed tasks.
+        code, body = http(port, f"/api/rooms/{r2}/revise", "POST", PW, {})
+        followup_id = json.loads(body).get("room", {}).get("id")
+        rep.check(code == 200 and followup_id and json.loads(body)["room"]["parent_room"] == r2, "R3: POST /api/rooms/:id/revise opens a linked follow-up room", body[:180])
+        code, body = http(port, f"/api/rooms/{followup_id}/decide", "POST", PW, {"decision": "Use in-memory LRU cache instead", "steps": [{"title": "Add LRU crate", "files": ["Cargo.toml"]}]})
+        rep.check(code == 200, "R3: deciding the follow-up room succeeds", f"{code} {body[:140]}")
+        d_r2_sup = json.loads(http(port, f"/api/rooms/{r2}")[1])
+        t2_after = [t for t in d_r2_sup["tasks"] if t["id"] == t2_id][0]
+        rep.check(d_r2_sup.get("superseded_by") == followup_id and t2_after["cancelled"] is True and t1_after["status"] == "submitted",
+                  "R3: approving follow-up room links superseded_by and cancels only unclaimed tasks", json.dumps(d_r2_sup)[:200])
+
+        # R4: Multi-round & multi-critic room + skip turn + end room.
+        code, body = http(port, "/api/rooms", "POST", PW, {"topic": "db pool", "question": "Pool size?", "agents": ["claude", "agy", "codex"], "rounds": 2})
+        r_multi = json.loads(body)["room"]["id"]
+        j(sb.mcp("room.join", session_id="s-cl", agent="claude-code", room_id=r_multi))
+        j(sb.mcp("room.join", session_id="s-ag", agent="antigravity", room_id=r_multi))
+        j(sb.mcp("room.join", session_id="s-cx", agent="codex", room_id=r_multi))
+        sb.mcp("room.post", room_id=r_multi, session_id="s-cl", kind="propose", body="Pool size 10 (with enough detail to count)", evidence=[ev])
+        after_c1 = j(sb.mcp("room.post", room_id=r_multi, session_id="s-ag", kind="critique", body="Too small under burst (with enough detail to count)", evidence=[ev]))["room"]
+        rep.check(after_c1["state"] == "critique" and after_c1["turn_holder"] == "s-cx", "R4: multi-critic room rotates to the second critic before revise", json.dumps(after_c1)[:160])
+        code, body = http(port, f"/api/rooms/{r_multi}/skip", "POST", PW, {})
+        after_skip = json.loads(body).get("room", {})
+        rep.check(code == 200 and after_skip.get("state") == "revise" and after_skip.get("turn_holder") == "s-cl", "R4: skipping the last critic advances to revise", body[:160])
+        code, body = http(port, f"/api/rooms/{r_multi}/end", "POST", PW, {})
+        rep.check(code == 200 and json.loads(body).get("outcome", {}).get("outcome") == "ended", "R4: POST /api/rooms/:id/end closes an undecided room", body[:160])
     finally:
         if server:
             server.terminate()

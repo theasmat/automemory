@@ -65,28 +65,48 @@ pub fn get_master_key() -> Option<[u8; 32]> {
     None
 }
 
-/// Stores the 32-byte master key into the OS Keychain and secures ~/.automemory/master.key with 0600 mode.
+/// Stores the 32-byte master key into the OS Keychain (or falls back to ~/.automemory/master.key with 0600 mode only if keychain is unavailable).
 pub fn set_master_key(key: &[u8; 32]) -> Result<()> {
     let b64 = BASE64.encode(key);
+    let mut stored_in_keychain = false;
 
     // 1. OS keychain through the keyring crate (the key never appears on a command line)
     if std::env::var("AUTOMEMORY_SECRETS_BACKEND").map_or(true, |v| v != "file") {
         if let Ok(e) = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) {
-            let _ = e.set_password(&b64);
+            // Read it back: only then is the plaintext file safe to remove.
+            if e.set_password(&b64).is_ok() && e.get_password().ok().as_deref() == Some(b64.as_str()) {
+                stored_in_keychain = true;
+            }
         }
     }
 
-    // 2. Save to ~/.automemory/master.key with strict permissions
     let key_file = get_master_key_path();
-    if let Some(parent) = key_file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    std::fs::write(&key_file, &b64)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600));
+    if stored_in_keychain {
+        // If successfully stored in the OS keychain, clean up any plaintext fallback file
+        if key_file.exists() {
+            let _ = std::fs::remove_file(&key_file);
+        }
+    } else {
+        // 2. Fallback to ~/.automemory/master.key with strict permissions only when keychain is not available
+        if let Some(parent) = key_file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true).mode(0o600);
+            if let Ok(mut f) = opts.open(&key_file) {
+                let _ = f.write_all(b64.as_bytes());
+            } else {
+                std::fs::write(&key_file, &b64)?;
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&key_file, &b64)?;
+        }
     }
 
     Ok(())
