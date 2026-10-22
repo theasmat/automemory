@@ -15,7 +15,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Code
 
-- [ ] Park or delete the 17 unsupported connectors (~700 lines in `connect.rs`); `connect all` already configures only agy, claude, codex and says so
+- [x] (done in R3: six removed, the rest kept because agents_matrix.py checks them) Park or delete the 17 unsupported connectors (~700 lines in `connect.rs`); `connect all` already configures only agy, claude, codex and says so
 - [ ] Symbol-level hash for staleness: wire `CodeIntel::symbol_hash` into the verifier's `changed` status (it uses file hashes today)
 - [ ] Contract fixtures per agent *version* once more than one version is in use (`tests/contract/fixtures/<agent>/<version>.json`)
 - [x] (obsolete: `sync import/export` were removed) Wire `sync_cycle` into the CLI `sync import/export` paths (today only the daemon pass uses the conflict-safe op-log; the legacy snapshot import is last-writer-wins)
@@ -197,7 +197,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Y9 Agent-written notes not recalled for 60 days rank at half (a quarter after 120) and are offered in the Inbox as "archive this?" (5 per session start, 15 waiting at most, each note once); a person's notes, pinned notes and decisions never fade; keeping a note counts as a use
 - [x] R1 Removed: the 19 retired MCP names (old names answer "was removed, use …"), cross-review (tools, queries, models and the Stop nudge; the unused `reviews` table stays in the schema)
 - [x] R2 Legacy vault and cloud client removed from the CLI and dashboard server (`sync export/import/restore/init/status/push/pull/watch`, `/api/cloud/*`, the edge branch of `memory search --semantic`); `sync pair` keeps the recovery phrase and no longer talks to a cloud. Kept on purpose: the `Exporter` port and its built-in vault writer (part of the port set, no command uses it), `[cloud] encryption_key` in config (it can still be the vault key), and the `link` command (hidden, superseded by the Library)
-- [ ] R3 Untested connect targets (one generic MCP-only connect instead)
+- [x] R3 `connect` for kilo, aider, warp, devin, openclaw and hermes removed (`disconnect` still removes what an older version wrote); `connect other --mcp-file <path> --name <agent>` covers any tool that reads an MCP servers JSON file. The audit said 19 of 22 targets were untested: wrong, 13 of them have a connect/disconnect/instruction-file check in `tests/scenarios/agents_matrix.py` (still no live-agent trial), so those were kept
 - [ ] Later: own code graph code, skills by default, plugin/adapter commands
 
 ## Later (after v1 passes its gates)

@@ -33,7 +33,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 
 | In v1 | Later (only after v1 works) |
 |---|---|
-| Core: ledger, store, plugin host, hook pipeline | More agents beyond the first three (17 connectors already exist, unsupported) |
+| Core: ledger, store, plugin host, hook pipeline | More agents beyond the first three (connect for 10 more hosts exists as MCP-only config plus `connect other`; unsupported) |
 | Adapters: **Claude Code, Codex, Antigravity** | Cloudflare managed SaaS / team sharing |
 | Memory, decisions, trust tiers, verification | More agents beyond the first three |
 | Locks, baton handoff, cross-review | Headless Runner, Autopilot as default |

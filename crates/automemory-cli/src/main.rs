@@ -36,9 +36,17 @@ enum Commands {
     ///   automemory connect cursor
     #[command(next_help_heading = "Setup")]
     Connect {
-        /// Agent host to connect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all)
+        /// Agent host to connect (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, gemini-cli, copilot, all), or `other` with --mcp-file
         #[arg(default_value = "agy")]
         agent: String,
+
+        /// With `other`: the MCP servers JSON file of that tool
+        #[arg(long)]
+        mcp_file: Option<String>,
+
+        /// With `other`: the name its records are signed with
+        #[arg(long)]
+        name: Option<String>,
 
         /// Apply configuration globally rather than to current workspace
         #[arg(short, long)]
@@ -48,7 +56,7 @@ enum Commands {
     /// Remove exactly what `connect` wrote for one host coding agent
     #[command(next_help_heading = "Setup")]
     Disconnect {
-        /// Agent host to disconnect, or `all` (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes)
+        /// Agent host to disconnect, or `all` (agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, codex, opencode, goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes; the older ones can only be disconnected now)
         #[arg(default_value = "agy")]
         agent: String,
 
@@ -1130,8 +1138,13 @@ async fn main() -> Result<()> {
         Commands::Init { agent } => {
             commands::init::execute(Some(agent))?;
         }
-        Commands::Connect { agent, global } => {
-            commands::connect::execute(&agent, global)?;
+        Commands::Connect { agent, global, mcp_file, name } => {
+            if agent == "other" {
+                let (Some(file), Some(name)) = (mcp_file, name) else { anyhow::bail!("`connect other` needs --mcp-file <path> and --name <agent>") };
+                commands::connect::connect_other(std::path::Path::new(&file), &name)?;
+            } else {
+                commands::connect::execute(&agent, global)?;
+            }
         }
         Commands::Disconnect {
             agent,

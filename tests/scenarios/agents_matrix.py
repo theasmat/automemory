@@ -33,6 +33,16 @@ def main():
             rep.check(r.returncode == 0, f"{a}: disconnect succeeds", (r.stdout + r.stderr)[-160:])
             after = s.run("disconnect", a, "--dry-run").stdout
             rep.check("0 AutoMemory registration" in after, f"{a}: nothing left after disconnect", after[-120:])
+        # Any other tool that reads an MCP servers file.
+        import json
+        f = s.root / "other-tool" / "mcp.json"
+        r = s.run("connect", "other", "--mcp-file", str(f), "--name", "my-agent")
+        entry = json.loads(f.read_text())["mcpServers"]["automemory"] if f.exists() else {}
+        rep.check(r.returncode == 0 and entry.get("args") == ["mcp", "--agent", "my-agent"], "connect other writes the MCP entry named for that tool", (r.stdout + r.stderr)[-200:] + json.dumps(entry))
+        rep.check(s.run("connect", "other", "--mcp-file", str(f), "--name", "bad name!").returncode != 0, "a name with odd characters is refused")
+        rep.check(s.run("connect", "other").returncode != 0, "other without --mcp-file and --name is refused")
+        out = s.run("connect", "aider").stdout
+        rep.check("Unknown agent" in out and "connect other" in out, "tools that were dropped (aider, kilo, warp, devin, openclaw, hermes) point to `connect other`", out[-200:])
     finally:
         s.cleanup()
     return rep.finish()

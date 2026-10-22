@@ -129,52 +129,16 @@ pub static ADAPTERS: &[ConnectAdapter] = &[
         connect: connect::connect_goose,
     },
     ConnectAdapter {
-        id: "kilo",
-        aliases: &["kilocode", "kilo-code"],
-        events: MCP_ONLY,
-        connect: connect::connect_kilo,
-    },
-    ConnectAdapter {
-        id: "aider",
-        aliases: &[],
-        events: MCP_ONLY,
-        connect: connect::connect_aider,
-    },
-    ConnectAdapter {
-        id: "warp",
-        aliases: &[],
-        events: MCP_ONLY,
-        connect: connect::connect_warp,
-    },
-    ConnectAdapter {
         id: "gemini-cli",
         aliases: &["geminicli"],
         events: MCP_ONLY,
         connect: connect::connect_gemini_cli,
     },
     ConnectAdapter {
-        id: "devin",
-        aliases: &[],
-        events: MCP_ONLY,
-        connect: connect::connect_devin,
-    },
-    ConnectAdapter {
         id: "copilot",
         aliases: &["github-copilot", "ghcopilot"],
         events: MCP_ONLY,
         connect: connect::connect_copilot,
-    },
-    ConnectAdapter {
-        id: "openclaw",
-        aliases: &[],
-        events: MCP_ONLY,
-        connect: connect::connect_openclaw,
-    },
-    ConnectAdapter {
-        id: "hermes",
-        aliases: &[],
-        events: MCP_ONLY,
-        connect: connect::connect_hermes,
     },
 ];
 
@@ -243,12 +207,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_covers_all_twenty_agents() {
-        assert_eq!(ADAPTERS.len(), 20);
+    fn registry_covers_the_fourteen_agents() {
+        assert_eq!(ADAPTERS.len(), 14);
         let mut ids: Vec<&str> = ADAPTERS.iter().map(|a| a.adapter_id()).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 20);
+        assert_eq!(ids.len(), 14);
         // agy, claude and codex install native hooks; the rest degrade to MCP-only.
         let hooked: Vec<&ConnectAdapter> = ADAPTERS
             .iter()

@@ -2,6 +2,16 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Any tool that reads an MCP servers JSON file: writes the AutoMemory entry (named `name`, so its records are signed with it) and nothing else.
+pub fn connect_other(mcp_file: &Path, name: &str) -> Result<()> {
+    let exe_path = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "automemory".into());
+    let name = name.trim();
+    anyhow::ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'), "--name must be a short plain word such as my-agent");
+    merge_mcp_config(mcp_file, &exe_path, name)?;
+    println!("✓ AutoMemory is now an MCP server named in {} (records are signed '{}'). Restart the tool to load it. Remove with: delete the \"automemory\" entry from that file.", mcp_file.display(), name);
+    Ok(())
+}
+
 pub fn execute(agent: &str, global: bool) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -34,7 +44,7 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
                 super::adapter::connect_via(adapter, &home, &cwd, &exe_path, global)
             }
             None => {
-                println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, kilo, aider, warp, gemini-cli, devin, copilot, openclaw, hermes, all\nTry: `automemory connect agy` or `automemory connect all`", agent);
+                println!("Unknown agent: '{}'. Supported: agy, claude, claude-desktop, cursor, windsurf, continue, cline, roo, zed, codex, opencode, goose, gemini-cli, copilot, all.\nAny other tool that reads an MCP JSON file: `automemory connect other --mcp-file <path> --name <agent>`.", agent);
                 return Ok(());
             }
         }
@@ -821,8 +831,8 @@ pub(crate) fn connect_all(
         println!("✓ Connected the supported agents: agy, claude, codex.");
     }
     println!("  Experimental (MCP only, untested): run `automemory connect <name>` for any of");
-    println!("  claude-desktop, cursor, windsurf, continue, cline, roo, kilo, zed, opencode,");
-    println!("  goose, aider, warp, gemini-cli, devin, copilot, openclaw, hermes.");
+    println!("  claude-desktop, cursor, windsurf, continue, cline, roo, zed, opencode,");
+    println!("  goose, gemini-cli, copilot. Anything else: `connect other --mcp-file <path> --name <agent>`.");
     println!("========================================================");
     if !failures.is_empty() {
         anyhow::bail!("failed to connect: {}. Try: check permissions and configuration file paths.", failures.join(", "));
@@ -898,101 +908,6 @@ pub(crate) fn connect_goose(
     Ok(())
 }
 
-// ── Kilo Code (VS Code Extension, same pattern as Cline/Roo) ─────────────────
-pub(crate) fn connect_kilo(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    let target_path = if global {
-        #[cfg(target_os = "macos")]
-        let p = home.join("Library/Application Support/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json");
-        #[cfg(target_os = "windows")]
-        let p = home.join("AppData/Roaming/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json");
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let p = home.join(
-            ".config/Code/User/globalStorage/kilocode.kilo-code/settings/cline_mcp_settings.json",
-        );
-        p
-    } else {
-        workspace_root.join(".kilo").join("mcp.json")
-    };
-
-    merge_mcp_config(&target_path, exe_path, "kilo")?;
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to Kilo Code at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
-// ── Aider ─────────────────────────────────────────────────────────────────────
-// Aider uses a YAML config file. MCP is injected via its `--mcp-server` key.
-pub(crate) fn connect_aider(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    let target_path = if global {
-        home.join(".aider.conf.yml")
-    } else {
-        workspace_root.join(".aider.conf.yml")
-    };
-
-    let mut content = if target_path.exists() {
-        fs::read_to_string(&target_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    if !content.contains("automemory") {
-        let mcp_block = format!(
-            "\n# AutoMemory MCP server\nmcp-servers:\n  automemory:\n    command: {}\n    args: [mcp]\n",
-            exe_path
-        );
-        content.push_str(&mcp_block);
-        fs::write(&target_path, content)?;
-    }
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to Aider at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
-// ── Warp Terminal ─────────────────────────────────────────────────────────────
-pub(crate) fn connect_warp(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    // Warp uses ~/.warp/mcp.json for MCP servers
-    let target_path = if global {
-        home.join(".warp").join("mcp.json")
-    } else {
-        workspace_root.join(".warp").join("mcp.json")
-    };
-
-    merge_mcp_config(&target_path, exe_path, "warp")?;
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to Warp at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
 // ── Gemini CLI (standalone, different from Antigravity IDE) ──────────────────
 // `gemini-cli` is google-gemini/gemini-cli — separate from the AGY plugin system.
 pub(crate) fn connect_gemini_cli(
@@ -1030,31 +945,6 @@ pub(crate) fn connect_gemini_cli(
     Ok(())
 }
 
-// ── Devin ─────────────────────────────────────────────────────────────────────
-// Devin uses a .devin/config.json for MCP server configuration.
-pub(crate) fn connect_devin(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    let target_path = if global {
-        home.join(".devin").join("mcp.json")
-    } else {
-        workspace_root.join(".devin").join("mcp.json")
-    };
-
-    merge_mcp_config(&target_path, exe_path, "devin")?;
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to Devin at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
 // ── GitHub Copilot CLI ────────────────────────────────────────────────────────
 // GitHub Copilot CLI uses the VS Code MCP config path (it runs inside VS Code).
 pub(crate) fn connect_copilot(
@@ -1075,54 +965,6 @@ pub(crate) fn connect_copilot(
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
         "✓ {} Connected to GitHub Copilot (VS Code MCP) at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
-// ── OpenClaw ──────────────────────────────────────────────────────────────────
-pub(crate) fn connect_openclaw(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    let target_path = if global {
-        home.join(".openclaw").join("mcp.json")
-    } else {
-        workspace_root.join(".openclaw").join("mcp.json")
-    };
-
-    merge_mcp_config(&target_path, exe_path, "openclaw")?;
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to OpenClaw at {}",
-        scope_tag,
-        target_path.display()
-    );
-    Ok(())
-}
-
-// ── Hermes (NousResearch) ─────────────────────────────────────────────────────
-pub(crate) fn connect_hermes(
-    home: &Path,
-    workspace_root: &Path,
-    exe_path: &str,
-    global: bool,
-) -> Result<()> {
-    let target_path = if global {
-        home.join(".hermes").join("mcp.json")
-    } else {
-        workspace_root.join(".hermes").join("mcp.json")
-    };
-
-    merge_mcp_config(&target_path, exe_path, "hermes")?;
-
-    let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
-    println!(
-        "✓ {} Connected to Hermes at {}",
         scope_tag,
         target_path.display()
     );

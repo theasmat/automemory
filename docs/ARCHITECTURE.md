@@ -187,6 +187,6 @@ Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace
 | Claude Code | yes | SessionStart, UserPromptSubmit, PreToolUse, PostToolUse(+Failure), Stop via `~/.claude/settings.json` (global) or `.claude/settings.local.json` | hooks (+ optional headless later) |
 | Codex CLI | yes (`config.toml`) | same events via `~/.codex/hooks.json` or `<repo>/.codex/hooks.json`; user must trust them once in `/hooks` | hooks or headless |
 | Antigravity | yes | JSON hooks (`.agents/hooks.json`) | hooks + manager surface |
-| Others (17 connectors) | yes | none | MCP + prompt nudges; unsupported until promoted |
+| Others (10 connectors, plus `connect other`) | yes | none | MCP + prompt nudges; unsupported until promoted |
 
 Connector config paths live in `crates/automemory-cli/src/commands/connect.rs` (source of truth). Test with `cargo test --workspace`, `cargo bench -p automemory-core --bench perf`.
