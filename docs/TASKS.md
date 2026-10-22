@@ -184,6 +184,19 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] K4 Graph tools and the Graph page dropped (the codebase-memory server covers symbols; backend routes and the "Index the code graph" job stay). Reviews were NOT turned into rooms: a review is a diff with a test verdict, a room is a plan with a human verdict, so the mapping would lose the test gate; the three review tools are only hidden from the tool list
 - [x] K5 One place for documents: the Library page and `library.list/get` also show the project's own documents found in the repository (source repo; the Documents page and `doc.list/get` names are folded); the Rules page became a card on Project brain; cloud-sync commands hidden and gated by AUTOMEMORY_EXPERIMENTAL_CLOUD; legacy `sync export/import/restore` hidden. NOT done: the scanner and watcher still index repository documents separately from the library files (a deeper merge would rework retrieval), and the legacy vault code is hidden, not deleted
 
+## Identity and pruning (PLAN §19; nothing started)
+
+- [ ] Y1 Agent name stamped by the server (`automemory mcp --agent <name>` written by connect); a different `agent` argument is ignored and audited
+- [ ] Y2 Same-author checks use the server's connection, not the caller's `session_id`
+- [ ] Y3 MCP client name recorded; `doctor` flags a client on the wrong entry
+- [ ] Y4 Labels show the stamped name; no new record signed "agent"
+- [ ] Y5 MCP servers re-execute themselves after an update
+- [ ] Y6 Codex, Command Code and Cursor readers checked on real chats
+- [ ] Y7 Run T12, T13 and the 10-task eval (X3)
+- [ ] Y8 Session checkpoints with real content
+- [ ] Y9 Unused notes fade and are offered for archiving
+- [ ] Remove after one release: retired MCP names, legacy vault and cloud client, 19 untested connect targets (one generic MCP-only connect instead), own code graph, cross-review, skills by default, plugin/adapter commands
+
 ## Later (after v1 passes its gates)
 
 - [ ] Promote additional agents one at a time (Cursor, Cline, …) with contract fixtures

@@ -517,3 +517,41 @@ Code symbols are left to the external `codebase-memory-mcp` (already registered 
 | K3 | **Built.** History and Settings: skills, traces and failures written once per thing (X1), `memory prune`, one Activity page, one Models page (the two model screens merged; their routes stay separate) | medium |
 | K4 | **Built.** Code symbols: `graph.*` tools and the Graph page dropped (codebase-memory covers it). Reviews hidden from the tool list, not merged into rooms (a review has a test verdict a room does not) | medium |
 | K5 | **Built (surface level).** One place for documents: the Library page and `library.list/get` also show the repository's own documents; Rules is a card on Project brain; cloud-sync commands hidden behind AUTOMEMORY_EXPERIMENTAL_CLOUD; legacy vault commands hidden. Not done: one indexer for repository documents and library files, and deleting the legacy code | large, last |
+
+## 19. Next: know who is who, and cut what nobody uses (plan, Oct 2026)
+
+### 19.1 Who wrote it must not be a guess (requested by the maintainer)
+Today every agent starts the same MCP server (`automemory mcp`, no identity), and 28 places take the agent's name from a free-text `agent`
+argument, falling back to `"agent"`. On the maintainer's database 2 of 4 decisions are signed `agent`, and any agent can sign as another, or reuse
+another session's id to get round the room rule "you cannot critique your own proposal". Provenance labels, the "a person's item cannot be changed
+by an agent" rule and room turns all rest on names the caller chooses.
+
+| Step | What | Done when |
+|---|---|---|
+| Y1 | `connect` writes the agent into its own MCP entry (`automemory mcp --agent claude`, `--agent codex`, `--agent agy`); the server stamps that name on every write and ignores a different `agent` argument (logged in the audit as a mismatch) | Records written through Claude's server say `claude` whatever the call says; a test sends `agent: "codex"` through Claude's server and gets `claude` |
+| Y2 | The server keeps one connection id per running server and uses it, not the caller's `session_id`, for "same author" checks (rooms, brief items, library files); the hook's session is linked to it on the first hook call | An agent cannot critique its own proposal by changing `session_id`; scenario test |
+| Y3 | The MCP `initialize` client name (`clientInfo.name`) is recorded beside the stamped name; a mismatch shows in `doctor` (for example a Cursor client on Claude's entry) | `doctor` names servers whose client does not match their entry |
+| Y4 | Dashboard and `continuity show` show the stamped name; the free `agent` argument stays accepted (old agents send it) but no longer decides anything | Labels never read "agent" for new records |
+
+Limit (said plainly in the docs): this stops mix-ups and casual spoofing, not a hostile agent with a shell, which can start its own server with any
+`--agent`. Anything that must not be faked stays behind the human password, as now.
+
+### 19.2 Make it better (ordered by value)
+| Step | What | Why |
+|---|---|---|
+| Y5 | Agents' MCP servers restart themselves after an update: before each call the server compares its binary with the installed one and, when it is older, finishes the call and re-executes itself on the same pipes | Stale servers caused the T11b turn bug and kept writing duplicate skills after the prune; `doctor` only warns |
+| Y6 | Run the readers on real chats: Codex, Command Code and Cursor are written from public descriptions (one short session each, then replace the fixtures with real redacted samples) | Three of five readers are unverified |
+| Y7 | Run the live trials T12 (continuity) and T13 (library), and the 10-task memory-off-vs-on eval (X3) | Value is still unproven; this decides what to keep |
+| Y8 | Session checkpoint notes say something (files, tests, the brief's next step) instead of "Session checkpoint <id>" | The current text gives the next agent nothing |
+| Y9 | Unused notes fade: a note never recalled in 60 days drops in rank and is offered for archiving in the Inbox | Recall feedback exists (14 of 21 notes recalled) but nothing acts on it |
+
+### 19.3 Remove (after one release of the hidden aliases, unless noted)
+| What | Evidence | Plan |
+|---|---|---|
+| The 19 retired MCP names | hidden since PLAN §18 | delete the handlers and their tests |
+| Legacy text vault (`sync export/import/restore`) and the cloud client (`sync init/status/push/pull`, `/api/cloud/*` test routes) | hidden; git-vault sync and backup cover the jobs | delete; move the cloud client to `workers/` work when hosted sync starts |
+| 19 of the 22 `connect` targets (Windsurf, Cline, Roo, Continue, Zed, OpenCode, Goose, Kilo, Aider, Warp, Gemini CLI, Devin, Copilot, OpenClaw, Hermes, ...) | v1 is Claude Code, Codex, Antigravity (Cursor has a reader); none of the others is tested; Gemini CLI is replaced by Antigravity CLI | keep Claude Code, Codex, Antigravity and Cursor; the rest become one generic "MCP-only" connect that writes the server entry and the rules text |
+| Own code graph (`graph/` builder, tables, `/api/graph`, the "Index the code graph" job) | page and tools already gone; tables empty | delete; symbols come from codebase-memory |
+| Cross-review (`reviews` table and tools) | 0 rows; hidden | delete unless the eval shows a use |
+| Skills from trajectories | 9,244 copies of about 11 skills before the prune; no evidence an agent used one | switch off by default; keep only if the eval shows value |
+| `plugin` / `adapter` commands and the port manifests | 470 lines; no plugin exists | hide until a second implementation of any port is written |
