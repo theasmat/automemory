@@ -2,7 +2,7 @@
 
 The scripted tests cannot start Claude Code, Codex or Antigravity. These checks close that gap.
 Run them after `cargo build --release` and after any change to `connect`, `hook`, or the guardrails.
-Record the result and the agent version at the bottom of this file or in `docs/TASKS.md`.
+Record the result and the agent version at the bottom of this file or in `tests/manual/TRIAL_LOG.md`.
 
 Use a scratch repository, not a project you care about. Back up `~/.claude/settings.json` and
 `~/.codex/hooks.json` first; `automemory disconnect <agent> -g` removes only AutoMemory's entries.

@@ -35,7 +35,7 @@ jobs:
         run: cargo test --workspace --verbose
 
   windows:
-    # Advisory until it has been green once: nobody has run these on Windows yet (see docs/TASKS.md I9).
+    # Advisory until it has been green once: nobody has run these on Windows yet (see docs/roadmap.md, Packaging: Windows).
     name: Windows (build, tests, update/connect/hooks scenarios)
     runs-on: windows-latest
     continue-on-error: true

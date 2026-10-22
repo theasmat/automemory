@@ -58,7 +58,7 @@ fn rng() -> Rng {
 }
 
 /// Runs `f` on `n` inputs; returns the inputs that panicked or took longer than 1 second.
-fn hammer(name: &str, mut gen: impl FnMut(&mut Rng) -> String, f: impl Fn(&str)) {
+fn hammer(name: &str, gen: impl FnMut(&mut Rng) -> String, f: impl Fn(&str)) {
     hammer_n(name, iters(), gen, f)
 }
 

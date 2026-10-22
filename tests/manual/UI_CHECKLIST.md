@@ -1,6 +1,6 @@
 # AutoMemory Dashboard UI / UX Manual QA Checklist
 
-This checklist verifies the dashboard across responsive breakpoints, theme modes, accessibility standards, and runtime edge cases (as specified in sections 10 and 12 of `plan/ui-ux.md`).
+This checklist verifies the dashboard across responsive breakpoints, theme modes, accessibility standards, and runtime edge cases (as specified in sections 10 and 12 of `docs/specs/dashboard-ui.md`).
 
 ---
 

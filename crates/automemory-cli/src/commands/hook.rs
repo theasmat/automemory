@@ -16,8 +16,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use uuid::Uuid;
 
-/// Main entrypoint for the CLI `hook` command.
-
 // ── Entry point: always answers in the agent's own schema ────────────────────────────
 // A hook that prints nothing, prints a second JSON object, or exits non-zero is an error to
 // the agent (Antigravity even rejects unknown fields), so every path ends with exactly one
@@ -56,9 +54,7 @@ pub(crate) fn fail_open_output(agent: &str, event: &str) -> Value {
         CanonicalEvent::from_cli(event),
         Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit | CanonicalEvent::Stop)
     );
-    if gate && agy_style(agent) {
-        json!({"decision": "allow"})
-    } else if gate && !native_hook_style(agent) && event == "pre-tool" {
+    if gate && (agy_style(agent) || (!native_hook_style(agent) && event == "pre-tool")) {
         json!({"decision": "allow"})
     } else {
         json!({})

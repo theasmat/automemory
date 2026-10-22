@@ -40,7 +40,7 @@ pub fn list(home: &Path) -> Vec<(PathBuf, u64, DateTime<Utc>)> {
             Some((e.path(), m.len(), m.modified().ok()?.into()))
         })
         .collect();
-    v.sort_by(|a, b| b.2.cmp(&a.2));
+    v.sort_by_key(|e| std::cmp::Reverse(e.2));
     v
 }
 

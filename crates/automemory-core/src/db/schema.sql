@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner_session);
-CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id, position);
 
 CREATE TABLE IF NOT EXISTS tool_events (
     event_id TEXT PRIMARY KEY,
@@ -516,7 +515,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(text, tokenize='unicode61');
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_project ON chat_sessions(project_id, last_at DESC);
 
--- Project library: documents for agents kept outside git (plan/library-plan.md)
+-- Project library: documents for agents kept outside git (docs/specs/library.md)
 CREATE TABLE IF NOT EXISTS library_files (
     id TEXT PRIMARY KEY,
     project_id TEXT,

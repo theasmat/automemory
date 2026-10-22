@@ -1,4 +1,4 @@
-//! Automatic file locking beyond the edit tools (PLAN §6).
+//! Automatic file locking beyond the edit tools (docs/architecture/locking.md).
 //!
 //! * [`shell_write_targets`]: files a shell command is about to write, so they are leased
 //!   before it runs.

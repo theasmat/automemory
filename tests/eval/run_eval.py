@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A/B harness for "does memory help?" (PLAN Phase 2 gate). Stdlib only.
+"""A/B harness for "does memory help?" (roadmap, Phase 2 gate). Stdlib only.
 
 The agent runs are done by you (or a runner later); this tool makes them comparable:
 
@@ -137,7 +137,7 @@ def summarize(rows: list[dict]) -> str:
             better, worse = sum(d > 0 for d in deltas), sum(d < 0 for d in deltas)
             lines.append(f"\n{arm} vs off over {len(deltas)} paired tasks: mean success delta "
                          f"{statistics.mean(deltas):+.0%}; better on {better}, worse on {worse}, same on {len(deltas) - better - worse}")
-    lines.append("\nGate (PLAN phase 3): memory-on not worse than off overall, and better on non-inferable tasks.")
+    lines.append("\nGate (roadmap phase 3): memory-on not worse than off overall, and better on non-inferable tasks.")
     return "\n".join(lines)
 
 

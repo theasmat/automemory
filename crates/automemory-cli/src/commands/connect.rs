@@ -119,7 +119,7 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str, agent: &str) -> Result<(
     if let Some(parent) = target_file.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut val = read_json_or_empty(&target_file)?;
+    let mut val = read_json_or_empty(target_file)?;
 
     if val.get("mcpServers").is_none() {
         val["mcpServers"] = serde_json::json!({});

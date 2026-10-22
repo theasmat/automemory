@@ -1,7 +1,7 @@
 # Planning rooms: spec
 
-Status: **R1–R4 built & verified (Oct 2026)**; R5–R7 are planned. The summary and phases are in [docs/PLAN.md §14](../docs/PLAN.md); this file gives the detail
-another agent needs to build or extend it. Tasks R1–R5 are in [docs/TASKS.md](../docs/TASKS.md).
+Status: **R1–R4 built & verified (Oct 2026)**; R5–R7 are planned. Open phases are in the [roadmap](../roadmap.md); this file gives the detail
+another agent needs to build or extend it. Shipped phases are in the [changelog](../../CHANGELOG.md).
 
 ## 1. Where we are
 
@@ -70,7 +70,7 @@ The question is required (trial T11b: a room called just "cart" made an agent in
 - Export: an approved room writes a short decision record (topic, decision, why, objection answered, steps) as Markdown
   into the repo's docs folder if one is tracked (`docs/adr/` style), on request.
 - The value report (`automemory stats`, Home card) counts rooms opened, plans approved, tasks done.
-- The Planning Room A/B (TASKS) runs on R1–R3 before R4 is built; R4 is dropped if rooms do not beat one agent plus tests.
+- The Planning Room A/B (roadmap) runs on R1–R3 before R4 is built; R4 is dropped if rooms do not beat one agent plus tests.
 
 ## 4. Screens
 

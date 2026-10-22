@@ -11,6 +11,7 @@ use std::collections::HashMap;
 pub const ONBOARDING_KV_KEY: &str = "onboarding";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub struct OnboardingState {
     #[serde(default)]
     pub completed_steps: Vec<String>,
@@ -24,17 +25,6 @@ pub struct OnboardingState {
     pub tour_step: usize,
 }
 
-impl Default for OnboardingState {
-    fn default() -> Self {
-        Self {
-            completed_steps: Vec::new(),
-            dismissed: false,
-            dismissed_flags: HashMap::new(),
-            demo_loaded: false,
-            tour_step: 0,
-        }
-    }
-}
 
 impl OnboardingState {
     pub fn is_done(&self, step_id: &str) -> bool {

@@ -1042,7 +1042,7 @@ impl Database {
             "UPDATE rooms SET state = 'critique', turn_holder = ?1, turn_started_at = ?2, updated_at = ?2 WHERE id = ?3",
             params![turn, now, room_id],
         )?;
-        Ok(self.get_room(room_id)?.ok_or_else(|| anyhow!("room vanished"))?)
+        self.get_room(room_id)?.ok_or_else(|| anyhow!("room vanished"))
     }
     /// A lightweight watermark string of the latest room, post, or task change for WebSocket live updates.
     pub fn room_activity_watermark(&self) -> String {
@@ -1268,7 +1268,7 @@ mod tests {
         let room = db.another_round(&r2).unwrap();
         assert_eq!(room.state, RoomState::Critique);
         assert_eq!(room.turn_holder.as_deref(), Some("sess-b"), "the other agent critiques the revision");
-        db.post_to_room(&r2, "sess-b", PostKind::Critique, "Still unclear - padded so it passes the minimum length", &[ev.clone()]).unwrap();
+        db.post_to_room(&r2, "sess-b", PostKind::Critique, "Still unclear - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         db.post_to_room(&r2, "sess-a", PostKind::Revise, "Plan B2\n- two\n- three - padded so it passes the minimum length", &[ev]).unwrap();
         assert_eq!(db.room_plan(&r2).unwrap().tasks.len(), 2, "the latest revision is the plan");
     }
@@ -1341,7 +1341,7 @@ mod tests {
         db.join_room(&room.id, "g1").unwrap();
         db.post_to_room(&room.id, "g1", PostKind::Critique, "expiry? - padded so it passes the minimum length", std::slice::from_ref(&ev)).unwrap();
         assert!(db.room_lines_for(None, "c1", "claude")[0].contains("revision"), "the proposer is told to revise");
-        db.post_to_room(&room.id, "c1", PostKind::Revise, "SQLite with expiry\n- add table", &[ev.clone()]).unwrap();
+        db.post_to_room(&room.id, "c1", PostKind::Revise, "SQLite with expiry\n- add table", std::slice::from_ref(&ev)).unwrap();
         assert!(db.room_lines_for(None, "g1", "agy").is_empty() && db.room_plan(&room.id).unwrap().evidence.contains(&ev));
     }
 

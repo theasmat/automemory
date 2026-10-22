@@ -2,11 +2,11 @@
 
 You are implementing a planned feature in AutoMemory (local-first Rust daemon + CLI + Nuxt dashboard). This file is
 self-contained: read it, then work through the phases in order. The design and rationale live in
-[ui-ux.md](ui-ux.md) section 13 (read it first), the theme and design system in sections 5 and 12.
+[ui-ux.md](dashboard-ui.md) section 13 (read it first), the theme and design system in sections 5 and 12.
 
 ## Ground rules
 - Read `CLAUDE.md` first. The daemon makes no LLM calls; agents never use raw SQL on the DB (Zero-SQL rule). Keep doc counts
-  (tools, tests) in sync with code. Do not add new top-level docs; update `docs/TASKS.md`, `docs/FEATURES.md`, `docs/PLAN.md` in place.
+  (tools, tests) in sync with code. Do not add new top-level docs; update `docs/features.md`, `docs/roadmap.md` and `CHANGELOG.md` in place.
 - Build/test: `tests/run_all.sh` (or `cargo test --workspace`). Use `AUTOMEMORY_BIN=$PWD/target/debug/automemory` for single scenarios.
 - Commit per phase with a clear message ending with the attribution line your environment requires. Never commit `.mcp.json`.
 - **Another agent may be editing `clients/web` (dashboard redesign, theme).** Before touching any file under `clients/web`,
@@ -86,7 +86,7 @@ Done when: finishing a step in a terminal ticks the open dashboard within 2 s; d
    ("AutoMemory is active... `automemory resume`... `automemory tour`"), keyed in `sync_kv`; must not break the Claude/Codex/agy output formats
    (see `native_context`, `agy_injection`) and must stay within the existing context budget; contract test added.
 2. Rewrite `memory.about` text (`crates/automemory-mcp/src/tools.rs`) to use the glossary words from ui-ux.md section 6.
-3. Update `docs/FEATURES.md` (onboarding row), `docs/TASKS.md` (tick items), `docs/PLAN.md` (status), tool and test counts.
+3. Update `docs/features.md` (onboarding row), `CHANGELOG.md`, tool and test counts.
 4. Final: `tests/run_all.sh` fully green, reinstall the binary, commit.
 
 ## Definition of done (whole feature)

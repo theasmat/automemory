@@ -1,6 +1,6 @@
 //! Antigravity keeps each conversation as a SQLite database, `~/.gemini/<app>/conversations/<id>.db`
 //! (`<app>` = `antigravity`, `antigravity-cli`, `antigravity-ide`), whose `steps` table holds protobuf payloads. Format seen: Oct 2026.
-//! Only the fields this reader needs are decoded, by path, so unknown fields are ignored (notes: docs/research/antigravity_chat_format.md).
+//! Only the fields this reader needs are decoded, by path, so unknown fields are ignored (notes: docs/reference/chat-formats/antigravity.md).
 //!   step_type 14  user input         field 19 -> field 2 (text)
 //!   step_type 15  planner response   field 20 -> field 1 (visible text), field 7 (repeated tool call: 2 name, 3 JSON arguments),
 //!                                    field 3 is the model's private reasoning and is never read
@@ -69,7 +69,7 @@ pub mod pb {
         if rest.is_empty() { Some(v) } else if let Val::Bytes(inner) = v { at(inner, rest) } else { None }
     }
 
-    pub fn text<'a>(b: &'a [u8], path: &[u32]) -> Option<String> {
+    pub fn text(b: &[u8], path: &[u32]) -> Option<String> {
         match at(b, path)? {
             Val::Bytes(s) => std::str::from_utf8(s).ok().map(String::from),
             _ => None,

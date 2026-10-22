@@ -1,5 +1,5 @@
 //! Project library: documents for agents (PRDs, plans, notes) kept outside git. L1: the store, deterministic tiers, search and the
-//! index shown to agents. Files appear in the project folder (L2) and sync through the vault (L3) in later phases (plan/library-plan.md).
+//! index shown to agents. Files appear in the project folder (L2) and sync through the vault (L3) in later phases (docs/specs/library.md).
 pub mod fs;
 pub mod model;
 pub mod propose;

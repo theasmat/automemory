@@ -12,7 +12,7 @@ fn heading(line: &str) -> Option<&str> {
 
 fn first_sentence(s: &str) -> String {
     let flat = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    match flat.find(|c| matches!(c, '.' | '!' | '?')) {
+    match flat.find(['.', '!', '?']) {
         Some(i) if i + 1 >= 8 => flat[..=i].to_string(),
         _ => flat,
     }

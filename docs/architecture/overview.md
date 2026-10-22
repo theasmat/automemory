@@ -1,6 +1,6 @@
 # AutoMemory — Architecture
 
-How the system is built. What it does and for whom: [FEATURES](FEATURES.md). Order of work: [PLAN](PLAN.md). Open work: [TASKS](TASKS.md).
+How the system is built. What it does and for whom: [features](../features.md). Settled choices: [decisions](../decisions.md). Open work: [roadmap](../roadmap.md). Subsystems: [locking](locking.md), [retrieval](retrieval.md), [sync](sync.md), [dashboard control](dashboard-control.md), [identity](identity.md).
 
 Status: describes the code as built (Oct 2026). Items marked *(planned)* are not built.
 
@@ -128,7 +128,7 @@ Context assembly order: locked preferences → project identity → high-confide
 - **Planning Room** (v1 scope): turn-gated state machine (propose → critique → revise, human tiebreak). A room advances only when the turn holder posts; the daemon rejects posts whose evidence IDs do not resolve. Every tool reply ends with a daemon-written `next_action`; posts from other agents are returned as quoted data with author and trust tier. Stored rationale is 3–5 lines, never raw reasoning. A decided room waits for the human verdict: approve records one decision (the last critique as dissent) and a task per step of the final revision; reject stores nothing; another round reopens the critique. The verdict is kept in `sync_kv` (`room_outcome:<id>`), so approving twice is refused.
 - **Autonomy profiles:** Observe (record/warn), Assist (default; human approves each stage), Autopilot (opt-in per repo). Always stops for: schema/migration, auth/secrets, deletion, edits outside agreed files, same test failing 3×, budget exceeded, unresolved disagreement after round cap. Kill switch: `automemory stop`.
 - **Overlap check:** `automemory overlap [--base main]` lists other local branches that change the same files as this one (git three-dot diff), for use before merging.
-- **Worktree sync:** memory, decisions and advisory leases are shared across git worktrees via canonical git-root resolution (in progress, see TASKS).
+- **Worktree sync:** memory, decisions and advisory leases are shared across git worktrees via canonical git-root resolution (see the roadmap for open edges).
 
 ## 8. Guardrails
 
@@ -142,7 +142,7 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 
 ## 9. Interfaces
 
-**MCP (49 tools advertised, stdio + HTTP).** `automemory mcp --agent <name>` (written by `connect`) makes the server sign every record with that name and ignore a different `agent` argument (audited as `mcp.agent_mismatch`); a room proposal cannot be critiqued by the same server connection. The server also replaces itself with the installed binary after an update (checked between requests; Unix). This stops mix-ups and casual spoofing, not an agent with a shell that starts its own server: anything that must not be faked stays behind the human password. Nineteen older names were removed (PLAN §18, §19.3); a call by an old name answers "was removed, use …" instead of working: `memory.ask/context/topics/digest/constitution/skills`, `chat.search`, `library.search`, `baton.pass/pickup` are now `memory.recall`, `memory.list {view}`, `memory.search {scope}`, `continuity.brief {action: handoff}`, `memory.resume`; `graph.*` belong to the `codebase-memory` server every agent already has; `doc.list/get` are `library.list/get` (the repository's own documents appear there with source `repo`); cross-review (`review.*`) is gone (use a planning room).
+**MCP (49 tools advertised, stdio + HTTP).** `automemory mcp --agent <name>` (written by `connect`) makes the server sign every record with that name and ignore a different `agent` argument (audited as `mcp.agent_mismatch`); a room proposal cannot be critiqued by the same server connection. The server also replaces itself with the installed binary after an update (checked between requests; Unix). This stops mix-ups and casual spoofing, not an agent with a shell that starts its own server: anything that must not be faked stays behind the human password. Nineteen older names were removed; a call by an old name answers "was removed, use …" instead of working: `memory.ask/context/topics/digest/constitution/skills`, `chat.search`, `library.search`, `baton.pass/pickup` are now `memory.recall`, `memory.list {view}`, `memory.search {scope}`, `continuity.brief {action: handoff}`, `memory.resume`; `graph.*` belong to the `codebase-memory` server every agent already has; `doc.list/get` are `library.list/get` (the repository's own documents appear there with source `repo`); cross-review (`review.*`) is gone (use a planning room).
 
 | Group | Tools |
 |---|---|

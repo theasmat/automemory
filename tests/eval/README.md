@@ -1,6 +1,6 @@
 # Eval: does memory help?
 
-The Phase 2 gate in [docs/PLAN.md](../../docs/PLAN.md): memory-on must not be worse than memory-off overall,
+The Phase 2 gate in [roadmap](../../docs/roadmap.md): memory-on must not be worse than memory-off overall,
 and should be better on tasks whose deciding context is not in the code. Nobody can currently
 show this for coding-agent memory, so this repository measures it on your own work.
 

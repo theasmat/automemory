@@ -148,7 +148,7 @@ pub async fn api_link(State(state): State<AppState>, headers: HeaderMap, Json(p)
     let Some((_, slug, _)) = here(&state, p.project_id.as_deref()) else { return bad("no project yet") };
     let mut cfg = GlobalConfig::load().unwrap_or_default();
     let list = if p.project_only { &mut cfg.library.projects.entry(slug).or_default().files } else { &mut cfg.library.files };
-    if !list.iter().any(|x| *x == p.pattern) {
+    if !list.contains(&p.pattern) {
         list.push(p.pattern);
     }
     match cfg.save() { Ok(_) => Json(json!({ "success": true })).into_response(), Err(e) => bad(e.to_string()) }

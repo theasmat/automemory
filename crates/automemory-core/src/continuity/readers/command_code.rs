@@ -2,7 +2,7 @@
 //! with `<session>.meta.json` beside it (title, model). The first line is a header (session id, creation time, working folder); later lines are entries
 //! (user messages, model replies, compaction summaries) forming a tree via parent pointers.
 //! Format source: the public docs page /docs/sessions (Oct 2026), which gives the layout but **not the field names**, and no Command Code chat exists on the
-//! maintainer's machine: the field handling below is tolerant guesswork, **unverified against a real file** (docs/research/command_code_chat_format.md).
+//! maintainer's machine: the field handling below is tolerant guesswork, **unverified against a real file** (docs/reference/chat-formats/command-code.md).
 use super::*;
 use serde_json::Value;
 use std::io::Read;

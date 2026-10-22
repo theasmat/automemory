@@ -3,7 +3,7 @@
 //! belongs to comes from `workspaceStorage/<id>/workspace.json` (`folder`) and that workspace's `composer.composerData` index (Cursor 3.0+ also keeps a central
 //! `composer.composerHeaders` in the global `ItemTable`). Read-only: the database is opened read-only (never copied or written).
 //! Format source: public reverse-engineering notes (Oct 2026); Cursor publishes no schema and changes it between versions, and there is **no Cursor data on the
-//! maintainer's machine**, so this is unverified (docs/research/cursor_chat_format.md). Agent transcripts under `~/.cursor/projects/*/agent-transcripts/` are not read.
+//! maintainer's machine**, so this is unverified (docs/reference/chat-formats/cursor.md). Agent transcripts under `~/.cursor/projects/*/agent-transcripts/` are not read.
 use super::antigravity::open_ro;
 use super::{Cursor as Cursor_, *};
 use rusqlite::Connection;

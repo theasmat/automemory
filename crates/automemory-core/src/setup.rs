@@ -176,7 +176,7 @@ pub fn checklist(db: &Database, home: &Path, cwd: &Path) -> Vec<Step> {
 }
 
 /// Returns the first undone step in the checklist, if any.
-pub fn next_step<'a>(steps: &'a [Step]) -> Option<&'a Step> {
+pub fn next_step(steps: &[Step]) -> Option<&Step> {
     steps.iter().find(|s| !s.done)
 }
 

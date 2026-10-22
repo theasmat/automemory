@@ -1,7 +1,7 @@
 //! Codex keeps each session as JSON lines in `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` (finished ones may be moved to
 //! `~/.codex/archived_sessions/`). Every line is `{"timestamp", "type", "payload"}`; the first is `session_meta` with the folder the session ran in.
 //! Format source: public descriptions of the rollout files (Oct 2026), **not yet checked against a real file on the maintainer's machine** (it has no
-//! Codex chats): see docs/research/codex_chat_format.md. The reader skips what it does not know, so a changed format loses text rather than breaking.
+//! Codex chats): see docs/reference/chat-formats/codex.md. The reader skips what it does not know, so a changed format loses text rather than breaking.
 use super::*;
 use regex::Regex;
 use serde_json::Value;
@@ -171,7 +171,7 @@ impl TranscriptReader for Codex {
                 }
                 // The agent's own summary of the conversation so far.
                 ("compacted", _) | ("response_item", "compaction") => {
-                    let text = p.get("message").or_else(|| p.get("summary")).map(|m| parts_text(m)).filter(|t| !t.is_empty()).or_else(|| p.get("message").and_then(|m| m.as_str()).map(String::from)).unwrap_or_default();
+                    let text = p.get("message").or_else(|| p.get("summary")).map(parts_text).filter(|t| !t.is_empty()).or_else(|| p.get("message").and_then(|m| m.as_str()).map(String::from)).unwrap_or_default();
                     push(&mut artifacts, Role::Artifact, format!("Summary of the conversation so far (by Codex): {text}"));
                 }
                 // Reasoning, function outputs, token counts, turn context and session_meta are not kept.

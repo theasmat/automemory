@@ -196,7 +196,7 @@ pub fn models() -> Result<()> {
 pub fn profile_list() -> Result<()> {
     let cfg = GlobalConfig::load()?;
     let active = cfg.embeddings.resolved().active;
-    println!("{:<2} {:<14} {:<8} {:<30} {}", "", "profile", "provider", "model", "key");
+    println!("{:<2} {:<14} {:<8} {:<30} key", "", "profile", "provider", "model");
     let flat = &cfg.embeddings;
     let mut rows: Vec<(String, String, String, String)> = vec![("default".into(), flat.provider.clone(), flat.model.clone(), flat.api_key_env.clone())];
     for (n, p) in &cfg.embeddings.profiles {

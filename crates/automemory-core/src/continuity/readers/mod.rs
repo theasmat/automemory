@@ -1,6 +1,6 @@
 //! Transcript readers: one file per agent, one line in `registry()`. A reader only finds and parses that agent's chat files;
 //! it never writes to them, never redacts (the importer does), and never talks to the database.
-//! Adding an agent: see plan/continuity-plan.md §8 (sample fixture, a reader file, a registry line, pass `testkit`).
+//! Adding an agent: see docs/specs/continuity.md §8 (sample fixture, a reader file, a registry line, pass `testkit`).
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};

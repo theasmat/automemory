@@ -51,7 +51,7 @@ impl Database {
         let _ = conn.execute("DELETE FROM leases WHERE expires_at < ?1", params![now_str]);
 
         // 2. Fetch all active leases in the project (or global)
-        let (p_id, p_slug) = resolve_project_ident_pair(&conn, args.project_id);
+        let (p_id, p_slug) = resolve_project_ident_pair(conn, args.project_id);
         let mut stmt = conn.prepare(
             "SELECT id, project_id, agent, session_id, scope, scope_type, goal, ttl_seconds, acquired_at, heartbeat_at, expires_at
              FROM leases

@@ -173,7 +173,7 @@ pub struct SkillSettings {
     pub auto: bool,
 }
 
-/// `[library]`: documents for agents kept outside git (plan/library-plan.md).
+/// `[library]`: documents for agents kept outside git (docs/specs/library.md).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibrarySettings {
     /// Files kept in sync where they are, relative to every project root (globs). AutoMemory does not care whether git tracks or ignores them.

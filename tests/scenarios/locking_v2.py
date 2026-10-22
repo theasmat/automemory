@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automatic locking beyond edit tools (PLAN §6): lifecycle, shell prediction,
+"""Automatic locking beyond edit tools (docs/architecture/locking.md): lifecycle, shell prediction,
 reconciliation, visibility, ignore policy and the coverage report.
 
 Uses a real git repository (the sandbox project) so reconciliation sees real changes.

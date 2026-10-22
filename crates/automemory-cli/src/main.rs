@@ -1846,7 +1846,7 @@ fn maybe_print_tour_hint(command: &Commands) {
     let config = automemory_core::config::Config::default_config();
     if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
         if db.sync_kv_get("tour_hint_shown").is_none() {
-            let _ = db.sync_kv_set("tour_hint_shown", "true");
+            db.sync_kv_set("tour_hint_shown", "true");
             eprintln!("New here? Run `automemory tour` (5 min)");
         }
     }
