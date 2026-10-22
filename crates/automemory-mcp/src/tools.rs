@@ -28,8 +28,40 @@ const RETIRED: &[&str] = &[
     "doc.list", "doc.get",
 ];
 
+/// Tools that record who did something. Their `agent` argument is replaced by this server's own name (see `ToolRegistry::stamp`).
+/// Not the search tools: there `agent` filters chats by the agent that held them.
+const STAMPED: &[&str] = &[
+    "lock.acquire", "decision.record", "baton.pass", "continuity.brief", "room.join", "room.post", "library.put", "library.propose",
+    "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "task.next", "task.submit",
+];
+
+/// One name per agent however it spells itself: `claude-code`, `Claude Code` and `claude` are `claude`; `antigravity`, `jetski` and `agy` are `agy`.
+pub fn canonical_agent(name: &str) -> String {
+    let n = name.trim().to_lowercase().replace(['_', ' '], "-");
+    let has = |w: &[&str]| w.iter().any(|x| n.contains(x));
+    if has(&["claude"]) {
+        "claude".into()
+    } else if has(&["antigravity", "jetski", "agy"]) {
+        "agy".into()
+    } else if has(&["codex"]) {
+        "codex".into()
+    } else if has(&["cursor"]) {
+        "cursor".into()
+    } else if n.is_empty() {
+        n
+    } else {
+        n.chars().take(40).collect()
+    }
+}
+
 pub struct ToolRegistry {
     db: Arc<Database>,
+    /// The agent this server was started for (`automemory mcp --agent claude`), written by `connect`. The caller cannot change it.
+    identity: Option<String>,
+    /// The client name the agent announced when it connected (`clientInfo.name`); names the agent when no identity was configured.
+    client: std::sync::Mutex<Option<String>>,
+    /// Unique per running server: two servers are two connections, whatever session ids their callers claim.
+    connection: String,
 }
 
 /// Shared recall path: ranks through the Retriever port over the MemoryStore
@@ -94,7 +126,56 @@ fn active_policy() -> Box<dyn TrustPolicy> {
 
 impl ToolRegistry {
     pub fn new(db: Arc<Database>) -> Self {
-        Self { db }
+        Self::with_identity(db, None)
+    }
+
+    pub fn with_identity(db: Arc<Database>, identity: Option<String>) -> Self {
+        Self {
+            db,
+            identity: identity.map(|i| canonical_agent(&i)).filter(|i| !i.is_empty()),
+            client: std::sync::Mutex::new(None),
+            connection: format!("conn-{}", uuid::Uuid::now_v7().simple()),
+        }
+    }
+
+    /// Called when the agent connects: remembers what it called itself, and records it so `doctor` can notice a different program on an entry.
+    pub fn note_client(&self, name: &str) {
+        *self.client.lock().unwrap() = Some(name.to_string());
+        let who = self.agent_name().unwrap_or_else(|| canonical_agent(name));
+        self.db.sync_kv_set(&format!("mcp_client:{who}"), &json!({ "client": name, "at": chrono::Utc::now().to_rfc3339(), "configured": self.identity.is_some() }).to_string());
+    }
+
+    /// Who this server speaks for: the configured agent, else the client's own name, else nobody known.
+    pub fn agent_name(&self) -> Option<String> {
+        self.identity.clone().or_else(|| self.client.lock().unwrap().as_deref().map(canonical_agent)).filter(|n| !n.is_empty())
+    }
+
+    /// The arguments with `agent` set to this server's name. Configured servers (`--agent`) override a different name in the call and note it in the
+    /// audit log. A server with no configured name (an entry from before `--agent`) trusts a name in the call, as before, and uses the client's own name
+    /// only when the call gives none.
+    fn stamp(&self, name: &str, arguments: &Value) -> Value {
+        let mut a = arguments.clone();
+        if !STAMPED.contains(&name) {
+            return a;
+        }
+        let claimed = a.get("agent").and_then(|v| v.as_str()).map(str::trim).filter(|c| !c.is_empty()).map(String::from);
+        match (&self.identity, claimed) {
+            (Some(me), claimed) => {
+                if let Some(c) = claimed.filter(|c| canonical_agent(c) != *me) {
+                    let _ = self.db.log_audit("mcp.agent_mismatch", "mcp", me, &json!({ "tool": name, "claimed": c, "stamped": me }));
+                }
+                a["agent"] = Value::String(me.clone());
+            }
+            (None, None) => {
+                // Room labels are set by the first join; do not overwrite them from the client's name.
+                let known = |n: &str| matches!(n, "claude" | "agy" | "codex" | "cursor");
+                if let Some(me) = self.agent_name().filter(|n| known(n)).filter(|_| !name.starts_with("room.")) {
+                    a["agent"] = Value::String(me);
+                }
+            }
+            (None, Some(_)) => {}
+        }
+        a
     }
 
     /// The tools an agent is shown. Retired names (folded into others, see PLAN section 18) are still answered, just not advertised.
@@ -1056,6 +1137,8 @@ impl ToolRegistry {
     }
 
     pub fn call_tool(&self, name: &str, arguments: &Value) -> ToolCallResult {
+        let stamped = self.stamp(name, arguments);
+        let arguments = &stamped;
         if let Some(r) = self.folded(name, arguments) {
             return r;
         }
@@ -2861,11 +2944,20 @@ impl ToolRegistry {
                     })
                     .unwrap_or_default();
 
+                // Another agent must critique: a second session id does not make a second agent, so the check is on this server's connection.
+                let key = format!("room_proposer_conn:{room_id}");
+                if kind == automemory_core::models::PostKind::Critique && self.db.sync_kv_get(&key).as_deref() == Some(self.connection.as_str()) {
+                    let _ = self.db.log_audit("mcp.self_critique_refused", "room", room_id, &json!({ "session": session_id, "connection": self.connection }));
+                    return ToolCallResult::error("Post refused: this agent connection made the proposal; another agent must critique it (a different session id does not count).");
+                }
                 match self
                     .db
                     .post_to_room(room_id, session_id, kind, body, &evidence)
                 {
                     Ok(post) => {
+                        if kind == automemory_core::models::PostKind::Propose {
+                            self.db.sync_kv_set(&key, &self.connection);
+                        }
                         let room = self.db.get_room(room_id).ok().flatten();
                         let next_action = match room.as_ref().map(|r| r.state) {
                             Some(automemory_core::models::RoomState::Decided) => {

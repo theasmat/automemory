@@ -178,6 +178,10 @@ enum Commands {
         /// Custom path to SQLite database
         #[arg(long)]
         db: Option<String>,
+
+        /// The agent this server is for (claude, agy, codex, cursor, ...). Records it writes are signed with this name whatever the caller says; `connect` sets it
+        #[arg(long)]
+        agent: Option<String>,
     },
 
     /// Manage project registry
@@ -1298,8 +1302,8 @@ async fn main() -> Result<()> {
         Commands::Serve { port, db } => {
             commands::serve::execute(port, db).await?;
         }
-        Commands::Mcp { db } => {
-            commands::mcp::execute(db).await?;
+        Commands::Mcp { db, agent } => {
+            commands::mcp::execute(db, agent).await?;
         }
         Commands::Project { command } => match command {
             ProjectCommands::List => commands::project::list()?,

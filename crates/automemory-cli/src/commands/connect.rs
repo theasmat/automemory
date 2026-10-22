@@ -94,17 +94,18 @@ fn codebase_memory_config() -> serde_json::Value {
     })
 }
 
-fn automemory_mcp_config(exe_path: &str) -> serde_json::Value {
+/// `--agent <name>` makes the server sign everything it writes with that name, whatever the calling agent puts in its requests.
+fn automemory_mcp_config(exe_path: &str, agent: &str) -> serde_json::Value {
     serde_json::json!({
         "command": exe_path,
-        "args": ["mcp"],
+        "args": ["mcp", "--agent", agent],
         "env": {
             "AUTOMEMORY_PROJECT_NAME": "auto"
         }
     })
 }
 
-fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
+fn merge_mcp_config(target_file: &Path, exe_path: &str, agent: &str) -> Result<()> {
     if let Some(parent) = target_file.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -114,7 +115,7 @@ fn merge_mcp_config(target_file: &Path, exe_path: &str) -> Result<()> {
         val["mcpServers"] = serde_json::json!({});
     }
 
-    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
+    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path, agent);
     val["mcpServers"]["codebase-memory"] = codebase_memory_config();
 
     write_atomic(target_file, &serde_json::to_string_pretty(&val)?)?;
@@ -203,7 +204,7 @@ pub(crate) fn connect_agy(
         let gemini = home.join(".gemini");
         let config = gemini.join("config");
         fs::create_dir_all(&config)?;
-        merge_mcp_config(&config.join("mcp_config.json"), exe_path)?;
+        merge_mcp_config(&config.join("mcp_config.json"), exe_path, "agy")?;
         merge_agy_hooks(&config.join("hooks.json"), exe_path)?;
         // App and IDE read ~/.gemini/config/skills; the CLI reads its own folder.
         write_skill(&config.join("skills").join("automemory"))?;
@@ -228,7 +229,7 @@ pub(crate) fn connect_agy(
     } else {
         let agents_dir = workspace_root.join(".agents");
         fs::create_dir_all(&agents_dir)?;
-        merge_mcp_config(&agents_dir.join("mcp_config.json"), exe_path)?;
+        merge_mcp_config(&agents_dir.join("mcp_config.json"), exe_path, "agy")?;
 
         // Antigravity runs every hooks.json it finds, so a hook in both the global and the
         // workspace file would run twice. Keep one.
@@ -404,6 +405,10 @@ pub(crate) fn merge_codex_toml(path: &Path, exe_path: &str) -> Result<()> {
         String::new()
     };
     if text.contains("[mcp_servers.automemory]") {
+        // An entry from an older version has no agent name: add it.
+        if !text.contains("\"--agent\"") && text.contains("args = [\"mcp\"]") {
+            fs::write(path, text.replacen("args = [\"mcp\"]", "args = [\"mcp\", \"--agent\", \"codex\"]", 1))?;
+        }
         return Ok(());
     }
     if !text.is_empty() && !text.ends_with('\n') {
@@ -414,7 +419,7 @@ pub(crate) fn merge_codex_toml(path: &Path, exe_path: &str) -> Result<()> {
     }
     let exe = serde_json::to_string(exe_path)?; // JSON string == valid TOML basic string
     text.push_str(&format!(
-        "[mcp_servers.automemory]\ncommand = {exe}\nargs = [\"mcp\"]\n\n[mcp_servers.automemory.env]\nAUTOMEMORY_PROJECT_NAME = \"auto\"\n"
+        "[mcp_servers.automemory]\ncommand = {exe}\nargs = [\"mcp\", \"--agent\", \"codex\"]\n\n[mcp_servers.automemory.env]\nAUTOMEMORY_PROJECT_NAME = \"auto\"\n"
     ));
     fs::write(path, text)?;
     Ok(())
@@ -460,7 +465,7 @@ pub(crate) fn connect_claude(
 ) -> Result<()> {
     if global {
         let claude_config = home.join(".claude.json");
-        merge_mcp_config(&claude_config, exe_path)?;
+        merge_mcp_config(&claude_config, exe_path, "claude")?;
 
         #[cfg(target_os = "macos")]
         let desktop_config =
@@ -472,7 +477,7 @@ pub(crate) fn connect_claude(
 
         if let Some(parent) = desktop_config.parent() {
             if parent.exists() {
-                let _ = merge_mcp_config(&desktop_config, exe_path);
+                let _ = merge_mcp_config(&desktop_config, exe_path, "claude");
                 println!(
                     "✓ [GLOBAL] Connected to Claude Desktop at {}",
                     desktop_config.display()
@@ -489,7 +494,7 @@ pub(crate) fn connect_claude(
         println!("  🪝 Registered hooks in: {}", settings.display());
     } else {
         let ws_mcp = workspace_root.join(".mcp.json");
-        merge_mcp_config(&ws_mcp, exe_path)?;
+        merge_mcp_config(&ws_mcp, exe_path, "claude")?;
 
         let claude_md = workspace_root.join("CLAUDE.md");
         let _ = fs::write(&claude_md, refresh_guidelines(&fs::read_to_string(&claude_md).unwrap_or_default()));
@@ -543,7 +548,7 @@ pub(crate) fn connect_cursor(
         workspace_root.join(".cursor").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "cursor")?;
 
     // Create .cursorrules in workspace (exact template match required to
     // remove it again in `disconnect`; see CURSOR_RULES).
@@ -577,7 +582,7 @@ pub(crate) fn connect_windsurf(
         workspace_root.join(".windsurf").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "windsurf")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -607,7 +612,7 @@ pub(crate) fn connect_cline(
         workspace_root.join(".cline").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "cline")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -637,7 +642,7 @@ pub(crate) fn connect_roo(
         workspace_root.join(".roo").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "roo")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -838,7 +843,7 @@ pub(crate) fn connect_opencode(
         workspace_root.join(".opencode").join("config.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "opencode")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -914,7 +919,7 @@ pub(crate) fn connect_kilo(
         workspace_root.join(".kilo").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "kilo")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -977,7 +982,7 @@ pub(crate) fn connect_warp(
         workspace_root.join(".warp").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "warp")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -1012,7 +1017,7 @@ pub(crate) fn connect_gemini_cli(
     if val.get("mcpServers").is_none() {
         val["mcpServers"] = serde_json::json!({});
     }
-    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path);
+    val["mcpServers"]["automemory"] = automemory_mcp_config(exe_path, "gemini");
 
     write_atomic(&target_path, &serde_json::to_string_pretty(&val)?)?;
 
@@ -1039,7 +1044,7 @@ pub(crate) fn connect_devin(
         workspace_root.join(".devin").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "devin")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -1065,7 +1070,7 @@ pub(crate) fn connect_copilot(
         workspace_root.join(".vscode").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "copilot")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -1089,7 +1094,7 @@ pub(crate) fn connect_openclaw(
         workspace_root.join(".openclaw").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "openclaw")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -1113,7 +1118,7 @@ pub(crate) fn connect_hermes(
         workspace_root.join(".hermes").join("mcp.json")
     };
 
-    merge_mcp_config(&target_path, exe_path)?;
+    merge_mcp_config(&target_path, exe_path, "hermes")?;
 
     let scope_tag = if global { "[GLOBAL]" } else { "[WORKSPACE]" };
     println!(
@@ -1148,7 +1153,7 @@ pub(crate) fn connect_claude_desktop(
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let config_path = home.join(".claude").join("claude_desktop_config.json");
 
-    merge_mcp_config(&config_path, exe_path)?;
+    merge_mcp_config(&config_path, exe_path, "claude")?;
 
     println!(
         "✓ [APP] Connected to Claude Desktop at {}",

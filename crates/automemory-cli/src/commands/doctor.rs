@@ -190,6 +190,45 @@ pub fn execute() -> Result<()> {
         }
     }
 
+    // Who each MCP server says it is: a server is configured for one agent and signs its records with that name. Flag a different program on an entry,
+    // and entries from before the name existed (their records are signed by whatever the caller types).
+    {
+        print!("Checking agent identities... ");
+        let rows: Vec<(String, String)> = automemory_core::db::Database::open(&config.db_path)
+            .ok()
+            .and_then(|db| {
+                let conn = db.conn();
+                let mut st = conn.prepare("SELECT key, value FROM sync_kv WHERE key LIKE 'mcp_client:%'").ok()?;
+                let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).ok()?.filter_map(|r| r.ok()).collect();
+                Some(rows)
+            })
+            .unwrap_or_default();
+        let week_ago = chrono::Utc::now() - chrono::Duration::days(7);
+        let mut problems = Vec::new();
+        for (key, value) in &rows {
+            let who = key.trim_start_matches("mcp_client:");
+            let v: serde_json::Value = serde_json::from_str(value).unwrap_or_default();
+            let recent = v["at"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).is_some_and(|t| t > week_ago);
+            let client = v["client"].as_str().unwrap_or("");
+            if !recent {
+                continue;
+            }
+            if v["configured"].as_bool() != Some(true) {
+                problems.push(format!("\"{client}\" connected without an agent name: run `automemory connect {who}` again so its records are signed {who}"));
+            } else if automemory_mcp::canonical_agent(client) != who {
+                problems.push(format!("the entry for {who} was started by \"{client}\": another program uses it, or the entry was copied; run `automemory connect <agent>` for each"));
+            }
+        }
+        if problems.is_empty() {
+            println!("✓ {}", if rows.is_empty() { "no agent connected yet".to_string() } else { format!("{} agent(s), each signed with its own name", rows.len()) });
+        } else {
+            println!("⚠ {} thing(s) to look at:", problems.len());
+            for p in problems {
+                println!("    {p}");
+            }
+        }
+    }
+
     // Derived records written many times for the same thing (older versions did this on every session end).
     {
         print!("Checking duplicate records... ");

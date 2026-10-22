@@ -8,7 +8,7 @@ pub use http::mcp_router;
 pub use protocol::{JsonRpcRequest, JsonRpcResponse, ToolCallResult, ToolDefinition};
 pub use server::McpServer;
 pub use stdio::StdioTransport;
-pub use tools::ToolRegistry;
+pub use tools::{canonical_agent, ToolRegistry};
 
 #[cfg(test)]
 mod tests {
@@ -405,23 +405,25 @@ mod tests {
     #[test]
     fn test_mcp_room_full_round() {
         let db = Arc::new(Database::open_in_memory().unwrap());
-        let server = McpServer::new(db);
+        // Two agents are two servers (two processes in real use), sharing one database.
+        let server = McpServer::with_identity(db.clone(), Some("claude".into()));
+        let server_b = McpServer::with_identity(db, Some("agy".into()));
 
-        let call = |id: i64, name: &str, arguments: serde_json::Value| {
-            server
-                .handle_request(JsonRpcRequest {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(json!(id)),
-                    method: "tools/call".to_string(),
-                    params: Some(json!({ "name": name, "arguments": arguments })),
-                })
-                .unwrap()
-                .result
-                .unwrap()["content"][0]["text"]
-                .as_str()
-                .unwrap()
-                .to_string()
+        let call_on = |srv: &McpServer, id: i64, name: &str, arguments: serde_json::Value| {
+            srv.handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: Some(json!(id)),
+                method: "tools/call".to_string(),
+                params: Some(json!({ "name": name, "arguments": arguments })),
+            })
+            .unwrap()
+            .result
+            .unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
         };
+        let call = |id: i64, name: &str, arguments: serde_json::Value| call_on(&server, id, name, arguments);
 
         let saved = call(
             50,
@@ -452,7 +454,8 @@ mod tests {
         );
 
         let post = |id: i64, sess: &str, kind: &str, body: &str| {
-            call(
+            call_on(
+                if sess == "b" { &server_b } else { &server },
                 id,
                 "room.post",
                 json!({
@@ -462,7 +465,8 @@ mod tests {
             )
         };
         // Out-of-turn post is refused.
-        let refused = call(
+        let refused = call_on(
+            &server_b,
             53,
             "room.post",
             json!({
@@ -473,6 +477,9 @@ mod tests {
         assert!(refused.contains("not your turn"));
 
         post(54, "a", "propose", "JWT plan: sign sessions in an httpOnly cookie");
+        // Changing the session id does not make a second agent: the same server cannot critique its own proposal.
+        let self_critique = call(58, "room.post", json!({ "room_id": room_id, "session_id": "b", "kind": "critique", "body": "I disagree with myself, strongly", "evidence": [ev] }));
+        assert!(self_critique.contains("another agent must critique"), "{self_critique}");
         post(55, "b", "critique", "Rotation of signing keys is not covered");
         let last = post(56, "a", "revise", "JWT plus key rotation every 24 hours");
         assert!(last.contains("decided"));
@@ -551,5 +558,52 @@ mod tests {
             }),
         );
         assert!(queued.contains("proposed"));
+    }
+
+    fn run_on(srv: &McpServer, name: &str, arguments: serde_json::Value) -> String {
+        srv.handle_request(JsonRpcRequest { jsonrpc: "2.0".to_string(), id: Some(json!(1)), method: "tools/call".to_string(), params: Some(json!({ "name": name, "arguments": arguments })) })
+            .unwrap()
+            .result
+            .unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn a_server_signs_what_it_writes_with_its_own_name_whatever_the_caller_says() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let claude = McpServer::with_identity(db.clone(), Some("Claude-Code".into()));
+        run_on(&claude, "decision.record", json!({ "topic": "auth", "decision": "Use JWT", "reason": "stateless", "agent": "codex" }));
+        let d = db.list_decisions(None, None, 10).unwrap();
+        assert_eq!(d[0].agent, "claude", "the caller said codex; the server said claude");
+        let audit: i64 = db.conn().query_row("SELECT COUNT(*) FROM audit_log WHERE action = 'mcp.agent_mismatch'", [], |r| r.get(0)).unwrap();
+        assert_eq!(audit, 1, "the attempt is on record");
+        // Saying your own name (any spelling) is not a mismatch.
+        run_on(&claude, "decision.record", json!({ "topic": "db", "decision": "SQLite", "reason": "local", "agent": "claude-code" }));
+        let audit: i64 = db.conn().query_row("SELECT COUNT(*) FROM audit_log WHERE action = 'mcp.agent_mismatch'", [], |r| r.get(0)).unwrap();
+        assert_eq!(audit, 1);
+    }
+
+    #[test]
+    fn search_filters_keep_their_agent_argument() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        db.chat_append("agy", "s1", Some("p"), None, "c", &[("user".into(), None, "sticky routing talk".into())]).unwrap();
+        let claude = McpServer::with_identity(db, Some("claude".into()));
+        let r = run_on(&claude, "memory.search", json!({ "query": "sticky", "scope": "chat", "agent": "agy", "project_id": "p" }));
+        assert!(r.contains("agy:s1"), "the agent argument of a search still selects whose chats to search: {r}");
+    }
+
+    #[test]
+    fn without_a_configured_name_the_client_name_is_used_and_recorded() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let server = McpServer::new(db.clone());
+        server
+            .handle_request(JsonRpcRequest { jsonrpc: "2.0".to_string(), id: Some(json!(1)), method: "initialize".to_string(), params: Some(json!({ "clientInfo": { "name": "claude-code", "version": "2" } })) })
+            .unwrap();
+        run_on(&server, "decision.record", json!({ "topic": "x", "decision": "y", "reason": "z" }));
+        assert_eq!(db.list_decisions(None, None, 10).unwrap()[0].agent, "claude", "no more records signed 'agent'");
+        let rec = db.sync_kv_get("mcp_client:claude").unwrap();
+        assert!(rec.contains("claude-code") && rec.contains("\"configured\":false"), "{rec}");
     }
 }

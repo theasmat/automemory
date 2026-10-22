@@ -528,10 +528,10 @@ by an agent" rule and room turns all rest on names the caller chooses.
 
 | Step | What | Done when |
 |---|---|---|
-| Y1 | `connect` writes the agent into its own MCP entry (`automemory mcp --agent claude`, `--agent codex`, `--agent agy`); the server stamps that name on every write and ignores a different `agent` argument (logged in the audit as a mismatch) | Records written through Claude's server say `claude` whatever the call says; a test sends `agent: "codex"` through Claude's server and gets `claude` |
-| Y2 | The server keeps one connection id per running server and uses it, not the caller's `session_id`, for "same author" checks (rooms, brief items, library files); the hook's session is linked to it on the first hook call | An agent cannot critique its own proposal by changing `session_id`; scenario test |
-| Y3 | The MCP `initialize` client name (`clientInfo.name`) is recorded beside the stamped name; a mismatch shows in `doctor` (for example a Cursor client on Claude's entry) | `doctor` names servers whose client does not match their entry |
-| Y4 | Dashboard and `continuity show` show the stamped name; the free `agent` argument stays accepted (old agents send it) but no longer decides anything | Labels never read "agent" for new records |
+| Y1 **built** | `connect` writes the agent into its own MCP entry (`automemory mcp --agent claude`, `--agent codex`, `--agent agy`); the server stamps that name on every write and ignores a different `agent` argument (logged in the audit as a mismatch) | Records written through Claude's server say `claude` whatever the call says; a test sends `agent: "codex"` through Claude's server and gets `claude` |
+| Y2 **built (rooms)** | The server keeps one connection id per running server and uses it, not the caller's `session_id`, for "same author" checks (rooms, brief items, library files); the hook's session is linked to it on the first hook call | An agent cannot critique its own proposal by changing `session_id`; scenario test |
+| Y3 **built** | The MCP `initialize` client name (`clientInfo.name`) is recorded beside the stamped name; a mismatch shows in `doctor` (for example a Cursor client on Claude's entry) | `doctor` names servers whose client does not match their entry |
+| Y4 **built** | Dashboard and `continuity show` show the stamped name; the free `agent` argument stays accepted (old agents send it) but no longer decides anything | Labels never read "agent" for new records |
 
 Limit (said plainly in the docs): this stops mix-ups and casual spoofing, not a hostile agent with a shell, which can start its own server with any
 `--agent`. Anything that must not be faked stays behind the human password, as now.

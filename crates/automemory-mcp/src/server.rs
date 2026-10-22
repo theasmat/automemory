@@ -10,8 +10,13 @@ pub struct McpServer {
 
 impl McpServer {
     pub fn new(db: Arc<Database>) -> Self {
+        Self::with_identity(db, None)
+    }
+
+    /// `identity`: the agent this server was configured for (`automemory mcp --agent claude`); every record it writes is signed with that name.
+    pub fn with_identity(db: Arc<Database>, identity: Option<String>) -> Self {
         Self {
-            registry: ToolRegistry::new(db),
+            registry: ToolRegistry::with_identity(db, identity),
         }
     }
 
@@ -19,6 +24,9 @@ impl McpServer {
         let id = req.id;
         match req.method.as_str() {
             "initialize" => {
+                if let Some(name) = req.params.as_ref().and_then(|p| p.get("clientInfo")).and_then(|c| c.get("name")).and_then(|n| n.as_str()) {
+                    self.registry.note_client(name);
+                }
                 let res = json!({
                     "protocolVersion": "2024-11-05",
                     "serverInfo": {
