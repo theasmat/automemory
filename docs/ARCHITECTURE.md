@@ -99,7 +99,7 @@ Hook management: `automemory hooks enable|disable|move|add|test`, shadow mode (l
 
 One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`, run atomically under `BEGIN IMMEDIATE`; a failed step aborts and rolls back instead of bumping the version. Lease acquisition is also one `BEGIN IMMEDIATE` transaction, because every hook is its own process. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
 
-**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`. (Schema v19 drops the old `graph_entities` and `graph_edges`.)
+**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`. (Schema v20 drops the old `graph_entities` and `graph_edges`.)
 
 **Memory:** `scope` (global|project), `type` (fact, decision, lesson, pattern, warning, observation, preference, skill), `status` (active, candidate, pinned, stale, changed, superseded, archived, invalid, review), `source_kind`, `confidence`, `importance`, `freshness`, tags/entities/metadata. Dedup: scope-aware in-place upsert with a version row.
 
