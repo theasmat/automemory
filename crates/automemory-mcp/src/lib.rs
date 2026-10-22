@@ -63,7 +63,7 @@ mod tests {
     }
 
     #[test]
-    fn folded_tools_still_answer_and_their_replacements_reach_the_same_code() {
+    fn the_merged_tools_work_and_the_old_names_say_what_replaced_them() {
         let db = Arc::new(Database::open_in_memory().unwrap());
         let server = McpServer::new(db);
         let call = |name: &str, arguments: serde_json::Value| -> serde_json::Value {
@@ -74,19 +74,23 @@ mod tests {
                 .unwrap();
             serde_json::from_str(r["content"][0]["text"].as_str().unwrap()).unwrap_or(json!({ "text": r["content"][0]["text"] }))
         };
-        // memory.list {view} reaches the same handler.
-        assert_eq!(call("memory.list", json!({ "view": "topics" })), call("memory.topics", json!({})));
-        assert_eq!(call("memory.list", json!({ "view": "constitution" })), call("memory.constitution", json!({})));
-        // memory.search {scope}: chat and library go to their handlers; all returns the three.
-        assert_eq!(call("memory.search", json!({ "query": "x", "scope": "chat" })), call("chat.search", json!({ "query": "x" })));
-        assert_eq!(call("memory.search", json!({ "query": "x", "scope": "library" })), call("library.search", json!({ "query": "x" })));
+        // The merged tools reach the handlers.
+        assert!(call("memory.list", json!({ "view": "topics" })).is_object());
         let all = call("memory.search", json!({ "query": "x", "scope": "all" }));
         assert!(all.get("notes").is_some() && all.get("chat").is_some() && all.get("library").is_some(), "{all}");
+        assert!(call("memory.search", json!({ "query": "x", "scope": "chat" })).get("hits").is_some());
+        assert!(call("memory.search", json!({ "query": "x", "scope": "library" })).get("hits").is_some());
         // continuity.brief {handoff} passes the baton and leaves the note as the brief's next step.
         let h = call("continuity.brief", json!({ "action": "handoff", "session_id": "s1", "agent": "claude", "note": "Wire the cart page to the new route" }));
         assert_eq!(h["status"], "passed", "{h}");
         let brief = call("continuity.brief", json!({ "action": "get" }));
         assert!(brief["brief"].as_str().unwrap_or("").contains("Wire the cart page"), "{brief}");
+        // An old name is not "unknown": it says what to use.
+        for (old, instead) in [("memory.ask", "memory.recall"), ("chat.search", "scope=chat"), ("baton.pickup", "memory.resume"), ("graph.query", "codebase-memory"), ("doc.list", "library.list"), ("review.next", "room.pending")] {
+            let r = call(old, json!({}));
+            let text = r["text"].as_str().unwrap_or_default();
+            assert!(text.contains("was removed") && text.contains(instead), "{old}: {text}");
+        }
     }
 
     #[test]
@@ -225,44 +229,13 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_baton_pass_and_pickup() {
+    fn a_handoff_is_written_with_the_brief_and_read_back_with_resume() {
         let db = Arc::new(Database::open_in_memory().unwrap());
-        let server = McpServer::new(db);
-
-        let pass_req = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(json!(20)),
-            method: "tools/call".to_string(),
-            params: Some(json!({
-                "name": "baton.pass",
-                "arguments": {
-                    "session_id": "sess-a",
-                    "to_session": "sess-b",
-                    "note": "finish the auth refactor",
-                    "agent": "claude-code"
-                }
-            })),
-        };
-        let pass_resp = server.handle_request(pass_req).unwrap();
-        let pass_text = pass_resp.result.unwrap()["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        assert!(pass_text.contains("finish the auth refactor"));
-        assert!(pass_text.contains("next_action"));
-
-        let pickup_req = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(json!(21)),
-            method: "tools/call".to_string(),
-            params: Some(json!({
-                "name": "baton.pickup",
-                "arguments": { "session_id": "sess-b" }
-            })),
-        };
-        let pickup_resp = server.handle_request(pickup_req).unwrap();
-        let pickup_text = &pickup_resp.result.unwrap()["content"][0]["text"];
-        assert!(pickup_text.as_str().unwrap().contains("sess-a"));
+        let server = McpServer::with_identity(db, Some("claude".into()));
+        let sent = run_on(&server, "continuity.brief", json!({ "action": "handoff", "session_id": "sess-a", "to_session": "sess-b", "note": "finish the auth refactor", "agent": "claude-code" }));
+        assert!(sent.contains("finish the auth refactor") && sent.contains("next_action"), "{sent}");
+        let resumed = run_on(&server, "memory.resume", json!({ "session_id": "sess-b" }));
+        assert!(resumed.contains("sess-a") || resumed.contains("finish the auth refactor"), "{resumed}");
     }
 
     #[test]
@@ -327,80 +300,6 @@ mod tests {
         );
         assert!(submitted.contains("submitted"));
         assert!(submitted.contains("baton.pass"));
-    }
-
-    #[test]
-    fn test_mcp_review_submit_next_post() {
-        let db = Arc::new(Database::open_in_memory().unwrap());
-        let server = McpServer::new(db);
-
-        let call = |id: i64, name: &str, arguments: serde_json::Value| {
-            server
-                .handle_request(JsonRpcRequest {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(json!(id)),
-                    method: "tools/call".to_string(),
-                    params: Some(json!({ "name": name, "arguments": arguments })),
-                })
-                .unwrap()
-                .result
-                .unwrap()["content"][0]["text"]
-                .as_str()
-                .unwrap()
-                .to_string()
-        };
-
-        // Author queues; author cannot review their own diff.
-        call(
-            40,
-            "review.submit",
-            json!({
-                "session_id": "author-1", "diff": "diff --git a/f", "title": "fix leak",
-                "test_command": "cargo test"
-            }),
-        );
-        let own_empty = call(41, "review.next", json!({ "session_id": "author-1" }));
-        assert!(own_empty.contains("No pending reviews"));
-
-        // Reviewer approves with green tests → approved.
-        let job = call(42, "review.next", json!({ "session_id": "reviewer-1" }));
-        assert!(job.contains("fix leak"));
-        let rev_id: String = serde_json::from_str::<serde_json::Value>(&job).unwrap()["review"]
-            ["id"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        let verdict = call(
-            43,
-            "review.post",
-            json!({
-                "id": rev_id, "session_id": "reviewer-1",
-                "approved": true, "tests_passed": true
-            }),
-        );
-        assert!(verdict.contains("approved"));
-
-        // Approval with red tests → rejected: tests judge.
-        call(
-            44,
-            "review.submit",
-            json!({ "session_id": "author-2", "diff": "diff2" }),
-        );
-        let job2 = call(45, "review.next", json!({ "session_id": "reviewer-1" }));
-        let rev2: String = serde_json::from_str::<serde_json::Value>(&job2).unwrap()["review"]
-            ["id"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        let verdict2 = call(
-            46,
-            "review.post",
-            json!({
-                "id": rev2, "session_id": "reviewer-1",
-                "approved": true, "tests_passed": false
-            }),
-        );
-        assert!(verdict2.contains("rejected"));
     }
 
     #[test]
@@ -512,7 +411,7 @@ mod tests {
                 .to_string()
         };
 
-        // ask aliases recall (Tier 4 withheld by default, returned on opt-in).
+        // recall withholds Tier 4 by default and returns it on opt-in.
         let saved = call(
             60,
             "memory.save",
@@ -521,17 +420,17 @@ mod tests {
             }),
         );
         assert!(saved.contains("saved"));
-        let asked = call(61, "memory.ask", json!({ "query": "JWT" }));
+        let asked = call(61, "memory.recall", json!({ "query": "JWT" }));
         assert!(!asked.contains("auth fact"));
         let asked_open = call(
             66,
-            "memory.ask",
+            "memory.recall",
             json!({ "query": "JWT", "include_untrusted": true }),
         );
         assert!(asked_open.contains("auth fact"));
 
         // topics lists the tag.
-        let topics = call(62, "memory.topics", json!({}));
+        let topics = call(62, "memory.list", json!({ "view": "topics" }));
         assert!(topics.contains("auth"));
 
         // about answers for the tag target (opt-in surfaces the Tier 4 hit).

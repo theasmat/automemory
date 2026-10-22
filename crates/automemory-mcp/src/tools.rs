@@ -1,7 +1,6 @@
 use crate::protocol::{ToolCallResult, ToolDefinition};
 use automemory_core::config::GlobalConfig;
 use automemory_core::db::Database;
-use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::ports::{
     trust_policy_for, AdvisoryLocks, BuiltinTrustPolicy, CodeIntel, FtsRetriever, LockStrategy,
@@ -16,16 +15,27 @@ use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// Folded into other tools (kept working for agents that still call them): `memory.ask` = `memory.recall`; `memory.context/topics/digest/constitution/skills`
-/// = `memory.list {view}`; `chat.search`, `library.search` = `memory.search {scope}`; `baton.pass` = `continuity.brief {action: handoff}`;
-/// `baton.pickup` = what `memory.resume` already returns; `graph.*` = the `codebase-memory` server; `review.*` are kept for scripts that use them; `doc.list/get` = `library.list/get` (source repo).
-const RETIRED: &[&str] = &[
-    "memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills",
-    "chat.search", "library.search", "baton.pass", "baton.pickup",
-    // The code graph is served by the codebase-memory server every agent already has; a cross-review is a diff with a test verdict, not a room.
-    "graph.index", "graph.query", "graph.neighbors", "graph.impact", "review.submit", "review.next", "review.post",
-    // The project's own documents are listed by library.list (source repo) and opened with library.get.
-    "doc.list", "doc.get",
+/// Tool names that no longer exist, and what to call instead. A call by an old name gets this pointer rather than "unknown tool".
+const REMOVED: &[(&str, &str)] = &[
+    ("memory.ask", "memory.recall"),
+    ("memory.context", "memory.list with view=context"),
+    ("memory.topics", "memory.list with view=topics"),
+    ("memory.digest", "memory.list with view=digest"),
+    ("memory.constitution", "memory.list with view=constitution"),
+    ("memory.skills", "memory.list with view=skills"),
+    ("chat.search", "memory.search with scope=chat"),
+    ("library.search", "memory.search with scope=library"),
+    ("baton.pass", "continuity.brief with action=handoff"),
+    ("baton.pickup", "memory.resume"),
+    ("doc.list", "library.list (the repository's documents have source=repo)"),
+    ("doc.get", "library.get"),
+    ("graph.index", "the codebase-memory server (index_repository)"),
+    ("graph.query", "the codebase-memory server (query_graph)"),
+    ("graph.neighbors", "the codebase-memory server (trace_path)"),
+    ("graph.impact", "the codebase-memory server (trace_path)"),
+    ("review.submit", "a planning room (room.join)"),
+    ("review.next", "room.pending"),
+    ("review.post", "room.post"),
 ];
 
 /// Tools that record who did something. Their `agent` argument is replaced by this server's own name (see `ToolRegistry::stamp`).
@@ -182,9 +192,9 @@ impl ToolRegistry {
         a
     }
 
-    /// The tools an agent is shown. Retired names (folded into others, see PLAN section 18) are still answered, just not advertised.
+    /// The tools an agent is shown.
     pub fn list_tools(&self) -> Vec<ToolDefinition> {
-        self.all_tools().into_iter().filter(|t| !RETIRED.contains(&t.name.as_str())).collect()
+        self.all_tools()
     }
 
     fn all_tools(&self) -> Vec<ToolDefinition> {
@@ -193,20 +203,6 @@ impl ToolRegistry {
             ToolDefinition {
                 name: "memory.recall".to_string(),
                 description: "Retrieve relevant project or global memories for a query (trust tiers 1-3 only, unless include_untrusted)".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "Search query" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" },
-                        "limit": { "type": "integer", "description": "Max results to return (default 5)" },
-                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
-                    },
-                    "required": ["query"]
-                }),
-            },
-            ToolDefinition {
-                name: "memory.ask".to_string(),
-                description: "PRD alias for memory.recall: ranked short entries with ids, status and provenance".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -231,16 +227,6 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
-                name: "memory.topics".to_string(),
-                description: "What is queryable: active decision topics plus distinct memory tags".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    }
-                }),
-            },
-            ToolDefinition {
                 name: "memory.propose".to_string(),
                 description: "Write a candidate memory. Rejected without provenance (evidence)".to_string(),
                 input_schema: json!({
@@ -254,18 +240,6 @@ impl ToolRegistry {
                         "tags": { "type": "array", "items": { "type": "string" } }
                     },
                     "required": ["content", "summary", "evidence"]
-                }),
-            },
-            ToolDefinition {
-                name: "memory.context".to_string(),
-                description: "Build a bounded active context package for current project and task".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Project ID or slug" },
-                        "task_query": { "type": "string", "description": "Optional user prompt or task query" },
-                        "max_tokens": { "type": "integer", "description": "Token budget (default 2000)" }
-                    }
                 }),
             },
             ToolDefinition {
@@ -320,19 +294,6 @@ impl ToolRegistry {
                     "type": "object",
                     "properties": {
                         "project_id": { "type": "string" }
-                    }
-                }),
-            },
-            ToolDefinition {
-                name: "memory.digest".to_string(),
-                description: "Generate an activity and progress digest for a specific time span (e.g. '15m', '30m', '1h', '2h', '4h', 'today', 'session'), including editing metrics, files modified, achievements, and failures.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" },
-                        "span": { "type": "string", "description": "Time span window: '15m', '30m', '1h', '2h', '4h', '24h', 'today', or 'session' (default '1h')" },
-                        "session_id": { "type": "string", "description": "Session ID (used if span is 'session')" },
-                        "auto_save": { "type": "boolean", "description": "Whether to automatically save this digest as a durable checkpoint milestone memory (default false)" }
                     }
                 }),
             },
@@ -395,29 +356,6 @@ impl ToolRegistry {
                         "id": { "type": "string" }
                     },
                     "required": ["id"]
-                }),
-            },
-            ToolDefinition {
-                name: "doc.list".to_string(),
-                description: "List tracked project documents and revision status".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string" }
-                    },
-                    "required": ["project_id"]
-                }),
-            },
-            ToolDefinition {
-                name: "doc.get".to_string(),
-                description: "Read tracked document metadata or revision".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string" },
-                        "relative_path": { "type": "string" }
-                    },
-                    "required": ["project_id", "relative_path"]
                 }),
             },
             ToolDefinition {
@@ -659,76 +597,6 @@ impl ToolRegistry {
             },
             // Knowledge Graph Tools
             ToolDefinition {
-                name: "graph.index".to_string(),
-                description: "Scan a project directory and index code structural entities and relations into the knowledge graph".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Project ID or slug" },
-                        "path": { "type": "string", "description": "Local workspace root directory path" }
-                    },
-                    "required": ["project_id", "path"]
-                }),
-            },
-            ToolDefinition {
-                name: "graph.query".to_string(),
-                description: "Query codebase structural knowledge graph entities (files, functions, structs, docs)".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string" },
-                        "entity_type": { "type": "string", "enum": ["file", "function", "struct", "class", "module", "trait", "doc"] },
-                        "name_pattern": { "type": "string", "description": "Substring match on symbol name" },
-                        "path_prefix": { "type": "string", "description": "Path prefix filter" },
-                        "limit": { "type": "integer", "description": "Max results (default 20)" }
-                    }
-                }),
-            },
-            ToolDefinition {
-                name: "graph.neighbors".to_string(),
-                description: "Get incoming and outgoing relationship edges and neighbor entities for a specific entity ID".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "entity_id": { "type": "string", "description": "Target entity ID" }
-                    },
-                    "required": ["entity_id"]
-                }),
-            },
-            ToolDefinition {
-                name: "graph.impact".to_string(),
-                description: "Perform blast-radius impact analysis for changing a file or symbol, tracing dependent callers and files".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "target": { "type": "string", "description": "Symbol name or relative file path to analyze" },
-                        "project_id": { "type": "string", "description": "Optional project ID" },
-                        "depth": { "type": "integer", "description": "Max traversal depth (default 3)" }
-                    },
-                    "required": ["target"]
-                }),
-            },
-            ToolDefinition {
-                name: "memory.skills".to_string(),
-                description: "List auto-distilled procedural skill playbooks synthesized from verified success traces".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Optional project ID" }
-                    }
-                }),
-            },
-            ToolDefinition {
-                name: "memory.constitution".to_string(),
-                description: "Retrieve token-capped Hot Memory Constitution containing core rules, architecture invariants, and gotchas".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "project_id": { "type": "string", "description": "Optional project ID" }
-                    }
-                }),
-            },
-            ToolDefinition {
                 name: "lock.acquire".to_string(),
                 description: "Acquire or renew a cooperative multi-agent lease on a file, glob pattern, or symbol. Rarely needed: edits are locked automatically by the hooks".to_string(),
                 input_schema: json!({
@@ -822,32 +690,6 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
-                name: "baton.pass".to_string(),
-                description: "Hand off work to another agent session: builds a sub-400-token packet from ledger facts (tool calls, files, leases, decisions, blockers) and stores it for pickup".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "session_id": { "type": "string", "description": "Passing session ID (source)" },
-                        "to_session": { "type": "string", "description": "Receiving session ID (omit to broadcast)" },
-                        "note": { "type": "string", "description": "Next step for the receiving agent" },
-                        "agent": { "type": "string", "description": "Passing agent name" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["session_id"]
-                }),
-            },
-            ToolDefinition {
-                name: "baton.pickup".to_string(),
-                description: "Pick up the latest handoff packet for a session (direct first, then broadcast)".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "session_id": { "type": "string", "description": "Receiving session ID" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    }
-                }),
-            },
-            ToolDefinition {
                 name: "task.create".to_string(),
                 description: "Enqueue a work item with spec and symbol scope for agents to claim".to_string(),
                 input_schema: json!({
@@ -885,48 +727,6 @@ impl ToolRegistry {
                         "result": { "type": "string", "description": "What was done / review notes" }
                     },
                     "required": ["id", "session_id"]
-                }),
-            },
-            ToolDefinition {
-                name: "review.submit".to_string(),
-                description: "Queue a diff for cross-review by a different agent session".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "session_id": { "type": "string", "description": "Authoring session ID" },
-                        "diff": { "type": "string", "description": "Unified diff under review" },
-                        "title": { "type": "string", "description": "Short review title" },
-                        "test_command": { "type": "string", "description": "Command the reviewer runs to judge it" },
-                        "task_id": { "type": "string", "description": "Source task ID" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["session_id", "diff"]
-                }),
-            },
-            ToolDefinition {
-                name: "review.next".to_string(),
-                description: "Fetch the oldest pending diff authored by another session".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "session_id": { "type": "string", "description": "Reviewing session ID" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    }
-                }),
-            },
-            ToolDefinition {
-                name: "review.post".to_string(),
-                description: "Post a review verdict. Failing tests reject regardless of approval vote".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string", "description": "Review ID" },
-                        "session_id": { "type": "string", "description": "Reviewing session ID" },
-                        "approved": { "type": "boolean", "description": "Reviewer vote" },
-                        "tests_passed": { "type": "boolean", "description": "Test run outcome (judges the diff)" },
-                        "verdict": { "type": "string", "description": "Review notes" }
-                    },
-                    "required": ["id", "session_id", "tests_passed"]
                 }),
             },
             ToolDefinition {
@@ -996,20 +796,6 @@ impl ToolRegistry {
                 }),
             },
             ToolDefinition {
-                name: "chat.search".to_string(),
-                description: "Search the imported chat history of this project (what was said in earlier sessions with any agent: why something was chosen, what was tried). Returns short snippets with a session id and position; open the exchange with chat.get. Only chats a person allowed AutoMemory to read are there.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "Words to look for" },
-                        "agent": { "type": "string", "description": "Only chats with this agent (claude, agy, …)" },
-                        "limit": { "type": "integer", "description": "Default 8, at most 20" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["query"]
-                }),
-            },
-            ToolDefinition {
                 name: "chat.get".to_string(),
                 description: "Read part of one imported chat session, in order, starting at from_seq (use a memory.search (scope chat) hit's session and seq, minus a few messages for context).".to_string(),
                 input_schema: json!({
@@ -1045,19 +831,6 @@ impl ToolRegistry {
                         "project_id": { "type": "string", "description": "Optional project ID or slug" }
                     },
                     "required": ["path"]
-                }),
-            },
-            ToolDefinition {
-                name: "library.search".to_string(),
-                description: "Search the project library by words. Returns path, one-line summary, section heading and a snippet; open the file with library.get.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "Words to look for" },
-                        "limit": { "type": "integer", "description": "Default 8, at most 20" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["query"]
                 }),
             },
             ToolDefinition {
@@ -1109,20 +882,20 @@ impl ToolRegistry {
     fn folded(&self, name: &str, arguments: &Value) -> Option<ToolCallResult> {
         let text = |k: &str| arguments.get(k).and_then(|v| v.as_str()).unwrap_or("");
         match (name, text("scope"), text("view"), text("action")) {
-            ("memory.search", "chat", _, _) => Some(self.call_tool("chat.search", arguments)),
-            ("memory.search", "library", _, _) => Some(self.call_tool("library.search", arguments)),
+            ("memory.search", "chat", _, _) => Some(self.dispatch("chat.search", arguments)),
+            ("memory.search", "library", _, _) => Some(self.dispatch("library.search", arguments)),
             ("memory.search", "all", _, _) => {
                 let parse = |r: ToolCallResult| serde_json::from_str::<Value>(&r.content.first().map(|c| c.text.clone()).unwrap_or_default()).unwrap_or(Value::Null);
                 Some(ToolCallResult::json(&json!({
-                    "notes": parse(self.call_tool("memory.search", &{ let mut a = arguments.clone(); a["scope"] = json!("notes"); a })),
-                    "chat": parse(self.call_tool("chat.search", arguments)),
-                    "library": parse(self.call_tool("library.search", arguments)),
+                    "notes": parse(self.dispatch("memory.search", &{ let mut a = arguments.clone(); a["scope"] = json!("notes"); a })),
+                    "chat": parse(self.dispatch("chat.search", arguments)),
+                    "library": parse(self.dispatch("library.search", arguments)),
                     "next_action": "Open a chat hit with chat.get, a library hit with library.get."
                 })))
             }
-            ("memory.list", _, view @ ("constitution" | "context" | "topics" | "skills" | "digest"), _) => Some(self.call_tool(&format!("memory.{view}"), arguments)),
+            ("memory.list", _, view @ ("constitution" | "context" | "topics" | "skills" | "digest"), _) => Some(self.dispatch(&format!("memory.{view}"), arguments)),
             ("continuity.brief", _, _, "handoff") => {
-                let passed = self.call_tool("baton.pass", arguments);
+                let passed = self.dispatch("baton.pass", arguments);
                 if passed.is_error != Some(true) {
                     // The note is also the next step on the brief, so the hand-off and the brief tell the same story.
                     if let Some(note) = arguments.get("note").and_then(|v| v.as_str()).filter(|n| !n.trim().is_empty()) {
@@ -1141,6 +914,15 @@ impl ToolRegistry {
     }
 
     pub fn call_tool(&self, name: &str, arguments: &Value) -> ToolCallResult {
+        if let Some((_, instead)) = REMOVED.iter().find(|(n, _)| *n == name) {
+            return ToolCallResult::error(format!("{name} was removed. Use {instead}."));
+        }
+        self.dispatch(name, arguments)
+    }
+
+    /// Runs a tool by name. The merged tools (`memory.search {scope}`, `memory.list {view}`, `continuity.brief {action: handoff}`) call the
+    /// private handlers of the names in REMOVED through here; agents cannot reach those names directly.
+    fn dispatch(&self, name: &str, arguments: &Value) -> ToolCallResult {
         let stamped = self.stamp(name, arguments);
         let arguments = &stamped;
         if let Some(r) = self.folded(name, arguments) {
@@ -1181,7 +963,7 @@ impl ToolRegistry {
             // ==========================================
             // Read Tools
             // ==========================================
-            "memory.recall" | "memory.ask" => {
+            "memory.recall" => {
                 let query = match arguments.get("query").and_then(|v| v.as_str()) {
                     Some(q) => q,
                     None => return ToolCallResult::error("Missing required parameter: query"),
@@ -1595,33 +1377,6 @@ impl ToolRegistry {
                     }
                     Ok(None) => ToolCallResult::error("Project not found"),
                     Err(e) => ToolCallResult::error(format!("Get project error: {}", e)),
-                }
-            }
-
-            "doc.list" => {
-                let project_id = match arguments.get("project_id").and_then(|v| v.as_str()) {
-                    Some(pid) => pid,
-                    None => return ToolCallResult::error("Missing parameter: project_id"),
-                };
-                match self.db.list_documents(project_id) {
-                    Ok(docs) => ToolCallResult::json(&docs),
-                    Err(e) => ToolCallResult::error(format!("List documents error: {}", e)),
-                }
-            }
-
-            "doc.get" => {
-                let project_id = match arguments.get("project_id").and_then(|v| v.as_str()) {
-                    Some(pid) => pid,
-                    None => return ToolCallResult::error("Missing parameter: project_id"),
-                };
-                let rel_path = match arguments.get("relative_path").and_then(|v| v.as_str()) {
-                    Some(p) => p,
-                    None => return ToolCallResult::error("Missing parameter: relative_path"),
-                };
-                match self.db.get_document_by_path(project_id, rel_path) {
-                    Ok(Some(doc)) => ToolCallResult::json(&doc),
-                    Ok(None) => ToolCallResult::error("Tracked document not found"),
-                    Err(e) => ToolCallResult::error(format!("Get document error: {}", e)),
                 }
             }
 
@@ -2091,91 +1846,6 @@ impl ToolRegistry {
             // ==========================================
             // Knowledge Graph Tools
             // ==========================================
-            "graph.index" => {
-                let project_id = match arguments.get("project_id").and_then(|v| v.as_str()) {
-                    Some(p) => p,
-                    None => return ToolCallResult::error("Missing parameter: project_id"),
-                };
-                let path = match arguments.get("path").and_then(|v| v.as_str()) {
-                    Some(p) => p,
-                    None => return ToolCallResult::error("Missing parameter: path"),
-                };
-
-                let builder = GraphBuilder::new(&self.db);
-                match builder.scan_and_index_project(project_id, path) {
-                    Ok((entities_count, edges_count)) => ToolCallResult::json(&json!({
-                        "indexed": true,
-                        "project_id": project_id,
-                        "entities_indexed": entities_count,
-                        "edges_indexed": edges_count,
-                    })),
-                    Err(e) => ToolCallResult::error(format!("Graph indexing failed: {}", e)),
-                }
-            }
-
-            "graph.query" => {
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let entity_type = arguments.get("entity_type").and_then(|v| v.as_str());
-                let name_pattern = arguments.get("name_pattern").and_then(|v| v.as_str());
-                let path_prefix = arguments.get("path_prefix").and_then(|v| v.as_str());
-                let limit = arguments
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(20) as usize;
-
-                match self.db.query_graph_entities(
-                    project_id,
-                    entity_type,
-                    name_pattern,
-                    path_prefix,
-                    limit,
-                ) {
-                    Ok(entities) => ToolCallResult::json(&entities),
-                    Err(e) => ToolCallResult::error(format!("Graph query failed: {}", e)),
-                }
-            }
-
-            "graph.neighbors" => {
-                let entity_id = match arguments.get("entity_id").and_then(|v| v.as_str()) {
-                    Some(id) => id,
-                    None => return ToolCallResult::error("Missing parameter: entity_id"),
-                };
-
-                let outgoing = self
-                    .db
-                    .get_outgoing_graph_edges(entity_id)
-                    .unwrap_or_default();
-                let incoming = self
-                    .db
-                    .get_incoming_graph_edges(entity_id)
-                    .unwrap_or_default();
-
-                ToolCallResult::json(&json!({
-                    "entity_id": entity_id,
-                    "outgoing_edges": outgoing,
-                    "incoming_edges": incoming,
-                }))
-            }
-
-            "graph.impact" => {
-                let target = match arguments.get("target").and_then(|v| v.as_str()) {
-                    Some(t) => t,
-                    None => return ToolCallResult::error("Missing parameter: target"),
-                };
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let depth = arguments.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
-
-                let builder = GraphBuilder::new(&self.db);
-                match builder.trace_impact(project_id, target, depth) {
-                    Ok(Some(report)) => ToolCallResult::json(&report),
-                    Ok(None) => ToolCallResult::error(format!(
-                        "Target symbol or file '{}' not found in graph",
-                        target
-                    )),
-                    Err(e) => ToolCallResult::error(format!("Impact analysis failed: {}", e)),
-                }
-            }
-
             // ==========================================
             // Multi-Agent Lock & Lease Coordination Tools
             // ==========================================
@@ -2476,23 +2146,6 @@ impl ToolRegistry {
                 }))
             }
 
-            "baton.pickup" => {
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let session_id = arguments.get("session_id").and_then(|v| v.as_str());
-
-                match self.db.latest_baton(project_id, session_id) {
-                    Ok(Some(baton)) => {
-                        let payload = json!({
-                            "baton": baton,
-                            "next_action": "Call memory.list with view=context for full project context, then continue with the packet's next step."
-                        });
-                        ToolCallResult::json(&payload)
-                    }
-                    Ok(None) => ToolCallResult::error("No handoff baton found for this session"),
-                    Err(e) => ToolCallResult::error(format!("Failed to pick up baton: {}", e)),
-                }
-            }
-
             "task.create" => {
                 let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
                     Some(s) => s,
@@ -2569,90 +2222,6 @@ impl ToolRegistry {
                         ToolCallResult::error("Submit refused: task is not claimed by this session")
                     }
                     Err(e) => ToolCallResult::error(format!("Failed to submit task: {}", e)),
-                }
-            }
-
-            "review.submit" => {
-                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: session_id"),
-                };
-                let diff = match arguments.get("diff").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: diff"),
-                };
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let task_id = arguments.get("task_id").and_then(|v| v.as_str());
-                let title = arguments
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("diff review");
-                let test_command = arguments.get("test_command").and_then(|v| v.as_str());
-
-                match self.db.submit_review(
-                    project_id,
-                    task_id,
-                    session_id,
-                    title,
-                    diff,
-                    test_command,
-                ) {
-                    Ok(review) => ToolCallResult::json(&json!({
-                        "status": "queued",
-                        "review": review,
-                        "next_action": "Another agent reviews it with review.next (never the author)."
-                    })),
-                    Err(e) => ToolCallResult::error(format!("Failed to queue review: {}", e)),
-                }
-            }
-
-            "review.next" => {
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let session_id = arguments.get("session_id").and_then(|v| v.as_str());
-
-                match self.db.next_review(project_id, session_id) {
-                    Ok(Some(review)) => ToolCallResult::json(&json!({
-                        "review": review,
-                        "next_action": "Run its test_command, then post the verdict with review.post (tests_passed decides)."
-                    })),
-                    Ok(None) => ToolCallResult::error("No pending reviews for this session"),
-                    Err(e) => ToolCallResult::error(format!("Failed to fetch review: {}", e)),
-                }
-            }
-
-            "review.post" => {
-                let id = match arguments.get("id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: id"),
-                };
-                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: session_id"),
-                };
-                let approved = arguments
-                    .get("approved")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let tests_passed = match arguments.get("tests_passed").and_then(|v| v.as_bool()) {
-                    Some(t) => t,
-                    None => return ToolCallResult::error(
-                        "Missing required parameter: tests_passed (test results judge the diff)",
-                    ),
-                };
-                let verdict = arguments.get("verdict").and_then(|v| v.as_str());
-
-                match self
-                    .db
-                    .post_review(id, session_id, approved, tests_passed, verdict)
-                {
-                    Ok(Some(review)) => ToolCallResult::json(&json!({
-                        "review": review,
-                        "next_action": "If rejected, the author fixes and resubmits with review.submit."
-                    })),
-                    Ok(None) => ToolCallResult::error(
-                        "Post refused: review is decided, missing, or your own diff",
-                    ),
-                    Err(e) => ToolCallResult::error(format!("Failed to post review: {}", e)),
                 }
             }
 

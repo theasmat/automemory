@@ -73,7 +73,7 @@ def main():
         s = j(sb.mcp("memory.search", scope="chat", query="sticky routing", project_id="app"))
         rep.check(len(s["hits"]) >= 1 and s["hits"][0]["agent"] == "claude", "memory.search (scope chat) returns hits for an agent", json.dumps(s)[:240])
         old = j(sb.mcp("chat.search", query="sticky routing", project_id="app"))
-        rep.check(old["hits"] == s["hits"], "the old name chat.search still answers the same", json.dumps(old)[:160])
+        rep.check("memory.search with scope=chat" in json.dumps(old), "the removed name chat.search points to memory.search", json.dumps(old)[:160])
         g = j(sb.mcp("chat.get", session=s["hits"][0]["session"], from_seq=max(0, s["hits"][0]["seq"] - 1), limit=4))
         rep.check(len(g["messages"]) >= 2 and g["title"] == "Plan the demo shop cart", "chat.get opens the exchange in order", json.dumps(g)[:240])
         rep.check("no such session" in json.dumps(j(sb.mcp("chat.get", session="claude:nope"))).lower(), "an unknown session is an error")

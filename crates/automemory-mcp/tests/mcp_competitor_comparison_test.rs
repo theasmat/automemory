@@ -131,8 +131,9 @@ fn test_mcp_comprehensive_tool_suite_execution() {
         id: Some(json!(107)),
         method: "tools/call".to_string(),
         params: Some(json!({
-            "name": "memory.context",
+            "name": "memory.list",
             "arguments": {
+                "view": "context",
                 "project_id": "mcp-test-app",
                 "task_query": "How do we configure database and cache?",
                 "max_tokens": 1500

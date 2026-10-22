@@ -311,13 +311,7 @@ fn has_reviewed_proposals(db: &Database) -> bool {
             |r| r.get(0),
         )
         .unwrap_or(0);
-    if prop_count > 0 {
-        return true;
-    }
-    let rev_count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM reviews", [], |r| r.get(0))
-        .unwrap_or(0);
-    rev_count > 0
+    prop_count > 0
 }
 
 #[cfg(test)]

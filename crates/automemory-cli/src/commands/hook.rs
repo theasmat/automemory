@@ -783,7 +783,7 @@ fn active_notifier() -> Box<dyn automemory_core::ports::Notifier> {
 }
 
 /// Pending-work nudge for UserPromptSubmit: returns `Some` only when this
-/// session holds a claimed task, has an addressed baton, or owes a review.
+/// session holds a claimed task or has an addressed hand-off.
 fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str) -> Option<String> {
     let mut items = Vec::new();
     if let Ok(tasks) = db.list_tasks(project_id, Some(TaskState::Claimed), 10) {
@@ -803,14 +803,6 @@ fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str)
         .is_some_and(|b| b.to_session.as_deref() == Some(session_id))
     {
         items.push("a hand-off awaits you (memory.resume)".to_string());
-    }
-    if db
-        .next_review(project_id, Some(session_id))
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        items.push("a diff awaits your review (review.next)".to_string());
     }
     if items.is_empty() {
         None

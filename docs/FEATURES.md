@@ -79,7 +79,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Automatic locking (hook leases, shell prediction, `git status` reconciliation, prompt visibility, idle-holder watcher, coverage report) | ✅ | Agents never call `lock.acquire`; see ARCHITECTURE §7. Hook-less agents get alerts only |
 | Worktree-shared memory/decisions/leases | 🔧 | Uncommitted work in `sync/` |
 | Baton handoff | ✅ | |
-| Task queue + cross-review (tests as judge) | ✅ | |
+| Task queue | ✅ | Cross-review (`review.*`) was removed; a planning room covers a second opinion |
 | Planning Room: state machine + MCP tools, human verdict (`automemory room`, dashboard Planning rooms): approve records the decision (critique as dissent) and one task per step; reject; another round | ✅ | Live trial T11 passed with Claude Code and Antigravity (3 fixes); the A/B eval is still open |
 | Blackboard / checkpoint | ✅ | `lock.status` is the blackboard; `memory.digest auto_save` and the automatic `Session checkpoint` on Stop cover checkpoints |
 | Pre-merge file-overlap check | ✅ | `automemory overlap`; file-level, git only |

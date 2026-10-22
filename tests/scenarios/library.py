@@ -55,7 +55,7 @@ def main():
         hits = sb.mcp("memory.search", scope="library", query="sticky routing", project_id="app")
         rep.check(hits["hits"] and hits["hits"][0]["path"] == "plans/prd-cart.md", "MCP memory.search (scope library) finds it", json.dumps(hits)[:200])
 
-        rep.check(sb.mcp("library.search", query="sticky routing", project_id="app")["hits"] == hits["hits"], "the old name library.search still answers the same")
+        rep.check("memory.search with scope=library" in str(sb.mcp("library.search", query="x", project_id="app")), "the removed name library.search points to memory.search")
         # The session-start pack carries a short index, not the files.
         out = json.dumps(sb.hook("claude", "prompt", {"session_id": "s-new", "hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": str(sb.project)})[0] or {})
         rep.check("Project library" in out and "plans/prd-cart.md" in out and "store carts in SQLite" not in out, "a new session is told the library exists (index only, not the content)", out[:300])
@@ -94,7 +94,7 @@ def main():
         full = sb.mcp("library.get", path="PRD.md", tier=2, project_id="app")
         rep.check(full.get("source") == "repo" and "Carts matter most" in full["content"], "library.get opens one (the file itself at tier 2)", json.dumps(full)[:200])
         rep.check(sb.mcp("library.get", path="PRD.md", tier=0, project_id="app")["content"] != "", "and its abstract at tier 0")
-        rep.check(sb.mcp("doc.list", project_id="app") is not None, "the old doc.list name still answers")
+        rep.check("library.list" in str(sb.mcp("doc.list", project_id="app")), "the removed name doc.list points to library.list")
 
         # L2: a folder view for agents without MCP, kept out of git status; linked files from the global config.
         r = sb.run("library", "sync")

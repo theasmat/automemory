@@ -17,7 +17,6 @@ pub mod preferences;
 pub mod projects;
 pub mod proposals;
 pub mod prune;
-pub mod reviews;
 pub mod rooms;
 pub mod skills;
 pub mod stats;
