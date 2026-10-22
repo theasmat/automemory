@@ -4,11 +4,11 @@ use crate::guardrails::rules::GuardrailRule;
 use crate::hooks::{CanonicalEvent, FailureMode, HandlerOutput, PipelineCtx};
 use crate::models::{LeaseAcquireArgs, LeaseAcquireResult, Memory, PostKind, RoomState, TrustTier};
 use crate::retrieval::VectorEngine;
-use crate::sync::{GitSync, VaultManager};
+use crate::sync::GitSync;
 use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Versioned port contract (PRD §7.4). Every swappable module implements
 /// [`Port`]; the host refuses `api_version` mismatches instead of
@@ -357,31 +357,6 @@ impl SyncBackend for GitTransport {
     }
 }
 
-pub const EXPORTER_API_VERSION: &str = "1";
-
-/// Mirror/pointer seam (PRD §7.1 Exporter). The default writes the
-/// text-first vault; markdown mirrors implement this trait.
-pub trait Exporter: Send + Sync {
-    fn export(&self) -> Result<()>;
-}
-
-pub struct VaultExporter<'a> {
-    db: &'a Database,
-    vault_path: PathBuf,
-}
-
-impl<'a> VaultExporter<'a> {
-    pub fn new(db: &'a Database, vault_path: PathBuf) -> Self {
-        Self { db, vault_path }
-    }
-}
-
-impl Exporter for VaultExporter<'_> {
-    fn export(&self) -> Result<()> {
-        VaultManager::new(self.db, &self.vault_path).export_to_vault()
-    }
-}
-
 pub const RUNNER_API_VERSION: &str = "1";
 
 /// Headless-launch seam (PRD §7.1 Runner). PRD specifies None in v1, so the
@@ -491,18 +466,6 @@ pub fn backend_for(name: &str) -> Result<Box<dyn SyncBackend>> {
     match name {
         "git" => Ok(Box::new(GitTransport)),
         other => Err(anyhow!("unknown sync backend: {other}")),
-    }
-}
-
-/// Resolves a configured exporter name. Unknown names error.
-pub fn exporter_for<'a>(
-    name: &str,
-    db: &'a Database,
-    vault_path: PathBuf,
-) -> Result<Box<dyn Exporter + 'a>> {
-    match name {
-        "vault" => Ok(Box::new(VaultExporter::new(db, vault_path))),
-        other => Err(anyhow!("unknown exporter: {other}")),
     }
 }
 
@@ -632,12 +595,6 @@ pub const PORTS: &[PortInfo] = &[
         status: PortStatus::Native,
         default_impl: "human-turn ping",
     },
-    PortInfo {
-        id: "Exporter",
-        api_version: EXPORTER_API_VERSION,
-        status: PortStatus::Native,
-        default_impl: "vault export, agent rule files",
-    },
 ];
 
 /// External plugin contract (PRD §7.4): least-privilege manifest parsed
@@ -742,12 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn port_inventory_covers_all_sixteen() {
-        assert_eq!(PORTS.len(), 16);
+    fn port_inventory_covers_all_fifteen() {
+        assert_eq!(PORTS.len(), 15);
         let mut ids: Vec<&str> = PORTS.iter().map(|p| p.id).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 16);
+        assert_eq!(ids.len(), 15);
         assert!(PORTS
             .iter()
             .any(|p| p.id == "HookHandler" && p.status == PortStatus::Native));
@@ -964,41 +921,6 @@ mod tests {
         assert!(backend.push(&dir, None, None).is_err());
     }
 
-    #[test]
-    fn vault_exporter_writes_text_first_vault() {
-        let db = Database::open_in_memory().unwrap();
-        seed_memory(&db, "export seam memory");
-        let dir =
-            std::env::temp_dir().join(format!("automemory-export-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        VaultExporter::new(&db, dir.clone()).export().unwrap();
-        let found = walk_for_memories(&dir);
-        assert!(
-            found,
-            "exported vault should contain memory records under {dir:?}"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    fn walk_for_memories(dir: &std::path::Path) -> bool {
-        let mut stack = vec![dir.to_path_buf()];
-        while let Some(d) = stack.pop() {
-            let entries = std::fs::read_dir(&d).unwrap();
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    stack.push(path);
-                } else if path.is_file() {
-                    if let Ok(text) = std::fs::read_to_string(&path) {
-                        if text.contains("export seam memory") {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
-    }
 
     #[test]
     fn no_runner_refuses_with_vendor_terms_reason() {
@@ -1078,8 +1000,5 @@ mod tests {
         assert!(verifier_for("bogus").is_err());
         assert!(backend_for("git").is_ok());
         assert!(backend_for("bogus").is_err());
-        let db = Database::open_in_memory().unwrap();
-        assert!(exporter_for("vault", &db, std::path::PathBuf::from("/tmp")).is_ok());
-        assert!(exporter_for("bogus", &db, std::path::PathBuf::from("/tmp")).is_err());
     }
 }

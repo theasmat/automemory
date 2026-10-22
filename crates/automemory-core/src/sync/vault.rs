@@ -247,7 +247,9 @@ impl<'a> VaultManager<'a> {
         // 3. Import Global Skills
         let global_skills = global_dir.join("skills").join("skills.jsonl");
         Self::import_jsonl::<ProceduralSkill>(&global_skills, |s| {
-            let _ = self.db.save_skill(&s);
+            if let Err(e) = self.db.save_skill(&s) {
+                warn!(id = %s.id, error = %e, "vault import: skill not saved");
+            }
         });
 
         // 4. Import Projects
@@ -286,7 +288,9 @@ impl<'a> VaultManager<'a> {
             // Import skills
             let skills_jsonl = p_dir.join("skills").join("skills.jsonl");
             Self::import_jsonl::<ProceduralSkill>(&skills_jsonl, |s| {
-                let _ = self.db.save_skill(&s);
+                if let Err(e) = self.db.save_skill(&s) {
+                warn!(id = %s.id, error = %e, "vault import: skill not saved");
+            }
             });
 
             // Import traces

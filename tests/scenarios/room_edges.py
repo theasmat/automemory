@@ -105,7 +105,7 @@ def main():
             rep.check("at least" in json.dumps(r), f"a placeholder post ({junk!r}) is refused", json.dumps(r)[:140])
         sb.mcp("room.post", room_id=rid, session_id="c-1", kind="propose", body="Yes, an in-process LRU (with enough detail to count)", evidence=[ev])
 
-        # ── A posting race: two agents answer the same turn at once; exactly one wins ──
+        # ── A posting race: the turn holder answers twice at once (two processes); exactly one is stored ──
         sb.mcp("room.join", session_id="a-1", agent="antigravity", room_id=rid)
         results = []
 
@@ -113,7 +113,7 @@ def main():
             results.append(json.dumps(sb.mcp("room.post", room_id=rid, session_id=sid, kind="critique", body=f"critique by {sid}, with enough detail to count", evidence=[ev])))
 
         sb.mcp("room.join", session_id="a-2", agent="antigravity", room_id=rid)
-        threads = [threading.Thread(target=critique, args=(sid,)) for sid in ("a-1", "a-2")]
+        threads = [threading.Thread(target=critique, args=(sid,)) for sid in ("a-1", "a-1")]
         [t.start() for t in threads]
         [t.join() for t in threads]
         posts = json.loads(http(port, f"/api/rooms/{rid}")[1])["posts"]

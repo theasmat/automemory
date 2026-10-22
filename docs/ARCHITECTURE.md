@@ -61,7 +61,6 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 | Runner | Launch an agent headless | None in v1 |
 | RoomProtocol | Planning room format | Propose → critique → revise |
 | Notifier | Tell the human it is their turn | Desktop toast |
-| Exporter | Write pointers/mirrors | One-line AGENTS.md pointer |
 
 Plugins declare a manifest (`api_version`, `ports`, capabilities, hook subscriptions, priority, latency budget, failure mode). Rules: versioned ports (host refuses mismatches), least-privilege capabilities, namespaced storage with the plugin's own trust tier, out-of-process or WASM sandboxing, per-plugin migrations, contract tests per agent version. Config is layered: defaults → `~/.automemory/config.toml` → `.automemory/config.toml` → local override.
 
