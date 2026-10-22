@@ -2,11 +2,9 @@
 //!
 //! AutoMemory builds no AST graph of its own. Symbol questions go to
 //! `codebase-memory-mcp cli --json <tool> <args>`; when the binary is missing,
-//! the project is not indexed, or a call fails, the answer falls back to the local
-//! file-hash graph ([`GraphCodeIntel`]) so verification never hard-fails.
+//! the project is not indexed, or a call fails, the answer is negative ([`NoCodeIntel`]) so verification never hard-fails.
 
-use crate::db::Database;
-use crate::ports::{CodeIntel, GraphCodeIntel, Port, CODE_INTEL_API_VERSION};
+use crate::ports::{CodeIntel, NoCodeIntel, Port, CODE_INTEL_API_VERSION};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -65,17 +63,17 @@ pub fn project_name_for(root: &Path) -> String {
         .replace(['/', '\\', ':'], "-")
 }
 
-pub struct CbmCodeIntel<'a> {
-    fallback: GraphCodeIntel<'a>,
+pub struct CbmCodeIntel {
+    fallback: NoCodeIntel,
     bin: PathBuf,
     project: String,
 }
 
-impl<'a> CbmCodeIntel<'a> {
+impl CbmCodeIntel {
     /// `None` when the binary is not installed.
-    pub fn detect(db: &'a Database, project_root: &Path) -> Option<Self> {
+    pub fn detect(project_root: &Path) -> Option<Self> {
         Some(Self {
-            fallback: GraphCodeIntel::new(db),
+            fallback: NoCodeIntel,
             bin: find_binary()?,
             project: project_name_for(project_root),
         })
@@ -177,7 +175,7 @@ fn snippet_source(text: &str) -> Option<String> {
     )
 }
 
-impl Port for CbmCodeIntel<'_> {
+impl Port for CbmCodeIntel {
     fn port_name(&self) -> &'static str {
         "CodeIntel"
     }
@@ -186,7 +184,7 @@ impl Port for CbmCodeIntel<'_> {
     }
 }
 
-impl CodeIntel for CbmCodeIntel<'_> {
+impl CodeIntel for CbmCodeIntel {
     fn symbol_exists(&self, project_id: Option<&str>, symbol: &str) -> bool {
         !self.find_qualified(symbol).is_empty() || self.fallback.symbol_exists(project_id, symbol)
     }
@@ -228,14 +226,14 @@ impl CodeIntel for CbmCodeIntel<'_> {
     }
 }
 
-/// The CodeIntel to use for `project_root`: the engine when installed, else the local graph.
-pub fn code_intel_for<'a>(db: &'a Database, project_root: &Path) -> Box<dyn CodeIntel + 'a> {
+/// The CodeIntel to use for `project_root`: the engine when installed, else one that answers negatively.
+pub fn code_intel_for(project_root: &Path) -> Box<dyn CodeIntel> {
     // The engine names a project after the repository root, not the folder we happen to run in.
     let root = crate::sync::GitSync::resolve_git_canonical_root(project_root)
         .unwrap_or_else(|| project_root.to_path_buf());
-    match CbmCodeIntel::detect(db, &root) {
+    match CbmCodeIntel::detect(&root) {
         Some(c) => Box::new(c),
-        None => Box::new(GraphCodeIntel::new(db)),
+        None => Box::new(NoCodeIntel),
     }
 }
 
@@ -275,9 +273,8 @@ esac
     #[test]
     fn engine_answers_replace_the_local_graph() {
         let bin = fake_engine("answers");
-        let db = Database::open_in_memory().unwrap();
         let intel = CbmCodeIntel {
-            fallback: GraphCodeIntel::new(&db),
+            fallback: NoCodeIntel,
             bin,
             project: "proj".into(),
         };
@@ -300,22 +297,20 @@ esac
         let script = "#!/bin/sh\nhead -c 200000 /dev/zero | tr '\\0' 'x' | sed 's/^/{\"structuredContent\":{\"groups\":[{\"qn_prefix\":\"p\",\"rows\":[[\"target_fn\"]]}],\"pad\":\"/; s/$/\"}}/'\n";
         std::fs::write(&bin, script).unwrap();
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let db = Database::open_in_memory().unwrap();
-        let intel = CbmCodeIntel { fallback: GraphCodeIntel::new(&db), bin, project: "p".into() };
+        let intel = CbmCodeIntel { fallback: NoCodeIntel, bin, project: "p".into() };
         let start = std::time::Instant::now();
         assert!(intel.symbol_exists(None, "target_fn"));
         assert!(start.elapsed() < Duration::from_secs(3), "must not wait for the timeout");
     }
 
     #[test]
-    fn missing_or_failing_engine_falls_back_to_local_graph() {
-        let db = Database::open_in_memory().unwrap();
+    fn missing_or_failing_engine_answers_negative() {
         let intel = CbmCodeIntel {
-            fallback: GraphCodeIntel::new(&db),
+            fallback: NoCodeIntel,
             bin: PathBuf::from("/nonexistent/codebase-memory-mcp"),
             project: "proj".into(),
         };
-        // Empty local graph answers negative, never panics.
+        // A failing engine answers negative, never panics.
         assert!(!intel.symbol_exists(None, "anything"));
         assert!(intel.symbol_hash(None, "anything").is_none());
         assert!(intel.callers(None, "anything").is_empty());

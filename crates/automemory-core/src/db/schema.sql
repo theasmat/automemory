@@ -258,37 +258,6 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE
 );
 
--- Codebase Structural Knowledge Graph
-CREATE TABLE IF NOT EXISTS graph_entities (
-    id TEXT PRIMARY KEY,
-    project_id TEXT,
-    entity_type TEXT NOT NULL,
-    name TEXT NOT NULL,
-    path TEXT NOT NULL,
-    line_start INTEGER,
-    line_end INTEGER,
-    metadata TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_graph_entities_proj ON graph_entities(project_id, entity_type);
-CREATE INDEX IF NOT EXISTS idx_graph_entities_path ON graph_entities(path);
-CREATE INDEX IF NOT EXISTS idx_graph_entities_name ON graph_entities(name);
-
-CREATE TABLE IF NOT EXISTS graph_edges (
-    source_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,
-    confidence REAL NOT NULL DEFAULT 1.0,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (source_id, target_id, relation_type),
-    FOREIGN KEY(source_id) REFERENCES graph_entities(id) ON DELETE CASCADE,
-    FOREIGN KEY(target_id) REFERENCES graph_entities(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id);
-
 CREATE TABLE IF NOT EXISTS custom_guardrail_rules (
     id TEXT PRIMARY KEY,
     project_id TEXT,

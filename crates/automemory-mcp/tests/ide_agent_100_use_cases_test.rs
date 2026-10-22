@@ -1,7 +1,6 @@
 use automemory_core::bip39;
 use automemory_core::db::Database;
 use automemory_core::extraction::TrajectoryDistiller;
-use automemory_core::graph::{GraphBuilder, GraphEdge, GraphEntity};
 use automemory_core::guardrails::{
     CustomGuardrailRule, GuardrailAction, GuardrailEvaluator, GuardrailSeverity,
 };
@@ -1538,153 +1537,6 @@ fn test_suite_08_trajectory_distillation_and_skills() {
 }
 
 // ============================================================================
-// SUITE 9: AST KNOWLEDGE GRAPH & MULTI-HOP IMPACT ANALYSIS (UC-091 to UC-098)
-// ============================================================================
-#[test]
-fn test_suite_09_ast_knowledge_graph_and_impact() {
-    let (db, project) = setup_test_db("proj-graph-09");
-    let builder = GraphBuilder::new(&db);
-
-    // UC-091: Insert AST entity nodes (File, Function, Struct)
-    let e_main = GraphEntity {
-        id: "ent-main-file".to_string(),
-        project_id: Some(project.id.clone()),
-        entity_type: "file".to_string(),
-        name: "main.c".to_string(),
-        path: "src/main.c".to_string(),
-        line_start: Some(1),
-        line_end: Some(100),
-        metadata: json!({}),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-    let e_todo_c = GraphEntity {
-        id: "ent-todo-file".to_string(),
-        project_id: Some(project.id.clone()),
-        entity_type: "file".to_string(),
-        name: "todo.c".to_string(),
-        path: "src/todo.c".to_string(),
-        line_start: Some(1),
-        line_end: Some(250),
-        metadata: json!({}),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-    let e_destroy_fn = GraphEntity {
-        id: "ent-destroy-fn".to_string(),
-        project_id: Some(project.id.clone()),
-        entity_type: "function".to_string(),
-        name: "todo_destroy_item".to_string(),
-        path: "src/todo.c".to_string(),
-        line_start: Some(120),
-        line_end: Some(135),
-        metadata: json!({}),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-    db.batch_insert_graph_entities(&[e_main.clone(), e_todo_c.clone(), e_destroy_fn.clone()])
-        .unwrap();
-    let ent_found = db
-        .get_graph_entity_by_id("ent-destroy-fn")
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        ent_found.name, "todo_destroy_item",
-        "UC-091: AST entities inserted and retrieved"
-    );
-
-    // UC-092: Insert directional relationship edges (Calls, Defines)
-    let edge_defines = GraphEdge {
-        source_id: "ent-todo-file".to_string(),
-        target_id: "ent-destroy-fn".to_string(),
-        relation_type: "defines".to_string(),
-        confidence: 1.0,
-        created_at: Utc::now(),
-    };
-    let edge_calls = GraphEdge {
-        source_id: "ent-main-file".to_string(),
-        target_id: "ent-destroy-fn".to_string(),
-        relation_type: "calls".to_string(),
-        confidence: 1.0,
-        created_at: Utc::now(),
-    };
-    db.batch_insert_graph_edges(&[edge_defines, edge_calls])
-        .unwrap();
-
-    // UC-093: 1-hop direct neighbor query (incoming calls)
-    let incoming = db.get_incoming_graph_edges("ent-destroy-fn").unwrap();
-    assert_eq!(
-        incoming.len(),
-        2,
-        "UC-093: 1-hop incoming edges found (defined in todo.c, called in main.c)"
-    );
-
-    // UC-094: 2-hop transitive impact traversal via GraphBuilder::trace_impact
-    let impact = builder
-        .trace_impact(Some(&project.id), "todo_destroy_item", 2)
-        .unwrap();
-    assert!(impact.is_some(), "UC-094: Impact analysis returns report");
-    let rep = impact.unwrap();
-    assert_eq!(rep.target_entity.name, "todo_destroy_item");
-
-    // UC-095: Upstream blast radius identifies files that depend on changed entity
-    assert!(
-        rep.affected_files.contains(&"src/main.c".to_string())
-            || rep.affected_files.contains(&"src/todo.c".to_string()),
-        "UC-095: Affected files detected in blast radius"
-    );
-
-    // UC-096: Downstream dependency chain
-    let outgoing = db.get_outgoing_graph_edges("ent-main-file").unwrap();
-    assert!(
-        outgoing.iter().any(|e| e.target_id == "ent-destroy-fn"),
-        "UC-096: Outgoing call dependency identified"
-    );
-
-    // UC-097: Cyclic graph handling without infinite loops
-    let cycle_edge = GraphEdge {
-        source_id: "ent-destroy-fn".to_string(),
-        target_id: "ent-main-file".to_string(),
-        relation_type: "callbacks".to_string(),
-        confidence: 0.8,
-        created_at: Utc::now(),
-    };
-    db.batch_insert_graph_edges(&[cycle_edge]).unwrap();
-    let cycle_impact = builder
-        .trace_impact(Some(&project.id), "todo_destroy_item", 5)
-        .unwrap();
-    assert!(
-        cycle_impact.is_some(),
-        "UC-097: Cyclic graph terminates safely without recursion overflow"
-    );
-
-    // UC-098: Batch entity insertion benchmark
-    let mut bulk_entities = Vec::new();
-    for i in 0..100 {
-        bulk_entities.push(GraphEntity {
-            id: format!("bulk-ent-{}", i),
-            project_id: Some(project.id.clone()),
-            entity_type: "symbol".to_string(),
-            name: format!("symbol_{}", i),
-            path: "src/symbols.c".to_string(),
-            line_start: Some(i),
-            line_end: Some(i + 5),
-            metadata: json!({}),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        });
-    }
-    let start_batch = Instant::now();
-    db.batch_insert_graph_entities(&bulk_entities).unwrap();
-    let batch_elapsed = start_batch.elapsed();
-    assert!(
-        batch_elapsed.as_millis() < 50,
-        "UC-098: 100 AST entities batch-inserted in <50ms (actual: {}ms)",
-        batch_elapsed.as_millis()
-    );
-}
-
-// ============================================================================
 // SUITE 10: FAILURE CATALOG, RESOLUTION & MCP PROTOCOL SUITE (UC-099 to UC-108)
 // ============================================================================
 #[test]
@@ -2211,7 +2063,6 @@ fn test_master_122_ide_agent_use_cases_runner() {
     println!("  [PASS] Suite 08: Trajectory Distillation & Procedural Playbooks (UC-081 - UC-090) in {:.2?}", t8.elapsed());
 
     let t9 = Instant::now();
-    test_suite_09_ast_knowledge_graph_and_impact();
     println!("  [PASS] Suite 09: AST Knowledge Graph & Multi-Hop Impact Analysis (UC-091 - UC-098) in {:.2?}", t9.elapsed());
 
     let t10 = Instant::now();

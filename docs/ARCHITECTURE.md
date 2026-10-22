@@ -20,7 +20,7 @@ Workspace layout:
 
 | Crate | Role |
 |---|---|
-| `automemory-core` | Domain logic: `db/` (SQLite, migrations, queries), `guardrails/`, `extraction/` (distiller, time-span digest, skills), `retrieval/`, `graph/` (CodeIntel port + file-hash fallback only), `crypto/`, `sync/`, `models/` |
+| `automemory-core` | Domain logic: `db/` (SQLite, migrations, queries), `guardrails/`, `extraction/` (distiller, time-span digest, skills), `retrieval/`, `codeintel.rs` (CodeIntel bridge to codebase-memory), `crypto/`, `sync/`, `models/` |
 | `automemory-cli` | CLI, hook handler, `serve` daemon, embedded dashboard assets |
 | `automemory-mcp` | JSON-RPC 2.0 MCP server over stdio and HTTP |
 | `clients/web` | Nuxt 3 dashboard source |
@@ -48,7 +48,7 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 |---|---|---|
 | AgentAdapter | Install hooks/MCP config; map native → canonical events | Claude Code, Codex, Antigravity (v1); 17 more connectors exist, unsupported until promoted |
 | HookHandler | One pipeline stage: allow / warn / block / annotate | Lease check, guardrail, nudge, ledger logger |
-| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `GraphCodeIntel` file-hash fallback when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
+| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `NoCodeIntel` (answers "unknown") when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
 | MemoryStore | Persist memories, decisions, ledger | SQLite WAL |
 | Retriever | Rank candidates | FTS5 BM25 × decay × confidence; local n-gram vector projection |
 | EmbeddingProvider | Text → vectors | `[embeddings]` provider: n-gram (default), Ollama, OpenAI-compatible HTTP, or any command (`exec`); vectors stored per model in `memory_vectors`. Saved as profiles (`[embeddings.profiles.<name>]`, active one in `[embeddings] active`); cloud API keys live in the OS keychain through `secrets.rs` (the `keyring` crate; encrypted-file fallback), never in config, database, logs or sync. Used only when `[retrieval] mode = "hybrid"`; hooks are always keyword-only; remote endpoints need `allow_network` and get redacted text; any provider failure falls back to keyword |
@@ -99,7 +99,7 @@ Hook management: `automemory hooks enable|disable|move|add|test`, shadow mode (l
 
 One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`, run atomically under `BEGIN IMMEDIATE`; a failed step aborts and rolls back instead of bumping the version. Lease acquisition is also one `BEGIN IMMEDIATE` transaction, because every hook is its own process. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
 
-**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `graph_entities`, `graph_edges`.
+**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`. (Schema v19 drops the old `graph_entities` and `graph_edges`.)
 
 **Memory:** `scope` (global|project), `type` (fact, decision, lesson, pattern, warning, observation, preference, skill), `status` (active, candidate, pinned, stale, changed, superseded, archived, invalid, review), `source_kind`, `confidence`, `importance`, `freshness`, tags/entities/metadata. Dedup: scope-aware in-place upsert with a version row.
 
@@ -113,7 +113,7 @@ One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Mig
 | 4 Agent claim | Agent wrote it, unverified | Candidate; withheld from default recall |
 | 5 Untrusted origin | Web, fetched files, other agents' posts | Quarantined until verified |
 
-Synced: memories, decisions, constitution. Never synced: leases, FTS index, vectors, code graph.
+Synced: memories, decisions, constitution. Never synced: leases, FTS index, vectors.
 
 ## 6. Retrieval and context
 
@@ -156,7 +156,7 @@ Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace
 
 **CLI.** `init`, `doctor`, `connect <agent|all> [-g]`, `disconnect`, `serve --port`, `mcp`, `memory list|search|save|get|archive|digest`, `proposal summary|list|decide|approve-all|reject-all`, `mode get|set`, `rule …`, `sync remote|auto|bootstrap|pair`, `adapter`, `hooks`, `plugin`, `eval`, `stop`, `locks`/`unlock`, `decision`, `pin|veto|revoke`, `baton`. Run `automemory <cmd> --help` for flags; that is the reference.
 
-**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/coordination` (leases, rooms, batons; the Agents & Locks page), `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, graph, skills, failures. Every request must carry a loopback `Host` and, if it has an `Origin`, the dashboard's own origin (blocks CSRF and DNS rebinding; no CORS). Proposal decisions and guardrail/mode writes also need the human password header when one is set; the UI prompts once per tab. Once a password is set, the MCP tools `memory.proposals.decide` and `decide_all` refuse agents, and the CLI `proposal decide|approve-all|reject-all` need the password too.
+**Dashboard / REST** (`automemory serve`, `127.0.0.1:4545`, embedded Nuxt 3 build): `/api/proposals[/summary|/:id/decide|/decide_all]`, `/api/coordination` (leases, rooms, batons; the Agents & Locks page), `/api/memories`, `/api/stats`, `/api/guardrails/{rules,evaluate}`, `/api/mode`, WebSocket `/ws` for live events. Views: proposals queue, memory explorer, skills, failures. Every request must carry a loopback `Host` and, if it has an `Origin`, the dashboard's own origin (blocks CSRF and DNS rebinding; no CORS). Proposal decisions and guardrail/mode writes also need the human password header when one is set; the UI prompts once per tab. Once a password is set, the MCP tools `memory.proposals.decide` and `decide_all` refuse agents, and the CLI `proposal decide|approve-all|reject-all` need the password too.
 
 **Shared instruction files** (`commands/rules_export.rs`, `resume::build_rules_view`): a derived, deterministic, redacted digest (active decisions plus user-written memories, ≤3 KB) inside `<!-- automemory:begin/end -->` markers in each agent's native instruction file. The DB stays the source of truth; hooks refresh only files that already carry the block; `disconnect` strips only the block (a file that held nothing else is deleted).
 

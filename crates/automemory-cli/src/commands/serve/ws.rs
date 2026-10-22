@@ -1,6 +1,5 @@
 use super::state::AppState;
 use automemory_core::extraction::TrajectoryDistiller;
-use automemory_core::graph::GraphBuilder;
 use automemory_core::models::*;
 use automemory_core::retrieval::RetrievalEngine;
 use axum::{
@@ -98,8 +97,6 @@ pub async fn handle_ws_json_rpc(raw: &str, state: &AppState) -> Option<String> {
         "decide_proposal" => rpc_decide_proposal(&req.params, state),
         "skills" => rpc_skills(&req.params, state),
         "constitution" => rpc_constitution(&req.params, state),
-        "graph" => rpc_graph(&req.params, state),
-        "trace_impact" => rpc_trace_impact(&req.params, state),
         "assemble_context" => rpc_assemble_context(&req.params, state),
         "trigger_sync" => {
             state.sync_daemon.trigger();
@@ -290,44 +287,6 @@ fn rpc_decide_proposal(params: &Value, state: &AppState) -> Value {
         }
         Ok(false) => json!({ "error": "Proposal not found" }),
         Err(e) => json!({ "error": e.to_string() }),
-    }
-}
-
-fn rpc_graph(params: &Value, state: &AppState) -> Value {
-    let project_id = params.get("project_id").and_then(|v| v.as_str());
-    let limit_entities = params
-        .get("limit_entities")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(400) as usize;
-    let limit_edges = params
-        .get("limit_edges")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(800) as usize;
-
-    let entities = state
-        .db
-        .list_all_graph_entities(project_id, limit_entities)
-        .unwrap_or_default();
-    let edges = state
-        .db
-        .list_all_graph_edges(limit_edges)
-        .unwrap_or_default();
-    json!({
-        "entities": entities,
-        "edges": edges,
-    })
-}
-
-fn rpc_trace_impact(params: &Value, state: &AppState) -> Value {
-    let project_id = params.get("project_id").and_then(|v| v.as_str());
-    let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("");
-    let depth = params.get("depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
-
-    let builder = GraphBuilder::new(&state.db);
-    match builder.trace_impact(project_id, target, depth) {
-        Ok(Some(report)) => json!({ "success": true, "report": report }),
-        Ok(None) => json!({ "success": false, "message": "Target entity not found in graph" }),
-        Err(e) => json!({ "success": false, "error": e.to_string() }),
     }
 }
 

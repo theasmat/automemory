@@ -380,8 +380,7 @@ impl Database {
 
     /// PostCommit staleness: memories linked (via entities or recorded files)
     /// to committed files flip to `changed` so the next recall re-verifies.
-    /// Returns the flipped ids. Symbols resolve through the graph index;
-    /// files with no indexed symbols still match recorded file lists.
+    /// Returns the flipped ids. A memory is linked by the files recorded with it.
     pub fn flag_memories_changed_by_files(
         &self,
         project_id: Option<&str>,
@@ -390,24 +389,12 @@ impl Database {
         if files.is_empty() {
             return Ok(Vec::new());
         }
-        let mut altered: Vec<String> = Vec::new();
-        for f in files.iter().take(50) {
-            for e in self
-                .query_graph_entities(project_id, None, None, Some(f), 50)
-                .unwrap_or_default()
-            {
-                if !altered.contains(&e.name) {
-                    altered.push(e.name);
-                }
-            }
-        }
         let mut flipped = Vec::new();
         for m in self
             .list_memories(project_id, Some(MemoryStatus::Active), None, 500)
             .unwrap_or_default()
         {
-            let linked = m.entities.iter().any(|s| altered.contains(s))
-                || metadata_files(&m).iter().any(|f| files.contains(f));
+            let linked = metadata_files(&m).iter().any(|f| files.contains(f));
             if linked && self.mark_memory_changed(&m.id).unwrap_or(false) {
                 flipped.push(m.id);
             }
@@ -531,7 +518,7 @@ impl Database {
 
         if let Some(pid) = project_id {
             sql.push_str(&format!(
-                " AND (m.scope = 'global' OR m.project_id = '{0}' OR m.project_id IN (SELECT slug FROM projects WHERE id = '{0}'))",
+                " AND (m.scope = 'global' OR m.project_id = '{0}' OR m.project_id IN (SELECT slug FROM projects WHERE id = '{0}') OR m.project_id IN (SELECT id FROM projects WHERE slug = '{0}'))",
                 sql_str(pid)
             ));
         }
@@ -828,22 +815,8 @@ mod tests {
 
     #[test]
     fn test_flag_changed_by_commit_files() {
-        use crate::graph::GraphEntity;
         let db = Database::open_in_memory().expect("open db");
         let now = Utc::now();
-        db.batch_insert_graph_entities(&[GraphEntity {
-            id: "e1".to_string(),
-            project_id: None,
-            entity_type: "function".to_string(),
-            name: "auth.session.createSession".to_string(),
-            path: "src/auth/session.ts".to_string(),
-            line_start: None,
-            line_end: None,
-            metadata: serde_json::json!({}),
-            created_at: now,
-            updated_at: now,
-        }])
-        .expect("seed graph");
 
         let mk = |summary: &str,
                   entities: Vec<String>,
@@ -873,6 +846,7 @@ mod tests {
             mem.id
         };
 
+        // A memory linked only by a symbol name no longer flips on a commit: without a code index there is no way to map files to symbols.
         let by_entity = mk(
             "entity linked",
             vec!["auth.session.createSession".to_string()],
@@ -905,12 +879,10 @@ mod tests {
         let flipped = db
             .flag_memories_changed_by_files(None, &["src/auth/session.ts".to_string()])
             .unwrap();
-        assert_eq!(flipped.len(), 2);
-        assert!(flipped.contains(&by_entity));
-        assert!(flipped.contains(&by_file));
+        assert_eq!(flipped, vec![by_file.clone()]);
 
         let status = |id: &str| db.get_memory_by_id(id).unwrap().unwrap().status;
-        assert_eq!(status(&by_entity), MemoryStatus::Changed);
+        assert_eq!(status(&by_entity), MemoryStatus::Active);
         assert_eq!(status(&by_file), MemoryStatus::Changed);
         assert_eq!(status(&unrelated), MemoryStatus::Active);
         assert_eq!(status(&pinned), MemoryStatus::Pinned);

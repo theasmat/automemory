@@ -216,7 +216,7 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "memory.about".to_string(),
-                description: "How AutoMemory works or everything known about a file or symbol in the Project brain: glossary, graph entities, callers, and linked memories".to_string(),
+                description: "How AutoMemory works or everything known about a file or symbol in the Project brain: glossary, callers (from the codebase-memory server when it is installed), and linked memories".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -1014,23 +1014,9 @@ impl ToolRegistry {
                     }));
                 }
 
-                let by_name = self
-                    .db
-                    .query_graph_entities(project_id, None, Some(target), None, 10)
-                    .unwrap_or_default();
-                let by_path = self
-                    .db
-                    .query_graph_entities(project_id, None, None, Some(target), 10)
-                    .unwrap_or_default();
-                let mut seen = std::collections::HashSet::new();
-                let entities: Vec<_> = by_name
-                    .into_iter()
-                    .chain(by_path)
-                    .filter(|e| seen.insert(e.id.clone()))
-                    .collect();
                 let root = std::env::current_dir().unwrap_or_default();
                 let intel: Box<dyn CodeIntel + '_> =
-                    automemory_core::codeintel::code_intel_for(&self.db, &root);
+                    automemory_core::codeintel::code_intel_for(&root);
                 let callers = intel.callers(project_id, target);
                 let include_untrusted = arguments
                     .get("include_untrusted")
@@ -1051,7 +1037,6 @@ impl ToolRegistry {
                     .collect::<Vec<_>>();
                 ToolCallResult::json(&json!({
                     "target": target,
-                    "entities": entities,
                     "callers": callers,
                     "memories": memories,
                     "next_action": "Use memory.get(id) for full detail on any Project brain entry."

@@ -1,6 +1,5 @@
 use automemory_core::db::Database;
 use automemory_core::extraction::TrajectoryDistiller;
-use automemory_core::graph::{GraphBuilder, GraphEdge, GraphEntity};
 use automemory_core::models::*;
 use automemory_core::redaction::redact_text;
 use automemory_core::retrieval::RetrievalEngine;
@@ -386,91 +385,6 @@ fn test_strict_project_isolation_and_global_preference_resolution() {
     assert!(
         !ctx_a.contains("Beta uses REST port 8080"),
         "Context A must NOT contain Beta memory"
-    );
-}
-
-#[test]
-fn test_ast_knowledge_graph_multi_hop_impact_analysis() {
-    let db = Database::open_in_memory().expect("in-memory db open failed");
-    let builder = GraphBuilder::new(&db);
-    let project_id = "proj-ast-test";
-
-    // 1. Create File Entities
-    let files = vec![
-        ("f-auth", "crates/auth/src/token.rs", "file"),
-        ("f-handler", "crates/api/src/auth_handler.rs", "file"),
-        ("f-router", "crates/api/src/router.rs", "file"),
-        ("f-server", "crates/server/src/main.rs", "file"),
-    ];
-
-    let entities: Vec<GraphEntity> = files
-        .into_iter()
-        .map(|(id, path, etype)| GraphEntity {
-            id: id.to_string(),
-            project_id: Some(project_id.to_string()),
-            entity_type: etype.to_string(),
-            name: path.split('/').next_back().unwrap().to_string(),
-            path: path.to_string(),
-            line_start: Some(1),
-            line_end: Some(100),
-            metadata: json!({}),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        })
-        .collect();
-
-    db.batch_insert_graph_entities(&entities)
-        .expect("batch_insert_graph_entities failed");
-
-    // 2. Create Dependency Edges: f-server -> f-router -> f-handler -> f-auth
-    let edges_raw = vec![
-        ("f-server", "f-router", "imports"),
-        ("f-router", "f-handler", "calls"),
-        ("f-handler", "f-auth", "imports"),
-    ];
-
-    let edges: Vec<GraphEdge> = edges_raw
-        .into_iter()
-        .map(|(source, target, rel)| GraphEdge {
-            source_id: source.to_string(),
-            target_id: target.to_string(),
-            relation_type: rel.to_string(),
-            confidence: 1.0,
-            created_at: Utc::now(),
-        })
-        .collect();
-
-    db.batch_insert_graph_edges(&edges)
-        .expect("batch_insert_graph_edges failed");
-
-    // 3. Perform 3-Hop Blast Radius Impact Analysis when `crates/auth/src/token.rs` is modified
-    let report = builder
-        .trace_impact(Some(project_id), "crates/auth/src/token.rs", 3)
-        .expect("trace_impact failed")
-        .expect("report expected");
-
-    println!(
-        "🌳 [AST Graph] Blast radius for token.rs: {} affected files",
-        report.affected_files.len()
-    );
-    for f in &report.affected_files {
-        println!("   -> Impacted: {}", f);
-    }
-
-    assert_eq!(report.target_entity.id, "f-auth");
-    assert!(report
-        .affected_files
-        .contains(&"crates/api/src/auth_handler.rs".to_string()));
-    assert!(report
-        .affected_files
-        .contains(&"crates/api/src/router.rs".to_string()));
-    assert!(report
-        .affected_files
-        .contains(&"crates/server/src/main.rs".to_string()));
-    assert_eq!(
-        report.affected_files.len(),
-        3,
-        "Should trace all 3 dependent ancestors up the graph"
     );
 }
 

@@ -77,7 +77,7 @@ impl ExtractionWorker {
     }
 
     /// Continuous background extraction loop
-    pub async fn run_loop(self: Arc<Self>, interval: std::time::Duration) {
+    pub async fn run_loop(self: Arc<Self>, interval: std::time::Duration, promote: bool) {
         let mut ticker = tokio::time::interval(interval);
         let mut tick_counter: u64 = 0;
         loop {
@@ -89,7 +89,7 @@ impl ExtractionWorker {
             }
 
             // Every 10 iterations (~40s), run autonomous skill promotion pass
-            if tick_counter.is_multiple_of(10) {
+            if promote && tick_counter.is_multiple_of(10) {
                 if let Err(e) = self.promote_skills(None) {
                     warn!("Autonomous skill promotion error: {}", e);
                 }

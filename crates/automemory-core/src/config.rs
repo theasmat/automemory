@@ -28,6 +28,8 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub library: LibrarySettings,
     #[serde(default)]
+    pub skills: SkillSettings,
+    #[serde(default)]
     pub projects: Vec<ProjectRegistryEntry>,
 }
 
@@ -162,6 +164,13 @@ impl Default for ContinuitySettings {
     fn default() -> Self {
         Self { inject_tokens: default_inject_tokens(), read_chats: Vec::new() }
     }
+}
+
+/// `[skills]`: playbooks the daemon writes on its own from repeated traces. Off by default; existing skills are still read and synced.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SkillSettings {
+    #[serde(default)]
+    pub auto: bool,
 }
 
 /// `[library]`: documents for agents kept outside git (plan/library-plan.md).
@@ -406,6 +415,7 @@ impl Default for GlobalConfig {
             llm: LlmSettings::default(),
             continuity: ContinuitySettings::default(),
             library: LibrarySettings::default(),
+            skills: SkillSettings::default(),
             projects: Vec::new(),
         }
     }

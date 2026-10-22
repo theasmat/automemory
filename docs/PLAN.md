@@ -545,13 +545,13 @@ Limit (said plainly in the docs): this stops mix-ups and casual spoofing, not a 
 | Y8 **built** | Session checkpoint notes say something (files, tests, the brief's next step) instead of "Session checkpoint <id>" | The current text gives the next agent nothing |
 | Y9 **built** | Unused notes fade: a note never recalled in 60 days drops in rank and is offered for archiving in the Inbox | Recall feedback exists (14 of 21 notes recalled) but nothing acts on it |
 
-### 19.3 Remove (status: R1 done: retired MCP names and cross-review; R2 done: legacy vault and cloud client; R3 done in part: 6 connect targets; the rest below is still open)
+### 19.3 Remove (status: R1 done: retired MCP names and cross-review; R2 done: legacy vault and cloud client; R3 done in part: 6 connect targets; R4 done: own code graph, skills off by default, plugin/adapter hidden)
 | What | Evidence | Plan |
 |---|---|---|
 | The 19 retired MCP names | hidden since PLAN §18 | delete the handlers and their tests |
 | Legacy text vault (`sync export/import/restore`) and the cloud client (`sync init/status/push/pull`, `/api/cloud/*` test routes) | hidden; git-vault sync and backup cover the jobs | delete; move the cloud client to `workers/` work when hosted sync starts |
 | ~~19 of the 22~~ 6 of the 20 `connect` targets (Kilo, Aider, Warp, Devin, OpenClaw, Hermes; the other 13 have a sandbox check in agents_matrix.py) (Windsurf, Cline, Roo, Continue, Zed, OpenCode, Goose, Kilo, Aider, Warp, Gemini CLI, Devin, Copilot, OpenClaw, Hermes, ...) | v1 is Claude Code, Codex, Antigravity (Cursor has a reader); none of the others is tested; Gemini CLI is replaced by Antigravity CLI | keep Claude Code, Codex, Antigravity and Cursor; the rest become one generic "MCP-only" connect that writes the server entry and the rules text |
-| Own code graph (`graph/` builder, tables, `/api/graph`, the "Index the code graph" job) | page and tools already gone; tables empty | delete; symbols come from codebase-memory |
+| Own code graph (`graph/` builder, tables, `/api/graph`, the "Index the code graph" job) | page and tools already gone; tables empty | **Done (R4).** Deleted; schema v19 drops the tables; symbols come from codebase-memory |
 | Cross-review (`reviews` table and tools) | 0 rows; hidden | delete unless the eval shows a use |
-| Skills from trajectories | 9,244 copies of about 11 skills before the prune; no evidence an agent used one | switch off by default; keep only if the eval shows value |
-| `plugin` / `adapter` commands and the port manifests | 470 lines; no plugin exists | hide until a second implementation of any port is written |
+| Skills from trajectories | 9,244 copies of about 11 skills before the prune; no evidence an agent used one | **Done (R4).** `[skills] auto = false` by default: the daemon no longer writes skills on its own; existing skills are still listed and synced |
+| `plugin` / `adapter` commands and the port manifests | 470 lines; no plugin exists | **Done (R4).** Both commands hidden from `--help` (they still run) |

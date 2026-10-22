@@ -38,19 +38,10 @@ pub trait CodeIntel: Port {
     fn callers(&self, project_id: Option<&str>, symbol: &str) -> Vec<String>;
 }
 
-/// Default implementation over the local graph index. An empty (never
-/// indexed) graph answers negative — fail-open, never a false claim.
-pub struct GraphCodeIntel<'a> {
-    db: &'a Database,
-}
+/// Used when the `codebase-memory-mcp` engine is not installed: every question is answered negatively (fail-open, never a false claim).
+pub struct NoCodeIntel;
 
-impl<'a> GraphCodeIntel<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
-}
-
-impl Port for GraphCodeIntel<'_> {
+impl Port for NoCodeIntel {
     fn port_name(&self) -> &'static str {
         "CodeIntel"
     }
@@ -59,68 +50,15 @@ impl Port for GraphCodeIntel<'_> {
     }
 }
 
-impl CodeIntel for GraphCodeIntel<'_> {
-    fn symbol_exists(&self, project_id: Option<&str>, symbol: &str) -> bool {
-        self.db
-            .query_graph_entities(project_id, None, Some(symbol), None, 1)
-            .is_ok_and(|hits| !hits.is_empty())
+impl CodeIntel for NoCodeIntel {
+    fn symbol_exists(&self, _: Option<&str>, _: &str) -> bool {
+        false
     }
-
-    /// Index-time content hash of the entity (or its file). The indexer
-    /// records per-file sha256; symbol-level hashes arrive with a real
-    /// symbol extractor (today the index is file-granular).
-    fn symbol_hash(&self, project_id: Option<&str>, symbol: &str) -> Option<String> {
-        let hits = self
-            .db
-            .query_graph_entities(project_id, None, Some(symbol), None, 5)
-            .unwrap_or_default();
-        for entity in &hits {
-            if let Some(hash) = entity.metadata.get("sha256").and_then(|v| v.as_str()) {
-                return Some(hash.to_string());
-            }
-        }
-        let path = hits.first().map(|e| e.path.clone())?;
-        self.db
-            .query_graph_entities(project_id, Some("file"), None, Some(&path), 1)
-            .unwrap_or_default()
-            .into_iter()
-            .find_map(|e| {
-                e.metadata
-                    .get("sha256")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-            })
+    fn symbol_hash(&self, _: Option<&str>, _: &str) -> Option<String> {
+        None
     }
-
-    fn callers(&self, project_id: Option<&str>, symbol: &str) -> Vec<String> {
-        let targets = self
-            .db
-            .query_graph_entities(project_id, None, Some(symbol), None, 5)
-            .unwrap_or_default();
-        let mut out = Vec::new();
-        for t in targets {
-            for edge in self.db.get_incoming_graph_edges(&t.id).unwrap_or_default() {
-                // Current indexer records imports; call-level edges arrive
-                // with a richer indexer. Importers are still dependents.
-                if !matches!(
-                    edge.relation_type.as_str(),
-                    "calls" | "references" | "imports"
-                ) {
-                    continue;
-                }
-                let name = self
-                    .db
-                    .get_graph_entity_by_id(&edge.source_id)
-                    .ok()
-                    .flatten()
-                    .map(|e| e.name)
-                    .unwrap_or(edge.source_id);
-                if !out.contains(&name) {
-                    out.push(name);
-                }
-            }
-        }
-        out
+    fn callers(&self, _: Option<&str>, _: &str) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -620,7 +558,7 @@ pub const PORTS: &[PortInfo] = &[
         id: "CodeIntel",
         api_version: CODE_INTEL_API_VERSION,
         status: PortStatus::Native,
-        default_impl: "CbmCodeIntel (codebase-memory-mcp), GraphCodeIntel fallback",
+        default_impl: "CbmCodeIntel (codebase-memory-mcp), NoCodeIntel when it is not installed",
     },
     PortInfo {
         id: "MemoryStore",
@@ -787,8 +725,6 @@ impl PluginManifest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{GraphEdge, GraphEntity};
-    use chrono::Utc;
 
     #[test]
     fn api_version_gate_refuses_mismatch() {
@@ -797,69 +733,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_graph_answers_negative() {
-        let db = Database::open_in_memory().unwrap();
-        let ci = GraphCodeIntel::new(&db);
+    fn without_the_engine_every_answer_is_negative() {
+        let ci = NoCodeIntel;
         assert!(!ci.symbol_exists(None, "anything"));
         assert_eq!(ci.symbol_hash(None, "anything"), None);
         assert!(ci.callers(None, "anything").is_empty());
-    }
-
-    #[test]
-    fn graph_backend_resolves_symbols_and_importers() {
-        let db = Database::open_in_memory().unwrap();
-        let now = Utc::now();
-        db.batch_insert_graph_entities(&[
-            GraphEntity {
-                id: "e-auth".to_string(),
-                project_id: None,
-                entity_type: "function".to_string(),
-                name: "auth.session.createSession".to_string(),
-                path: "src/auth/session.ts".to_string(),
-                line_start: Some(1),
-                line_end: Some(10),
-                metadata: serde_json::json!({ "sha256": "abc123" }),
-                created_at: now,
-                updated_at: now,
-            },
-            GraphEntity {
-                id: "e-login".to_string(),
-                project_id: None,
-                entity_type: "function".to_string(),
-                name: "auth.login".to_string(),
-                path: "src/auth/login.ts".to_string(),
-                line_start: Some(1),
-                line_end: Some(5),
-                metadata: serde_json::json!({}),
-                created_at: now,
-                updated_at: now,
-            },
-        ])
-        .unwrap();
-        db.batch_insert_graph_edges(&[GraphEdge {
-            source_id: "e-login".to_string(),
-            target_id: "e-auth".to_string(),
-            relation_type: "imports".to_string(),
-            confidence: 1.0,
-            created_at: now,
-        }])
-        .unwrap();
-
-        let ci = GraphCodeIntel::new(&db);
-        assert!(
-            check_api_version(ci.port_name(), ci.api_version(), CODE_INTEL_API_VERSION).is_ok()
-        );
-        assert!(ci.symbol_exists(None, "createSession"));
-        assert!(!ci.symbol_exists(None, "no.such.symbol"));
-        assert_eq!(
-            ci.callers(None, "createSession"),
-            vec!["auth.login".to_string()]
-        );
-        assert_eq!(
-            ci.symbol_hash(None, "createSession"),
-            Some("abc123".to_string())
-        );
-        assert_eq!(ci.symbol_hash(None, "no.such.symbol"), None);
+        assert!(check_api_version(ci.port_name(), ci.api_version(), CODE_INTEL_API_VERSION).is_ok());
     }
 
     #[test]

@@ -66,7 +66,6 @@ pub fn build_api_router() -> Router<AppState> {
         .route("/api/tools/doctor", post(control::api_tool_doctor))
         .route("/api/tools/eval", post(control::api_tool_eval))
         .route("/api/tools/docs-rescan", post(control::api_tool_docs_rescan))
-        .route("/api/tools/graph-index", post(control::api_tool_graph_index))
         .route("/api/tools/backup", post(control::api_tool_backup))
         .route("/api/tools/handoff", post(control::api_tool_handoff))
         .route("/api/tools/export-rules", get(control::api_export_preview).post(control::api_export_apply))
@@ -157,7 +156,6 @@ pub fn build_api_router() -> Router<AppState> {
             "/api/proposals/decide_all",
             post(memories::api_proposals_decide_all),
         )
-        .route("/api/graph", get(stats::api_graph))
         .route("/api/stream", get(stats::api_stream))
         .route("/api/sync/status", get(sync::api_sync_status))
         .route("/api/sync/trigger", post(sync::api_sync_trigger))

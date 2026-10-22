@@ -89,7 +89,6 @@ pub const WRITE_ROUTES: &[(&str, Tier, &str)] = &[
     ("/api/tools/export-rules", Tier::Safe, "write the project's instruction files"),
     ("/api/tools/handoff", Tier::Safe, "write a hand-off"),
     ("/api/tools/docs-rescan", Tier::Safe, "rescan tracked documents"),
-    ("/api/tools/graph-index", Tier::Safe, "index the code graph"),
     ("/api/tools/eval", Tier::Safe, "run the eval suites"),
     ("/api/tools/backup", Tier::Safe, "back up the database"),
     ("/api/agents/connect", Tier::Protected, "connect an agent in this project"),

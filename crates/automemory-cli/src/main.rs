@@ -139,7 +139,7 @@ enum Commands {
     },
 
     /// List registered agent adapters and refresh one's hook/event mappings
-    #[command(next_help_heading = "Advanced")]
+    #[command(hide = true)]
     Adapter {
         #[command(subcommand)]
         command: AdapterCommands,
@@ -494,7 +494,7 @@ enum Commands {
     },
 
     /// List versioned ports and installed plugin manifests
-    #[command(next_help_heading = "Advanced")]
+    #[command(hide = true)]
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,

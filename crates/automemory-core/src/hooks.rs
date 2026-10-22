@@ -1,4 +1,3 @@
-use crate::db::Database;
 use crate::guardrails::{GuardrailAction, GuardrailEvaluator};
 use crate::models::{AutopilotMode, LeaseAcquireArgs, LeaseAcquireResult, LeaseScopeType};
 use crate::ports::{HandlerEnv, HookHandler};
@@ -345,46 +344,8 @@ pub fn run_pipeline(
     results
 }
 
-/// Expands file targets to indexed symbols (and symbols to files) so
-/// symbol-level leases collide with file edits across naming styles
-/// (`auth::login` vs `auth.login`). Empty index = no expansion (fail-open).
-pub fn expand_scope_via_graph(
-    db: &Database,
-    project_id: Option<&str>,
-    paths: &[String],
-    symbols: &[String],
-) -> (Vec<String>, Vec<String>) {
-    let mut all_paths: Vec<String> = paths.to_vec();
-    let mut all_symbols: Vec<String> = symbols.to_vec();
-    for p in paths.iter().take(10) {
-        for e in db
-            .query_graph_entities(project_id, None, None, Some(p), 20)
-            .unwrap_or_default()
-        {
-            if !all_symbols.contains(&e.name) {
-                all_symbols.push(e.name);
-            }
-        }
-    }
-    for s in symbols.iter().take(10) {
-        for spelling in [s.clone(), s.replace("::", "."), s.replace('.', "::")] {
-            for e in db
-                .query_graph_entities(project_id, None, Some(&spelling), None, 5)
-                .unwrap_or_default()
-            {
-                if !all_paths.contains(&e.path) {
-                    all_paths.push(e.path);
-                }
-            }
-        }
-    }
-    (all_paths, all_symbols)
-}
-
 /// Built-in `lock-check` handler: lease collision check for mutation tools.
 /// Strict denies, Review asks, Vibe warns on stderr only (defers to guardrail).
-/// File targets expand to their indexed symbols (and vice versa) so symbol
-/// leases collide with file edits even when the agent names only the file.
 pub struct LockCheckHandler;
 
 impl HookHandler for LockCheckHandler {
@@ -410,7 +371,7 @@ impl HookHandler for LockCheckHandler {
         if live.is_empty() && ctx.symbols.is_empty() {
             return HandlerOutput::allow();
         }
-        let (paths, symbols) = expand_scope_via_graph(db, project_id, &live, ctx.symbols);
+        let (paths, symbols) = (live.clone(), ctx.symbols.to_vec());
         let mut conflict = db
             .check_collision(project_id, ctx.session_id, &paths, &symbols)
             .ok()
@@ -684,6 +645,7 @@ fn write_json_stdin(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::Database;
     use crate::models::AutopilotMode;
     use crate::ports::{HandlerEnv, HookHandler};
 
@@ -914,47 +876,6 @@ mod tests {
         let results = run_pipeline(&specs, &c, &env, &[]);
         assert_eq!(results[0].decision, GateDecision::Warn);
         assert_eq!(results[0].reason, "custom");
-    }
-
-    #[test]
-    fn scope_expansion_bridges_files_and_symbols() {
-        use crate::graph::GraphEntity;
-        use chrono::Utc;
-        let db = Database::open_in_memory().unwrap();
-        let now = Utc::now();
-        db.batch_insert_graph_entities(&[GraphEntity {
-            id: "e1".to_string(),
-            project_id: None,
-            entity_type: "function".to_string(),
-            name: "auth.login".to_string(),
-            path: "src/auth/login.ts".to_string(),
-            line_start: None,
-            line_end: None,
-            metadata: serde_json::json!({}),
-            created_at: now,
-            updated_at: now,
-        }])
-        .unwrap();
-
-        // File edit discovers the symbol defined inside it.
-        let (_, syms) = expand_scope_via_graph(&db, None, &["src/auth/login.ts".to_string()], &[]);
-        assert!(syms.contains(&"auth.login".to_string()));
-
-        // Symbol lease in either spelling discovers the file.
-        for spelling in ["auth::login", "auth.login"] {
-            let (paths, _) = expand_scope_via_graph(&db, None, &[], &[spelling.to_string()]);
-            assert!(
-                paths.contains(&"src/auth/login.ts".to_string()),
-                "spelling {spelling}"
-            );
-        }
-
-        // Empty index expands nothing.
-        let empty = Database::open_in_memory().unwrap();
-        let (p, s) =
-            expand_scope_via_graph(&empty, None, &["x.ts".to_string()], &["y".to_string()]);
-        assert_eq!(p, vec!["x.ts".to_string()]);
-        assert_eq!(s, vec!["y".to_string()]);
     }
 
     #[cfg(unix)]

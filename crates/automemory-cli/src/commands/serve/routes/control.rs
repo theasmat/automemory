@@ -161,15 +161,6 @@ pub async fn api_tool_docs_rescan(State(state): State<AppState>) -> Response {
     started(jobs::start(&state, "docs", "Rescan documents", move |_| run_self(&["doc", "scan"], &cwd)))
 }
 
-pub async fn api_tool_graph_index(State(state): State<AppState>) -> Response {
-    let Some((Some(pid), dir)) = project_dir(&state, None) else { return bad("no project yet") };
-    let db = Arc::clone(&state.db);
-    started(jobs::start(&state, "graph", "Index the code graph", move |_| {
-        let (entities, edges) = automemory_core::graph::GraphBuilder::new(&db).scan_and_index_project(&pid, &dir.to_string_lossy())?;
-        Ok(format!("{entities} entities and {edges} relations indexed"))
-    }))
-}
-
 pub async fn api_tool_backup(State(state): State<AppState>) -> Response {
     let db = Arc::clone(&state.db);
     started(jobs::start(&state, "backup", "Back up the database", move |_| {

@@ -7,7 +7,7 @@ pub mod ws;
 
 use anyhow::{Context, Result};
 use assets::static_asset_handler;
-use automemory_core::config::Config;
+use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::db::Database;
 use automemory_core::docs::DocumentWatcher;
 use automemory_core::extraction::{ConsolidationWorker, ExtractionWorker};
@@ -35,8 +35,9 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
 
     // 1. Start background extraction worker
     let worker = Arc::new(ExtractionWorker::new(db.clone()));
+    let auto_skills = GlobalConfig::load().map(|c| c.skills.auto).unwrap_or(false);
     tokio::spawn(async move {
-        worker.run_loop(Duration::from_secs(4)).await;
+        worker.run_loop(Duration::from_secs(4), auto_skills).await;
     });
 
     // 2. Start automated Git vault sync daemon

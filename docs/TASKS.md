@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (49 MCP tools, 307 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (49 MCP tools, 301 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -198,7 +198,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] R1 Removed: the 19 retired MCP names (old names answer "was removed, use …"), cross-review (tools, queries, models and the Stop nudge; the unused `reviews` table stays in the schema)
 - [x] R2 Legacy vault and cloud client removed from the CLI and dashboard server (`sync export/import/restore/init/status/push/pull/watch`, `/api/cloud/*`, the edge branch of `memory search --semantic`); `sync pair` keeps the recovery phrase and no longer talks to a cloud. Kept on purpose: the `Exporter` port and its built-in vault writer (part of the port set, no command uses it), `[cloud] encryption_key` in config (it can still be the vault key), and the `link` command (hidden, superseded by the Library)
 - [x] R3 `connect` for kilo, aider, warp, devin, openclaw and hermes removed (`disconnect` still removes what an older version wrote); `connect other --mcp-file <path> --name <agent>` covers any tool that reads an MCP servers JSON file. The audit said 19 of 22 targets were untested: wrong, 13 of them have a connect/disconnect/instruction-file check in `tests/scenarios/agents_matrix.py` (still no live-agent trial), so those were kept
-- [ ] Later: own code graph code, skills by default, plugin/adapter commands
+- [x] R4 Own code graph code deleted (`graph/`, graph tables via schema v19, `/api/graph`, the "Index the code graph" job; `NoCodeIntel` replaces the file-hash fallback); skills are no longer written by the daemon unless `[skills] auto = true`; `plugin` and `adapter` hidden from `--help`
 
 ## Later (after v1 passes its gates)
 

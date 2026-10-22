@@ -12,7 +12,6 @@ pub mod docs;
 pub mod embeddings;
 pub mod eval;
 pub mod extraction;
-pub mod graph;
 pub mod guardrails;
 pub mod hooks;
 pub mod keychain;
@@ -42,13 +41,12 @@ pub use extraction::{
     ConsolidationReport, ConsolidationWorker, DistillationReport, EventHeuristics,
     ExtractionWorker, ImplicitTaskSegmenter, TaskBoundaryReason, TaskSegment, TrajectoryDistiller,
 };
-pub use graph::{GraphBuilder, GraphEdge, GraphEntity, ImpactReport};
 pub use guardrails::{
     CustomGuardrailRule, GuardrailAction, GuardrailDecision, GuardrailEvaluator, GuardrailRule,
     GuardrailSeverity, RiskCategory,
 };
 pub use hooks::{
-    expand_scope_via_graph, merge_decision, run_pipeline, CanonicalEvent, FailureMode,
+    merge_decision, run_pipeline, CanonicalEvent, FailureMode,
     GateDecision, GuardrailHandler, HandlerOutput, HandlerResult, HandlerSpec, HooksConfig,
     LockCheckHandler, PipelineCtx,
 };
@@ -56,7 +54,7 @@ pub use models::*;
 pub use ports::{
     backend_for, check_api_version, exporter_for, notifier_for, trust_policy_for, verifier_for,
     AdvisoryLocks, AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller, EmbeddingProvider,
-    Exporter, FtsRetriever, GitTransport, GraphCodeIntel, HandlerEnv, HookHandler, LocalEmbeddings,
+    Exporter, FtsRetriever, GitTransport, NoCodeIntel, HandlerEnv, HookHandler, LocalEmbeddings,
     LockStrategy, MemoryStore, NoRunner, Notifier, PcrProtocol, PluginCapabilities, PluginHooks,
     PluginManifest, Port, PortInfo, PortStatus, Retriever, RoomProtocol, RuleMatcher, Runner,
     SilentNotifier, StderrNotifier, StrictTrustPolicy, SyncBackend, TrustPolicy, VaultExporter,

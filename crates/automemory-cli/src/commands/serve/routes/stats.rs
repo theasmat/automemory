@@ -65,22 +65,6 @@ pub async fn api_docs(
     }
 }
 
-pub async fn api_graph(
-    State(state): State<AppState>,
-    Query(params): Query<SearchParams>,
-) -> impl IntoResponse {
-    let entities = state
-        .db
-        .list_all_graph_entities(params.project_id.as_deref(), 300)
-        .unwrap_or_default();
-    let edges = state.db.list_all_graph_edges(500).unwrap_or_default();
-
-    Json(json!({
-        "entities": entities,
-        "edges": edges,
-    }))
-}
-
 pub async fn api_stream(
     State(state): State<AppState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {

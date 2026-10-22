@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 18;
+const LATEST_SCHEMA_VERSION: i32 = 19;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -540,6 +540,13 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
         // A file kept in sync where it is (global config `[library] files`), as opposed to one copied into the library.
         step(conn, "ALTER TABLE library_files ADD COLUMN link INTEGER NOT NULL DEFAULT 0", [])?;
         step(conn, "PRAGMA user_version = 18", [])?;
+    }
+
+    if version < 19 {
+        // AutoMemory no longer builds its own code index (the codebase-memory server answers symbol questions); the tables were derived data.
+        step(conn, "DROP TABLE IF EXISTS graph_edges", [])?;
+        step(conn, "DROP TABLE IF EXISTS graph_entities", [])?;
+        step(conn, "PRAGMA user_version = 19", [])?;
     }
     Ok(())
 }
