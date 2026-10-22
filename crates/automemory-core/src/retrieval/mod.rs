@@ -1,5 +1,6 @@
 pub mod context;
 pub mod decay;
+pub mod fade;
 pub mod scorer;
 pub mod vector;
 

@@ -97,12 +97,10 @@ impl<'a> TimeSpanDigestEngine<'a> {
                 if is_edit {
                     metrics.edits_count += 1;
                     if let Some(ref input) = tool.input {
-                        if let Some(f) = input
-                            .get("TargetFile")
-                            .or_else(|| input.get("AbsolutePath"))
-                            .or_else(|| input.get("path"))
-                            .or_else(|| input.get("file"))
-                            .and_then(|v| v.as_str())
+                        // Each agent names the argument differently: Antigravity `Path`/`TargetFile`, Claude Code `file_path`, others `path`.
+                        if let Some(f) = ["TargetFile", "AbsolutePath", "Path", "file_path", "path", "target_file", "notebook_path", "file"]
+                            .iter()
+                            .find_map(|k| input.get(*k).and_then(|v| v.as_str()))
                         {
                             files_modified_set.insert(f.to_string());
                         }
@@ -110,12 +108,9 @@ impl<'a> TimeSpanDigestEngine<'a> {
                 } else if is_read {
                     metrics.reads_count += 1;
                     if let Some(ref input) = tool.input {
-                        if let Some(f) = input
-                            .get("AbsolutePath")
-                            .or_else(|| input.get("SearchPath"))
-                            .or_else(|| input.get("path"))
-                            .or_else(|| input.get("file"))
-                            .and_then(|v| v.as_str())
+                        if let Some(f) = ["AbsolutePath", "SearchPath", "Path", "file_path", "path", "file"]
+                            .iter()
+                            .find_map(|k| input.get(*k).and_then(|v| v.as_str()))
                         {
                             files_inspected_set.insert(f.to_string());
                         }

@@ -285,6 +285,17 @@ impl Database {
                     self.sync_kv_set(&format!("clamped:{}", p.target_id), "");
                 }
             }
+            // An unused note offered for archiving (retrieval::fade): yes archives it, no keeps it and counts as a use so it is not offered or faded again for a while.
+            "stale_note" => {
+                let now = Utc::now().to_rfc3339();
+                let n = if approved {
+                    self.conn().execute("UPDATE memories SET status = 'archived', updated_at = ?1 WHERE id = ?2", params![now, p.target_id])?
+                } else {
+                    self.conn().execute("UPDATE memories SET last_recalled_at = ?1 WHERE id = ?2", params![now, p.target_id])?;
+                    0
+                };
+                return Ok(n);
+            }
             "duplicate_merge" if approved && !p.target_id.is_empty() => {
                 let n = self.conn().execute("UPDATE memories SET status = 'archived', updated_at = ?1 WHERE id = ?2", params![Utc::now().to_rfc3339(), p.target_id])?;
                 return Ok(n);

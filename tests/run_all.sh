@@ -43,6 +43,7 @@ run "project library"                  python3 tests/scenarios/library.py
 run "duplicate records (prune)"        python3 tests/scenarios/prune.py
 run "agent identity"                   python3 tests/scenarios/agent_identity.py
 run "mcp self-restart"                 python3 tests/scenarios/mcp_restart.py
+run "session checkpoint + unused notes" python3 tests/scenarios/checkpoint.py
 run "project library sync"             python3 tests/scenarios/library_sync.py
 run "library dashboard"                python3 tests/scenarios/library_dashboard.py
 run "guideline refresh on connect"    python3 tests/scenarios/guidelines_refresh.py

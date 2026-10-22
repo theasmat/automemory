@@ -87,7 +87,7 @@ impl HybridScorer {
                 // Final score weights RRF by memory confidence and importance
                 let confidence_factor = memory.confidence.clamp(0.1, 1.0);
                 let importance_factor = memory.importance.clamp(0.1, 1.0);
-                let final_score = rrf * (0.6 * confidence_factor + 0.4 * importance_factor);
+                let final_score = rrf * (0.6 * confidence_factor + 0.4 * importance_factor) * super::fade::factor(&memory, chrono::Utc::now());
 
                 ScoredCandidate {
                     memory,

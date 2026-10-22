@@ -35,7 +35,7 @@ def main():
         found = sb.mcp("memory.search", query="Session checkpoint")
         text = str(found)
         rep.check("Session checkpoint" in text, "editing session leaves a checkpoint memory", text[:200])
-        rep.check("edits across" in text or "edits" in text, "checkpoint states what was edited", text[:200])
+        rep.check("Edited 6 file(s)" in text and "src/mod0.rs" in text, "checkpoint states which files were edited", text[:200])
         rep.check(text.count("Session checkpoint edit-ses") == 1,
                   "two Stops of one session leave exactly one checkpoint", text[:300])
         rep.check("Session checkpoint read-ses" not in text, "read-only session leaves no checkpoint", text[:200])

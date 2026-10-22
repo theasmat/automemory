@@ -291,3 +291,48 @@ mod tests {
     }
 }
 
+
+/// What a session checkpoint says: the files edited (relative to the project), whether the tests passed, what is still failing, and the next step on the
+/// brief. Short enough for the resume pack, and useful to an agent that never saw the session.
+pub fn checkpoint_text(digest: &crate::models::TimeSpanDigest, root: Option<&Path>, next: Option<&str>) -> String {
+    let rel = |p: &String| root.and_then(|r| Path::new(p).strip_prefix(r).ok()).map(|x| x.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
+    let mut parts = Vec::new();
+    if !digest.files_modified.is_empty() {
+        let shown: Vec<String> = digest.files_modified.iter().take(5).map(rel).collect();
+        let more = digest.files_modified.len().saturating_sub(5);
+        parts.push(format!("Edited {} file(s): {}{}.", digest.files_modified.len(), shown.join(", "), if more > 0 { format!(" and {more} more") } else { String::new() }));
+    } else if digest.metrics.edits_count > 0 {
+        parts.push(format!("{} edit(s).", digest.metrics.edits_count));
+    }
+    if digest.metrics.tests_run > 0 {
+        parts.push(format!("Tests: {} passed, {} failed.", digest.metrics.tests_passed, digest.metrics.tests_failed));
+    }
+    if let Some(open) = digest.failures.iter().rev().find(|f| !f.is_resolved) {
+        parts.push(format!("Still failing: `{}` {}", clip(&open.tool_or_command, 60), clip(&open.error_snippet, 100)));
+    }
+    if let Some(n) = next.filter(|n| !n.trim().is_empty()) {
+        parts.push(format!("Next: {}.", clip(n, 160).trim_end_matches('.')));
+    }
+    clip(&parts.join(" "), 600)
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+    use crate::models::{ActivityMetrics, TimeSpanDigest, TimeSpanFailureSummary};
+
+    #[test]
+    fn a_checkpoint_names_files_tests_open_failure_and_next_step() {
+        let mut d = TimeSpanDigest::empty(None);
+        d.files_modified = (1..=7).map(|i| format!("/work/shop/src/f{i}.py")).collect();
+        d.metrics = ActivityMetrics { edits_count: 9, tests_run: 3, tests_passed: 2, tests_failed: 1, ..Default::default() };
+        d.failures = vec![TimeSpanFailureSummary { tool_or_command: "pytest tests/test_cart.py".into(), error_snippet: "AssertionError: 3 != 4".into(), is_resolved: false, fix_applied: None, event_id: "e".into() }];
+        let t = checkpoint_text(&d, Some(Path::new("/work/shop")), Some("Wire the cart page to the new route."));
+        assert!(t.starts_with("Edited 7 file(s): src/f1.py, src/f2.py, src/f3.py, src/f4.py, src/f5.py and 2 more."), "{t}");
+        assert!(t.contains("Tests: 2 passed, 1 failed.") && t.contains("Still failing: `pytest tests/test_cart.py` AssertionError") && t.ends_with("Next: Wire the cart page to the new route."), "{t}");
+        assert!(!t.contains("Activity Window Digest"));
+        let mut quiet = TimeSpanDigest::empty(None);
+        quiet.metrics.edits_count = 2;
+        assert_eq!(checkpoint_text(&quiet, None, None), "2 edit(s).");
+    }
+}

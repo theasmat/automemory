@@ -470,7 +470,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     {
         run_post_tool_distillation(&db, &session_id);
         if canonical == Some(CanonicalEvent::Stop) {
-            save_session_checkpoint(&db, &session_id);
+            save_session_checkpoint(&db, &session_id, effective_project_id, &root_dir());
         }
     }
 
@@ -630,6 +630,8 @@ fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &
     super::rules_export::refresh_existing(db, project_id, cwd);
     // Project library: copies and INDEX.md are in place before the agent looks (cheap; nothing happens for an empty library).
     library_sync(db, project_id, cwd);
+    // Notes nobody has used for two months go to the Inbox as "archive this?" (a few per session start).
+    let _ = automemory_core::retrieval::fade::offer_stale_notes(db, project_id);
 
     // One-time 3-line notice per project for newly connected agents
     let pid = project_id.unwrap_or("global");
@@ -903,7 +905,7 @@ fn run_post_tool_distillation(db: &Database, session_id: &str) {
 /// Leaves a progress memory when a session that edited files stops, so the next
 /// agent finds what happened without anyone calling `memory.digest` first. Facts come
 /// from the ledger; read-only sessions leave nothing.
-fn save_session_checkpoint(db: &Database, session_id: &str) {
+fn save_session_checkpoint(db: &Database, session_id: &str, project_id: Option<&str>, root: &Path) {
     let engine = automemory_core::extraction::TimeSpanDigestEngine::new(db);
     let Ok(digest) = engine.generate_session_digest(session_id) else {
         return;
@@ -916,6 +918,9 @@ fn save_session_checkpoint(db: &Database, session_id: &str) {
     if let Ok(mut mem) = engine.synthesize_milestone_memory(&digest, Some("Session checkpoint")) {
         let short: String = session_id.chars().take(8).collect();
         mem.summary = format!("Session checkpoint {short}");
+        // Say what happened (files, tests, what is failing, the next step), not the activity-window statistics.
+        let next = db.brief_list(project_id, false).ok().and_then(|items| items.into_iter().find(|i| i.kind == automemory_core::continuity::ItemKind::Next)).map(|i| i.text);
+        mem.content = automemory_core::resume::checkpoint_text(&digest, Some(root), next.as_deref());
         // Where it happened, so another machine's resume pack can say so.
         mem.metadata = json!({
             "session": session_id,

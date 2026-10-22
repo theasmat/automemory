@@ -193,8 +193,8 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Y5 MCP servers re-execute themselves after an update (Unix): before serving a request the server checks whether the installed file was replaced and, if so, becomes the new binary on the same pipes and answers that request itself; a new file that does not answer `--version` is ignored; at most 5 restarts per process. Servers started before this version still need one manual restart (`doctor` names them)
 - [ ] Y6 Codex, Command Code and Cursor readers checked on real chats
 - [ ] Y7 Run T12, T13 and the 10-task eval (X3)
-- [ ] Y8 Session checkpoints with real content
-- [ ] Y9 Unused notes fade and are offered for archiving
+- [x] Y8 Session checkpoints say what happened: files edited (relative), tests passed/failed, what is still failing, the brief's next step. Also fixed: the digest never saw Antigravity's `Path` or Claude Code's `file_path`, so it reported "edits across 0 files"
+- [x] Y9 Agent-written notes not recalled for 60 days rank at half (a quarter after 120) and are offered in the Inbox as "archive this?" (5 per session start, 15 waiting at most, each note once); a person's notes, pinned notes and decisions never fade; keeping a note counts as a use
 - [ ] Remove after one release: retired MCP names, legacy vault and cloud client, 19 untested connect targets (one generic MCP-only connect instead), own code graph, cross-review, skills by default, plugin/adapter commands
 
 ## Later (after v1 passes its gates)
