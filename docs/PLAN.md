@@ -539,7 +539,7 @@ Limit (said plainly in the docs): this stops mix-ups and casual spoofing, not a 
 ### 19.2 Make it better (ordered by value)
 | Step | What | Why |
 |---|---|---|
-| Y5 | Agents' MCP servers restart themselves after an update: before each call the server compares its binary with the installed one and, when it is older, finishes the call and re-executes itself on the same pipes | Stale servers caused the T11b turn bug and kept writing duplicate skills after the prune; `doctor` only warns |
+| Y5 **built** | Agents' MCP servers restart themselves after an update: before each call the server compares its binary with the installed one and, when it is older, finishes the call and re-executes itself on the same pipes | Stale servers caused the T11b turn bug and kept writing duplicate skills after the prune; `doctor` only warns |
 | Y6 | Run the readers on real chats: Codex, Command Code and Cursor are written from public descriptions (one short session each, then replace the fixtures with real redacted samples) | Three of five readers are unverified |
 | Y7 | Run the live trials T12 (continuity) and T13 (library), and the 10-task memory-off-vs-on eval (X3) | Value is still unproven; this decides what to keep |
 | Y8 | Session checkpoint notes say something (files, tests, the brief's next step) instead of "Session checkpoint <id>" | The current text gives the next agent nothing |

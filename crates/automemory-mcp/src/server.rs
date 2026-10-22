@@ -20,6 +20,15 @@ impl McpServer {
         }
     }
 
+    pub fn note_client(&self, name: &str) {
+        self.registry.note_client(name);
+    }
+
+    /// What the agent called itself when it connected.
+    pub fn client_name(&self) -> Option<String> {
+        self.registry.client_name()
+    }
+
     pub fn handle_request(&self, req: JsonRpcRequest) -> Option<JsonRpcResponse> {
         let id = req.id;
         match req.method.as_str() {

@@ -145,6 +145,10 @@ impl ToolRegistry {
         self.db.sync_kv_set(&format!("mcp_client:{who}"), &json!({ "client": name, "at": chrono::Utc::now().to_rfc3339(), "configured": self.identity.is_some() }).to_string());
     }
 
+    pub fn client_name(&self) -> Option<String> {
+        self.client.lock().unwrap().clone()
+    }
+
     /// Who this server speaks for: the configured agent, else the client's own name, else nobody known.
     pub fn agent_name(&self) -> Option<String> {
         self.identity.clone().or_else(|| self.client.lock().unwrap().as_deref().map(canonical_agent)).filter(|n| !n.is_empty())

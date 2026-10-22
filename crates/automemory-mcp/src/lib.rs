@@ -1,5 +1,6 @@
 pub mod http;
 pub mod protocol;
+pub mod restart;
 pub mod server;
 pub mod stdio;
 pub mod tools;

@@ -165,7 +165,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 
 ## Docs hygiene
 
-- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (49 MCP tools, 306 Rust tests at last check)
+- [x] Keep tool and test counts in ARCHITECTURE/FEATURES in sync with code (49 MCP tools, 307 Rust tests at last check)
 
 ## Project library (plan/library-plan.md, not started; main questions decided, 3 small ones open)
 
@@ -190,7 +190,7 @@ How to run the checks: [tests/README.md](../tests/README.md) (`tests/run_all.sh`
 - [x] Y2 A room proposal cannot be critiqued by the server connection that made it, whatever session id the call uses (other "same author" rules are about person versus agent, which the name does not affect)
 - [x] Y3 The client name from `initialize` is recorded; `doctor` ("Checking agent identities") flags another program on an entry and entries with no agent name
 - [x] Y4 Records written through a configured server carry its name; an unconfigured server of a known agent (Claude, Antigravity, Codex, Cursor) fills in the name from its client when the call gives none
-- [ ] Y5 MCP servers re-execute themselves after an update
+- [x] Y5 MCP servers re-execute themselves after an update (Unix): before serving a request the server checks whether the installed file was replaced and, if so, becomes the new binary on the same pipes and answers that request itself; a new file that does not answer `--version` is ignored; at most 5 restarts per process. Servers started before this version still need one manual restart (`doctor` names them)
 - [ ] Y6 Codex, Command Code and Cursor readers checked on real chats
 - [ ] Y7 Run T12, T13 and the 10-task eval (X3)
 - [ ] Y8 Session checkpoints with real content

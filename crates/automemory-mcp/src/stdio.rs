@@ -17,8 +17,28 @@ impl StdioTransport {
         let stdin = tokio::io::stdin();
         let mut reader = BufReader::new(stdin).lines();
         let mut stdout = tokio::io::stdout();
+        let restarter = crate::restart::Restarter::new();
+        // After a restart the new process did not see the handshake: take the client's name from the one that did.
+        if let Ok(client) = std::env::var(crate::restart::CLIENT_ENV) {
+            self.server.note_client(&client);
+        }
 
-        while let Some(line) = reader.next_line().await? {
+        // A request the previous version of this server had already read when it restarted.
+        let mut pending = std::env::var(crate::restart::PENDING_ENV).ok();
+        std::env::remove_var(crate::restart::PENDING_ENV);
+
+        loop {
+            let line = match pending.take() {
+                Some(l) => l,
+                None => {
+                    let Some(l) = reader.next_line().await? else { break };
+                    // A newer automemory was installed and nothing else is waiting: become it, handing over this request (same process id, same pipes).
+                    if reader.get_ref().buffer().is_empty() && restarter.is_stale() {
+                        restarter.restart(self.server.client_name().as_deref(), Some(&l));
+                    }
+                    l
+                }
+            };
             let line = line.trim();
             if line.is_empty() {
                 continue;

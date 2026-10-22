@@ -183,7 +183,7 @@ pub fn execute() -> Result<()> {
         if stale.is_empty() {
             println!("✓ none older than this binary");
         } else {
-            println!("⚠ {} started before this binary was installed; restart the agent that owns each:", stale.len());
+            println!("⚠ {} started before this binary was installed; restart the agent that owns each (servers from this version on replace themselves after an update):", stale.len());
             for (pid, age_hours) in stale {
                 println!("    pid {pid} (running {age_hours} h), started by {}", parent_name(pid));
             }
