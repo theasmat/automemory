@@ -368,6 +368,22 @@ enum Commands {
         command: EvalCommands,
     },
 
+    /// What changed: decisions recorded or superseded, memories added or no longer active
+    #[command(next_help_heading = "Advanced")]
+    Changed {
+        /// Time span: 30m, 2h, 7d or 2w
+        #[arg(short, long, default_value = "7d")]
+        since: String,
+
+        /// Project slug (defaults to current project)
+        #[arg(short, long)]
+        project: Option<String>,
+
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage synthesized procedural playbooks and agent skills
     #[command(next_help_heading = "Advanced")]
     Skill {
@@ -1341,6 +1357,7 @@ async fn main() -> Result<()> {
             RuleCommands::Toggle { id, enabled } => commands::rule::toggle(&id, enabled)?,
             RuleCommands::Passwd { from_env } => commands::rule::passwd(from_env)?,
         },
+        Commands::Changed { since, project, json } => commands::changed::run(project, &since, json)?,
         Commands::Skill { command } => match command {
             SkillCommands::List { project } => commands::skill::list(project)?,
             SkillCommands::Export {

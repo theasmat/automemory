@@ -2057,8 +2057,8 @@ impl ToolRegistry {
                         };
                         let payload = json!({
                             "topic": res.topic,
-                            "active": res.active,
-                            "history": res.history,
+                            "active": res.active.as_ref().map(|d| d.dated_json()),
+                            "history": res.history.iter().map(|d| d.dated_json()).collect::<Vec<_>>(),
                             "next_action": next_action
                         });
                         ToolCallResult::json(&payload)

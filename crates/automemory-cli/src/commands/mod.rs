@@ -32,5 +32,6 @@ pub mod proposal;
 pub mod rule;
 pub mod rules_export;
 pub mod serve;
+pub mod changed;
 pub mod skill;
 pub mod sync;

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod backup;
+pub mod changed;
 pub mod codeintel;
 pub mod baton;
 pub mod bip39;
