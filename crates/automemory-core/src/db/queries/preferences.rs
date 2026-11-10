@@ -18,6 +18,7 @@ impl Database {
                 locked = excluded.locked,
                 source = excluded.source,
                 updated_at = excluded.updated_at
+            WHERE preferences.locked = 0 OR excluded.source != 'agent'
             "#,
             params![
                 pref.id,
@@ -133,5 +134,37 @@ impl Database {
             created_at,
             updated_at,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pref(value: &str, locked: bool, source: &str) -> Preference {
+        Preference {
+            id: uuid::Uuid::new_v4().to_string(),
+            key: "style".into(),
+            value: serde_json::json!(value),
+            scope: MemoryScope::Global,
+            project_id: None,
+            locked,
+            source: source.into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn an_agent_cannot_overwrite_or_unlock_a_locked_preference() {
+        let db = Database::open_in_memory().unwrap();
+        db.set_preference(&pref("tabs", true, "user")).unwrap();
+        db.set_preference(&pref("spaces", false, "agent")).unwrap();
+        let p = db.get_preference("style", None).unwrap().unwrap();
+        assert_eq!(p.value, serde_json::json!("tabs"));
+        assert!(p.locked);
+        // A person can still change it.
+        db.set_preference(&pref("spaces", true, "user")).unwrap();
+        assert_eq!(db.get_preference("style", None).unwrap().unwrap().value, serde_json::json!("spaces"));
     }
 }

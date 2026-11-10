@@ -10,6 +10,8 @@ use uuid::Uuid;
 /// writes. With `--from-env`, reads the secret from AUTOMEMORY_PASSWORD
 /// instead of prompting (for non-TTY setup).
 pub fn passwd(from_env: bool) -> Result<()> {
+    // Replacing an existing password needs the current one, or an agent could take the gate over.
+    auth::require_human(auth::stored_password_hash().as_deref(), "change the human password")?;
     let secret = if from_env {
         std::env::var(auth::PASSWORD_ENV_VAR)
             .with_context(|| format!("{} is not set; nothing changed.", auth::PASSWORD_ENV_VAR))?

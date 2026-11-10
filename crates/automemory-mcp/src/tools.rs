@@ -1693,10 +1693,11 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing parameter: key"),
                 };
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-                let locked = arguments
-                    .get("locked")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+                // Only a person (CLI or dashboard) may unlock, so `locked:false` is refused here.
+                if arguments.get("locked").and_then(|v| v.as_bool()) == Some(false) {
+                    return ToolCallResult::error("Agents cannot unlock a preference; ask the person.");
+                }
+                let locked = true;
 
                 match self.db.lock_preference(key, project_id, locked) {
                     Ok(true) => ToolCallResult::json(&json!({ "locked": locked, "key": key })),
@@ -1950,7 +1951,6 @@ impl ToolRegistry {
                                     "scope": l.scope,
                                     "scope_type": l.scope_type.to_string(),
                                     "agent": l.agent,
-                                    "session_id": l.session_id,
                                     "goal": l.goal,
                                     "remaining_seconds": rem,
                                     "expires_at": l.expires_at.to_rfc3339(),

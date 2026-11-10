@@ -167,6 +167,9 @@ impl GitSync {
     pub fn push<P: AsRef<Path>>(dir: P, remote: Option<&str>, branch: Option<&str>) -> Result<()> {
         let remote_name = remote.unwrap_or("origin");
         let branch_name = branch.unwrap_or("main");
+        if remote_name.starts_with('-') || branch_name.starts_with('-') {
+            anyhow::bail!("remote and branch names may not start with '-'");
+        }
 
         let _ = Command::new("git")
             .args(["branch", "-M", branch_name])
@@ -189,6 +192,9 @@ impl GitSync {
     pub fn pull<P: AsRef<Path>>(dir: P, remote: Option<&str>, branch: Option<&str>) -> Result<()> {
         let remote_name = remote.unwrap_or("origin");
         let branch_name = branch.unwrap_or("main");
+        if remote_name.starts_with('-') || branch_name.starts_with('-') {
+            anyhow::bail!("remote and branch names may not start with '-'");
+        }
 
         let output = Command::new("git")
             .args(["pull", "--rebase", remote_name, branch_name])
