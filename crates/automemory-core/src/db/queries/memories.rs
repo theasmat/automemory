@@ -57,6 +57,42 @@ impl Database {
 
     /// Directly inserts or overwrites by ID without checking for summary duplicates in scope.
     /// Useful for raw imports or testing consolidation proposal generation.
+    /// Removes a leaked secret from a stored memory and from every earlier version of it (version history keeps old
+    /// content), by pattern and, when given, by the exact string. Returns false when the memory does not exist.
+    pub fn scrub_memory(&self, id: &str, literal: Option<&str>) -> Result<bool> {
+        let clean = |t: &str| {
+            let t = redact_text(t);
+            match literal.filter(|l| !l.is_empty()) {
+                Some(l) => t.replace(l, "[REDACTED]"),
+                None => t,
+            }
+        };
+        let Some(mem) = self.get_memory_by_id(id)? else { return Ok(false) };
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE memories SET content = ?1, summary = ?2, updated_at = ?3 WHERE id = ?4",
+            params![clean(&mem.content), clean(&mem.summary), Utc::now().to_rfc3339(), id],
+        )?;
+        let versions: Vec<(String, String, String)> = {
+            let mut stmt = conn.prepare("SELECT id, content, summary FROM memory_versions WHERE memory_id = ?1")?;
+            let rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        for (vid, content, summary) in versions {
+            conn.execute("UPDATE memory_versions SET content = ?1, summary = ?2 WHERE id = ?3", params![clean(&content), clean(&summary), vid])?;
+        }
+        // An embedding of the old text is derived data; it is rebuilt from the clean text.
+        let _ = conn.execute("DELETE FROM memory_vectors WHERE memory_id = ?1", params![id]);
+        Ok(true)
+    }
+
+    /// Drops the version history of a memory. A computer that is told "a secret was scrubbed" does not know the secret,
+    /// so it cannot clean old versions by text; it forgets them.
+    pub fn forget_memory_versions(&self, id: &str) -> Result<()> {
+        self.conn().execute("DELETE FROM memory_versions WHERE memory_id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn save_memory_direct(&self, mem: &Memory) -> Result<()> {
         let mem = &redacted(mem);
         let conn = self.conn();

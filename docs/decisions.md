@@ -33,6 +33,9 @@ Settled choices and why. Change one only on new evidence, and edit this file whe
 ## Sync
 - Git-delta sync is the only path; the legacy text vault and the cloud client were removed. `sync pair` keeps the recovery phrase.
 - Code travels by git, never by AutoMemory. Vectors are not synced.
+- Each device signs its ops; the recovery phrase stays the only thing needed to enrol a computer. A lost computer is cut off by rotating the vault key (`sync devices revoke`), and the old phrase then stops opening new data. See [specs/sync-v2.md](specs/sync-v2.md).
+- Sync never lets a copy that is not person-authored replace a person's note, and agents cannot change, archive or restore one over MCP. Locked preferences are not synced (they stay on their machine).
+- No clock, CRDT or logical clock is needed: the merge compares fingerprints against the last synced version.
 
 ## Surface (after consolidation)
 AutoMemory is seven things: Notes, Hand-off, Library, History, Coordination, Sync, Settings. Nothing a user relies on disappears silently: a removed MCP tool answers "was removed, use …". The evidence is in [research/consolidation_audit.md](research/consolidation_audit.md). Counts live in [architecture](architecture/overview.md) and are checked against the code.

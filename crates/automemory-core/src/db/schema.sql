@@ -467,6 +467,16 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
 );
 
 -- Sync watermarks + applied delta files (incremental op-log sync)
+CREATE TABLE IF NOT EXISTS sync_devices (
+    device_id TEXT PRIMARY KEY,
+    pubkey TEXT NOT NULL,
+    enc_pubkey TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    epoch INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL,
+    revoked_at TEXT
+);
 CREATE TABLE IF NOT EXISTS sync_kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

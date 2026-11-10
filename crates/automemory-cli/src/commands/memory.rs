@@ -383,3 +383,16 @@ pub fn prune(yes: bool) -> Result<()> {
     }
     Ok(())
 }
+
+/// `memory scrub`: take a secret out of a stored memory, its older versions and the other computers.
+pub fn scrub(id: &str, text: Option<&str>) -> Result<()> {
+    automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "remove a secret from a memory")?;
+    let db = Database::open(&Config::default_config().db_path)?;
+    if !db.scrub_memory(id, text)? {
+        anyhow::bail!("no memory {id}");
+    }
+    automemory_core::sync::deltas::mark_scrubbed(&db, id);
+    println!("✓ Scrubbed {id} and its earlier versions here. The next sync cleans your other computers.");
+    println!("Copies already in the vault's git history stay there until you run `automemory sync purge-history --yes`.");
+    Ok(())
+}

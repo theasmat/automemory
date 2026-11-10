@@ -8,7 +8,7 @@
 | [decisions](decisions.md) | Settled choices and why |
 | [roadmap](roadmap.md) | Open work, gates, risks, undecided questions |
 | [../CHANGELOG.md](../CHANGELOG.md) | What shipped |
-| [specs/](specs/) | Feature specs: [rooms](specs/rooms.md), [continuity](specs/continuity.md), [library](specs/library.md), [dashboard UI](specs/dashboard-ui.md), [onboarding tour](specs/onboarding-tour.md) |
+| [specs/](specs/) | Feature specs: [rooms](specs/rooms.md), [continuity](specs/continuity.md), [library](specs/library.md), [dashboard UI](specs/dashboard-ui.md), [onboarding tour](specs/onboarding-tour.md), [sync v2](specs/sync-v2.md) |
 | [reference/chat-formats/](reference/chat-formats/) | On-disk chat formats of each agent, for the transcript readers |
 | [research/](research/) | Evidence and analyses behind the decisions (including [competitive PM strategy vs. `claude-mem` & `engram`](research/2026-10-22_2146_competitive_pm_strategy.md)) |
 | [../tests/README.md](../tests/README.md) | How to run the tests; live-agent checks in `tests/manual/` |

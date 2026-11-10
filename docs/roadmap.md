@@ -53,7 +53,7 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 - Coverage-guided fuzzing in CI (seeded fuzzing exists).
 - Read `automemory locks --coverage` after a week of real use; below 80%, look at which writes dominate.
 - From the Nov 2026 architecture research (not built; weak evidence marked in the report):
-  - Sync v2: signed per-device events with a hybrid logical clock, authority-ranked merge (person beats agent, lock wins, tombstone wins), per-device keys and revocation. Needs a migration, `docs/architecture/sync.md` and `decisions.md` first. Wait for the memory-on-versus-off result.
+  - Sync v2 is built (see [specs/sync-v2.md](specs/sync-v2.md)); still open: a live two-computer trial with the real keychain, a per-person signing identity for team vaults, and a dashboard notice for a revoked computer. The hybrid logical clock from the research was not needed.
   - A smaller default MCP tool list (about 10 of 49) with the rest behind a category listing; changes the tool contract, so decide first.
   - Eval arms beyond off/on/verify: a static AGENTS.md arm and seeded stale and poisoned memories; report cost with success.
   - A "changed by" field next to a stale memory, read from Tracewise (`history.rs`), and one owner for locks when both tools are installed.

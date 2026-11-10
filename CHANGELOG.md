@@ -148,6 +148,15 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - Secrets are redacted at the database write boundary for memories, decisions, failures and traces, whichever path wrote them (MCP, hook, CLI, sync)
 - The resume pack says its notes are recorded data, not instructions
 
+## Sync v2
+
+- Authority: agents cannot change, archive or restore a note a person wrote or pinned (MCP), and sync never lets a copy that is not person-authored replace one (`sync_authority` review item); two decisions for one topic from two computers become one review item
+- Device identity: every computer signs its ops (ed25519) and announces its key; forged, unsigned-from-a-known-device, unknown-device and revoked-device ops are refused (`rejected` in the sync report). Schema v21 adds `sync_devices`
+- `automemory sync devices` (list, `strict on|off`, `revoke <id>`): revoking rotates the vault key, wraps the new one to every other computer (X25519), and prints the new recovery phrase
+- `automemory memory scrub <id> [--text …]` removes a secret from a memory, its versions and its embedding, and the next sync cleans your other computers
+- `automemory sync purge-history --yes` compacts the vault to one signed snapshot and replaces its git history with one commit
+- Spec: [docs/specs/sync-v2.md](docs/specs/sync-v2.md)
+
 ## Tracewise link and MCP versions
 
 - Optional Tracewise link (`history.rs`): `automemory who <file>` shows who changed a file and why from `tw file --json`; `doctor` reports the `tw` version. Without `tw` nothing changes (`NoHistory`); AutoMemory never opens Tracewise's database

@@ -16,6 +16,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Tool names that no longer exist, and what to call instead. A call by an old name gets this pointer rather than "unknown tool".
+const PERSON_OWNED: &str = "A person wrote or pinned this note, so an agent cannot change, archive or restore it. Propose a change with memory.propose and a person decides.";
+
 const REMOVED: &[(&str, &str)] = &[
     ("memory.ask", "memory.recall"),
     ("memory.context", "memory.list with view=context"),
@@ -135,6 +137,10 @@ fn active_policy() -> Box<dyn TrustPolicy> {
 }
 
 impl ToolRegistry {
+    fn person_authored(&self, id: &str) -> bool {
+        self.db.get_memory_by_id(id).ok().flatten().is_some_and(|m| m.is_person_authored())
+    }
+
     pub fn new(db: Arc<Database>) -> Self {
         Self::with_identity(db, None)
     }
@@ -1477,6 +1483,7 @@ impl ToolRegistry {
                     None => return ToolCallResult::error("Missing parameter: id"),
                 };
                 match self.db.get_memory_by_id(id) {
+                    Ok(Some(_)) if self.person_authored(id) => ToolCallResult::error(PERSON_OWNED),
                     Ok(Some(mut mem)) => {
                         if let Some(c) = arguments.get("content").and_then(|v| v.as_str()) {
                             mem.content = redact_text(c);
@@ -1503,6 +1510,9 @@ impl ToolRegistry {
                     Some(id) => id,
                     None => return ToolCallResult::error("Missing parameter: id"),
                 };
+                if self.person_authored(id) {
+                    return ToolCallResult::error(PERSON_OWNED);
+                }
                 match self.db.archive_memory(id) {
                     Ok(true) => ToolCallResult::json(&json!({ "archived": true, "id": id })),
                     Ok(false) => ToolCallResult::error("Memory not found or already archived"),
@@ -1515,6 +1525,9 @@ impl ToolRegistry {
                     Some(id) => id,
                     None => return ToolCallResult::error("Missing parameter: id"),
                 };
+                if self.person_authored(id) {
+                    return ToolCallResult::error(PERSON_OWNED);
+                }
                 match self.db.restore_memory(id) {
                     Ok(true) => ToolCallResult::json(&json!({ "restored": true, "id": id })),
                     Ok(false) => ToolCallResult::error("Memory not found or already active"),

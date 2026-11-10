@@ -27,6 +27,8 @@ pub struct AutoReport {
     pub skipped_locked: bool,
     pub encrypted: bool,
     pub notes: Vec<String>,
+    /// The vault's git history was replaced by a purge on another computer; this one followed it.
+    pub vault_replaced: bool,
 }
 
 impl AutoReport {
@@ -197,7 +199,15 @@ fn pull(vault_root: &Path, report: &mut AutoReport) {
         Ok((true, _)) => report.pulled = true,
         Ok((false, msg)) => {
             let _ = git(vault_root, &["rebase", "--abort"], Duration::from_secs(10));
-            report.notes.push(format!("pull failed: {}", msg.lines().last().unwrap_or("")));
+            // Histories with nothing in common: another computer purged the vault. Everything in it is derived from the
+            // databases, so follow the remote and send everything again.
+            let unrelated = git(vault_root, &["merge-base", "HEAD", "origin/main"], Duration::from_secs(10)).map(|(ok, _)| !ok).unwrap_or(false);
+            if unrelated && git(vault_root, &["reset", "-q", "--hard", "origin/main"], NETWORK_TIMEOUT).map(|(ok, _)| ok).unwrap_or(false) {
+                report.pulled = true;
+                report.vault_replaced = true;
+            } else {
+                report.notes.push(format!("pull failed: {}", msg.lines().last().unwrap_or("")));
+            }
         }
         Err(e) => report.notes.push(format!("pull failed: {e}")),
     }
@@ -237,6 +247,34 @@ fn push(vault_root: &Path, report: &mut AutoReport) {
     }
 }
 
+/// Replaces the vault's git history with one commit and force-pushes it, so old (possibly sensitive) delta files are
+/// gone from the repository. Compact first (`deltas::compact`). The host may keep old objects until it collects garbage.
+pub fn purge_history(vault_root: &Path, remote_url: Option<&str>) -> Result<()> {
+    let steps: [&[&str]; 4] = [
+        &["checkout", "-q", "--orphan", "am-purge"],
+        &["add", "-A"],
+        &["commit", "-q", "-m", "AutoMemory vault (history purged)"],
+        &["branch", "-q", "-D", "main"],
+    ];
+    for s in steps {
+        let (ok, msg) = git(vault_root, s, Duration::from_secs(30))?;
+        if !ok && s[0] != "branch" {
+            anyhow::bail!("git {} failed: {}", s[0], msg.trim());
+        }
+    }
+    let (ok, msg) = git(vault_root, &["branch", "-q", "-m", "main"], Duration::from_secs(10))?;
+    if !ok {
+        anyhow::bail!("git branch failed: {}", msg.trim());
+    }
+    if remote_url.is_some() {
+        let (ok, msg) = git(vault_root, &["push", "-q", "--force", "-u", "origin", "main"], NETWORK_TIMEOUT)?;
+        if !ok {
+            anyhow::bail!("force push failed: {}", msg.trim());
+        }
+    }
+    Ok(())
+}
+
 /// One sync pass. Local-only (no remote) still applies and writes delta files in the vault folder.
 pub fn run(
     db: &Database,
@@ -258,7 +296,16 @@ pub fn run(
             pull(vault_root, &mut report);
         }
     }
+    if report.vault_replaced {
+        deltas::forget_sent(db);
+    }
     let applied = deltas::sync_cycle_keyed(db, vault_root, key)?;
+    // A device was revoked: this computer now holds the rotated vault key; make it the one the keychain returns.
+    if let Some(new_key) = super::epochs::take_pending_key(db) {
+        if crate::keychain::set_master_key(&new_key).is_ok() {
+            super::epochs::clear_pending_key(db);
+        }
+    }
     report.applied = applied.applied;
     report.conflicts = applied.conflicts;
     if remote_url.is_some() && do_push {
@@ -356,6 +403,53 @@ mod tests {
         let r = run(&db, &vault, Some("/nonexistent/remote.git"), true, true, None).unwrap();
         assert!(!r.notes.is_empty() && !r.pushed, "{}", r.summary());
         assert!(!vault.join(LOCK_FILE).exists(), "lock released");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_purge_leaves_one_commit_and_one_file_and_the_other_computer_follows() {
+        let root = std::env::temp_dir().join(format!("am-auto-purge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let remote = root.join("remote.git");
+        std::fs::create_dir_all(&remote).unwrap();
+        sh(&remote, &["init", "-q", "--bare", "-b", "main"]);
+        let url = remote.to_string_lossy().to_string();
+        let key = [5u8; 32];
+        let (a, b) = (Database::open_in_memory().unwrap(), Database::open_in_memory().unwrap());
+        project(&a, "id-a");
+        let (va, vb) = (root.join("vault-a"), root.join("vault-b"));
+
+        a.save_memory_direct(&decision_memory("id-a", "m-1", "first")).unwrap();
+        run(&a, &va, Some(&url), true, true, Some(&key)).unwrap();
+        let mut m = a.get_memory_by_id("m-1").unwrap().unwrap();
+        m.summary = "second".into();
+        m.updated_at = Utc::now();
+        a.save_memory_direct(&m).unwrap();
+        run(&a, &va, Some(&url), true, true, Some(&key)).unwrap();
+        run(&b, &vb, Some(&url), true, true, Some(&key)).unwrap();
+        assert_eq!(b.get_memory_by_id("m-1").unwrap().unwrap().summary, "second");
+
+        // A compacts and purges (after a pass that pulls everything, as `sync purge-history` does).
+        run(&a, &va, Some(&url), true, true, Some(&key)).unwrap();
+        let removed = deltas::compact(&a, &va, Some(&key)).unwrap();
+        assert!(removed >= 2, "old delta files are gone ({removed})");
+        purge_history(&va, Some(&url)).unwrap();
+        let probe = root.join("probe");
+        sh(&root, &["clone", "-q", &url, "probe"]);
+        let (_, commits) = git(&probe, &["rev-list", "--count", "HEAD"], Duration::from_secs(5)).unwrap();
+        assert_eq!(commits.trim(), "1");
+        let files = std::fs::read_dir(probe.join("deltas")).unwrap().count();
+        assert_eq!(files, 1, "one snapshot file");
+
+        // B edits, then syncs: git rebases onto the rewritten history without help, and A receives the edit.
+        let mut m = b.get_memory_by_id("m-1").unwrap().unwrap();
+        m.summary = "third".into();
+        m.updated_at = Utc::now() + chrono::Duration::seconds(3);
+        b.save_memory_direct(&m).unwrap();
+        let rb = run(&b, &vb, Some(&url), true, true, Some(&key)).unwrap();
+        assert!(rb.pulled && rb.pushed, "{}", rb.summary());
+        run(&a, &va, Some(&url), true, true, Some(&key)).unwrap();
+        assert_eq!(a.get_memory_by_id("m-1").unwrap().unwrap().summary, "third");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

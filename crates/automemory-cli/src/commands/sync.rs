@@ -193,3 +193,71 @@ pub fn bootstrap(remote_url: &str, phrase: Option<String>, connect_agents: bool)
     println!("\nDone. In a project folder, `automemory resume` shows where you left off; `automemory doctor` checks the setup.");
     Ok(())
 }
+
+/// `sync devices`: who may write to the vault.
+pub fn devices_list() -> Result<()> {
+    let db = Database::open(&Config::default_config().db_path)?;
+    let me = automemory_core::sync::deltas::device_id(&db)?;
+    let devices = db.list_sync_devices()?;
+    if devices.is_empty() {
+        println!("No devices yet. They appear after the first sync (`automemory sync auto`).");
+    }
+    for d in &devices {
+        let tag = if d.device_id == me { " (this computer)" } else { "" };
+        println!("{}{}  {}  key {}…  since {}", d.device_id, tag, d.status, d.pubkey.chars().take(8).collect::<String>(), d.added_at.chars().take(10).collect::<String>());
+    }
+    println!(
+        "Unsigned changes from computers that have not upgraded: {}",
+        if db.sync_requires_signatures() { "refused" } else { "accepted (refuse them with `sync devices strict on` once every computer has upgraded)" }
+    );
+    Ok(())
+}
+
+pub fn devices_strict(on: bool) -> Result<()> {
+    let db = Database::open(&Config::default_config().db_path)?;
+    db.set_sync_requires_signatures(on);
+    println!("Unsigned changes are now {}.", if on { "refused" } else { "accepted" });
+    Ok(())
+}
+
+/// `sync devices revoke <id>`: rotate the vault key so that computer can read and write nothing new.
+pub fn devices_revoke(id: &str) -> Result<()> {
+    automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "cut a computer off from sync")?;
+    let db = Database::open(&Config::default_config().db_path)?;
+    let (root, remote) = automemory_core::sync::auto::vault_settings();
+    let Some(key) = automemory_core::sync::auto::resolve_key(remote.is_some()) else {
+        anyhow::bail!("sync has no key on this computer; set up sync first (`automemory sync pair`)");
+    };
+    let new_key = automemory_core::sync::epochs::revoke(&db, &root, id, &key)?;
+    automemory_core::keychain::set_master_key(&new_key)?;
+    automemory_core::sync::epochs::clear_pending_key(&db);
+    let report = automemory_core::sync::auto::run(&db, &root, remote.as_deref(), false, true, Some(&new_key))?;
+    println!("✓ {id} is cut off. {}", report.summary());
+    println!("Your other computers pick up the new key the next time they sync.");
+    println!("A computer you pair from now on needs this NEW recovery phrase (the old one no longer opens new data):\n");
+    println!("  {}\n", automemory_core::bip39::master_key_to_mnemonic_24(&new_key)?);
+    println!("Anything {id} already read or copied stays with it. Unsigned changes are now refused everywhere.");
+    Ok(())
+}
+
+/// `sync purge-history`: one snapshot, one commit, force-pushed.
+pub fn purge_history(yes: bool) -> Result<()> {
+    let (root, remote) = automemory_core::sync::auto::vault_settings();
+    if !yes {
+        println!("This would: sync, replace every delta file in the vault with one signed snapshot, and replace the vault's git history with one commit{}.", if remote.is_some() { " (force-pushed to your remote)" } else { "" });
+        println!("Your other computers follow on their next sync. Anyone who already cloned the vault, and the git host until it cleans up, keep the old history.");
+        println!("For a vault only you use. Run again with --yes to do it.");
+        return Ok(());
+    }
+    automemory_core::auth::require_human(automemory_core::auth::stored_password_hash().as_deref(), "replace the vault's history")?;
+    let db = Database::open(&Config::default_config().db_path)?;
+    let Some(key) = automemory_core::sync::auto::resolve_key(remote.is_some()) else {
+        anyhow::bail!("sync has no key on this computer; set up sync first (`automemory sync pair`)");
+    };
+    // Pull and apply everything first, so no other computer's change is lost to the snapshot.
+    let before = automemory_core::sync::auto::run(&db, &root, remote.as_deref(), true, true, Some(&key))?;
+    let removed = automemory_core::sync::deltas::compact(&db, &root, Some(&key))?;
+    automemory_core::sync::auto::purge_history(&root, remote.as_deref())?;
+    println!("✓ {} Compacted {removed} file(s) into one snapshot and replaced the history.", before.summary());
+    Ok(())
+}

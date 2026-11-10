@@ -1,5 +1,7 @@
 # Sync: the same experience on another session or machine
 
+Sync v2 (signed ops, device registry, revocation, scrub and purge, compaction) is described in [specs/sync-v2.md](../specs/sync-v2.md).
+
 "Experience" means three things: what the project **knows** (memories, decisions, failures, skills), what is **in
 flight** (current task, plan, baton, branch, uncommitted work), and the **agent setup** (hooks, MCP).
 

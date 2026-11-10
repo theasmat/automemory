@@ -1,6 +1,8 @@
 pub mod auto;
 pub mod daemon;
 pub mod deltas;
+pub mod devices;
+pub mod epochs;
 pub mod git;
 pub mod identity;
 pub mod vault;

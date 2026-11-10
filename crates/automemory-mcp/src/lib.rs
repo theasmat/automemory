@@ -94,6 +94,46 @@ mod tests {
     }
 
     #[test]
+    fn an_agent_cannot_change_archive_or_restore_a_note_a_person_wrote() {
+        use automemory_core::models::{Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType};
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let mem = Memory {
+            id: "m-person".into(),
+            scope: MemoryScope::Project,
+            project_id: None,
+            memory_type: MemoryType::Fact,
+            content: "the human's rule".into(),
+            summary: "rule".into(),
+            confidence: 0.9,
+            importance: 0.5,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::User,
+            version: Some(1),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: json!({}),
+        };
+        db.save_memory_direct(&mem).unwrap();
+        let server = McpServer::new(db.clone());
+        for (tool, args) in [
+            ("memory.update", json!({"id": "m-person", "content": "agent rewrite"})),
+            ("memory.archive", json!({"id": "m-person"})),
+            ("memory.restore", json!({"id": "m-person"})),
+        ] {
+            let req = JsonRpcRequest { jsonrpc: "2.0".into(), id: Some(json!(1)), method: "tools/call".into(), params: Some(json!({"name": tool, "arguments": args})) };
+            let r = serde_json::to_value(server.handle_request(req).unwrap()).unwrap();
+            assert_eq!(r["result"]["is_error"], true, "{tool} must be refused: {r}");
+        }
+        let kept = db.get_memory_by_id("m-person").unwrap().unwrap();
+        assert_eq!(kept.content, "the human's rule");
+        assert_eq!(kept.status, MemoryStatus::Active);
+    }
+
+    #[test]
     fn test_mcp_memory_save_and_recall() {
         let db = Arc::new(Database::open_in_memory().unwrap());
         let server = McpServer::new(db);

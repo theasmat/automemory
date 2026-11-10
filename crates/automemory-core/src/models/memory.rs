@@ -242,6 +242,12 @@ impl Memory {
         }
     }
 
+    /// True when a person wrote or pinned it (tier 1 or 3). Agents may not change or archive these;
+    /// they propose instead, and sync never lets an agent-sourced copy replace one.
+    pub fn is_person_authored(&self) -> bool {
+        matches!(self.trust_tier(), TrustTier::Pinned | TrustTier::UserStatement)
+    }
+
     /// Returns true if this memory is quarantined or pending human review.
     pub fn is_quarantined(&self) -> bool {
         self.trust_tier() == TrustTier::UntrustedOrigin

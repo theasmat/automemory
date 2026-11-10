@@ -1013,6 +1013,16 @@ enum MemoryCommands {
         yes: bool,
     },
 
+    /// Remove a leaked secret from a memory, its older versions and your other computers (asks for the password when one is set)
+    Scrub {
+        /// Memory ID
+        id: String,
+
+        /// The exact text to remove (patterns such as API keys are removed anyway)
+        #[arg(long)]
+        text: Option<String>,
+    },
+
     /// Read a specific memory record in detail
     Get {
         /// Memory ID
@@ -1147,11 +1157,43 @@ enum SyncCommands {
         no_connect: bool,
     },
 
+    /// The computers that may write to your vault: list them, require signatures, or cut one off
+    Devices {
+        #[command(subcommand)]
+        command: Option<DeviceCommands>,
+    },
+
+    /// Compact the vault into one snapshot and replace its git history, so deleted or scrubbed data leaves the repository
+    PurgeHistory {
+        /// Do it (asks for the password when one is set). Without it, only says what would happen
+        #[arg(long)]
+        yes: bool,
+    },
+
     /// Secure zero-knowledge multi-device pairing via BIP-39 mnemonic phrase and QR code
     Pair {
         /// Join an existing vault using a 12-word recovery seed phrase
         #[arg(long)]
         join: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DeviceCommands {
+    /// List devices (default)
+    List,
+
+    /// Refuse unsigned changes from computers that have not upgraded (turn on once every computer has)
+    Strict {
+        /// on or off
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+    },
+
+    /// Cut a computer off: rotates the vault key and gives you a new recovery phrase (needs the human password)
+    Revoke {
+        /// Device id from `sync devices`
+        id: String,
     },
 }
 
@@ -1259,6 +1301,7 @@ async fn main() -> Result<()> {
         },
         Commands::Memory { command } => match command {
             MemoryCommands::Prune { yes } => commands::memory::prune(yes)?,
+            MemoryCommands::Scrub { id, text } => commands::memory::scrub(&id, text.as_deref())?,
             MemoryCommands::Get { id } => {
                 commands::memory::get(&id)?;
             }
@@ -1320,6 +1363,12 @@ async fn main() -> Result<()> {
             SyncCommands::Bootstrap { remote, phrase, no_connect } => {
                 commands::sync::bootstrap(&remote, phrase, !no_connect)?
             }
+            SyncCommands::PurgeHistory { yes } => commands::sync::purge_history(yes)?,
+            SyncCommands::Devices { command } => match command.unwrap_or(DeviceCommands::List) {
+                DeviceCommands::List => commands::sync::devices_list()?,
+                DeviceCommands::Strict { state } => commands::sync::devices_strict(state == "on")?,
+                DeviceCommands::Revoke { id } => commands::sync::devices_revoke(&id)?,
+            },
             SyncCommands::Pair { join } => {
                 commands::sync::pair(join)?;
             }

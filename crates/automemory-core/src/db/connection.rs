@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 20;
+const LATEST_SCHEMA_VERSION: i32 = 21;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -566,6 +566,18 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
         step(conn, "DROP TABLE IF EXISTS graph_edges", [])?;
         step(conn, "DROP TABLE IF EXISTS graph_entities", [])?;
         step(conn, "PRAGMA user_version = 20", [])?;
+    }
+    if version < 21 {
+        // Sync v2: the devices that may write to the vault, each with its signing key (new table only).
+        step(
+            conn,
+            "CREATE TABLE IF NOT EXISTS sync_devices (
+                device_id TEXT PRIMARY KEY, pubkey TEXT NOT NULL, enc_pubkey TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active', epoch INTEGER NOT NULL DEFAULT 0,
+                added_at TEXT NOT NULL, revoked_at TEXT)",
+            [],
+        )?;
+        step(conn, "PRAGMA user_version = 21", [])?;
     }
     Ok(())
 }

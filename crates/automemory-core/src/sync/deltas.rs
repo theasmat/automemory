@@ -48,6 +48,18 @@ pub struct DeltaOp {
     /// Who wrote it (see [`person`]); records from another person never arrive pinned.
     #[serde(default)]
     pub author: Option<String>,
+    /// Wire format: absent (v1) or 2 (signed by the writing device, see [`super::devices`]).
+    #[serde(default)]
+    pub v: Option<u8>,
+    /// Per-device counter, part of the signed bytes.
+    #[serde(default)]
+    pub seq: Option<u64>,
+    /// ed25519 signature (base64) of [`super::devices::canonical`].
+    #[serde(default)]
+    pub sig: Option<String>,
+    /// Set on a memory whose content was scrubbed of a secret: receivers apply it over their own copy and scrub its history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scrub: Option<bool>,
 }
 
 /// Outcome of applying delta files. Conflicts keep the local copy and file
@@ -59,6 +71,8 @@ pub struct ApplyReport {
     pub conflicts: usize,
     pub skipped_own: usize,
     pub stale: usize,
+    /// Ops refused because their signature or device was not acceptable (sync v2).
+    pub rejected: usize,
 }
 
 const APPLIED_KEY: &str = "applied_fingerprints";
@@ -145,6 +159,52 @@ pub fn shared_by(db: &Database, memory_id: &str) -> Option<String> {
     get_kv(db, &format!("author:{memory_id}")).ok().flatten()
 }
 
+/// Forget what this device believes it already sent, so the next push sends everything again (used when the vault
+/// was replaced by a purge). Sending a record the others already have is harmless: equal fingerprints converge.
+pub fn forget_sent(db: &Database) {
+    let _ = set_kv(db, APPLIED_KEY, "{}");
+}
+
+/// Replaces every delta file with one signed snapshot of the current state plus the device announcements, so the vault
+/// stops growing. Run a sync cycle first (this device must have applied everything). Returns how many files it removed.
+/// A computer that was away merges the snapshot like any other change: unchanged records fast-forward, edited ones
+/// become review items, so nothing is lost by dropping the intermediate versions.
+pub fn compact(db: &Database, vault_root: &Path, key: Option<&[u8; 32]>) -> Result<usize> {
+    let device = device_id(db)?;
+    // Take in everything already in the vault first: a device that announced itself in a file we are about to delete
+    // must be in our registry (and so in the snapshot), or its later changes would look like they came from a stranger.
+    apply_all_deltas_keyed(db, vault_root, &device, key)?;
+    let old = list_delta_files(vault_root);
+    forget_sent(db);
+    let mut ops = collect_deltas(db, &device)?;
+    super::devices::sign_ops(db, &mut ops)?;
+    for dev in db.list_sync_devices()? {
+        if let Some(raw) = get_kv(db, &format!("announce_op:{}", dev.device_id))? {
+            if let Ok(op) = serde_json::from_str::<DeltaOp>(&raw) {
+                ops.push(op);
+            }
+        }
+    }
+    let Some(snapshot) = write_delta_file_keyed(vault_root, &device, &ops, key)? else {
+        anyhow::bail!("nothing to compact");
+    };
+    let sent: HashMap<String, String> = ops.iter().filter(|o| o.kind != "device").map(|o| (o.id.clone(), o.fingerprint.clone())).collect();
+    merge_applied(db, &sent)?;
+    add_seen(db, ops.iter().map(|o| o.fingerprint.clone()))?;
+    let mut removed = 0;
+    for f in old.into_iter().filter(|f| *f != snapshot) {
+        if fs::remove_file(&f).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
+/// Marks a memory as scrubbed so the next push tells the other computers to clean theirs too.
+pub fn mark_scrubbed(db: &Database, memory_id: &str) {
+    let _ = set_kv(db, &format!("scrub:{memory_id}"), "1");
+}
+
 pub fn sync_cycle(db: &Database, vault_root: &Path) -> Result<ApplyReport> {
     sync_cycle_keyed(db, vault_root, None)
 }
@@ -154,13 +214,36 @@ pub fn sync_cycle(db: &Database, vault_root: &Path) -> Result<ApplyReport> {
 pub fn sync_cycle_keyed(db: &Database, vault_root: &Path, key: Option<&[u8; 32]>) -> Result<ApplyReport> {
     db.link_project_keys();
     let device = device_id(db)?;
+    if db.sync_kv_get(super::epochs::SELF_REVOKED).as_deref() == Some("1") {
+        anyhow::bail!("this computer was removed from sync; pair it again with the new recovery phrase");
+    }
     let report = apply_all_deltas_keyed(db, vault_root, &device, key)?;
-    let ops = collect_deltas(db, &device)?;
+    // A device was revoked while we were away: follow the new key before writing anything.
+    let rotated = match key {
+        Some(k) => super::epochs::adopt(db, vault_root, &device, k)?,
+        None => None,
+    };
+    let key = rotated.as_ref().or(key);
+    let mut ops = collect_deltas(db, &device)?;
+    // Sync v2: sign what we send, and announce our public key until the others can have seen it.
+    super::devices::sign_ops(db, &mut ops)?;
+    let pubkey = super::devices::own_pubkey(db)?;
+    let announce = get_kv(db, "announced_pubkey")?.as_deref() != Some(pubkey.as_str());
+    if announce {
+        ops.push(super::devices::announce_op(db, &device)?);
+    }
     if write_delta_file_keyed(vault_root, &device, &ops, key)?.is_some() {
         let sent: HashMap<String, String> =
-            ops.iter().map(|o| (o.id.clone(), o.fingerprint.clone())).collect();
+            ops.iter().filter(|o| o.kind != "device").map(|o| (o.id.clone(), o.fingerprint.clone())).collect();
         merge_applied(db, &sent)?;
         add_seen(db, ops.iter().map(|o| o.fingerprint.clone()))?;
+        for op in ops.iter().filter(|o| o.scrub == Some(true)) {
+            set_kv(db, &format!("scrub:{}", op.id), "")?;
+        }
+        if announce {
+            set_kv(db, "announced_pubkey", &pubkey)?;
+            db.register_own_device(&device, &pubkey, &super::epochs::own_enc_pubkey(db)?)?;
+        }
     }
     Ok(report)
 }
@@ -177,6 +260,10 @@ fn add_seen(db: &Database, fingerprints: impl IntoIterator<Item = String>) -> Re
     let mut seen = get_seen(db)?;
     seen.extend(fingerprints);
     set_kv(db, SEEN_KEY, &serde_json::to_string(&seen)?)
+}
+
+pub(super) fn fingerprint_of(payload: &serde_json::Value) -> String {
+    fingerprint(payload)
 }
 
 fn fingerprint(payload: &serde_json::Value) -> String {
@@ -239,6 +326,10 @@ fn make_op(
         project_key,
         project_slug,
         author: None,
+        v: None,
+        seq: None,
+        sig: None,
+        scrub: None,
     }
 }
 
@@ -259,6 +350,9 @@ pub fn collect_deltas(db: &Database, device_id: &str) -> Result<Vec<DeltaOp>> {
         let mut op = make_op(kind, id, updated_at, device_id, wire);
         if get_kv(db, &format!("clamped:{}", op.id)).ok().flatten().as_deref() == Some(op.fingerprint.as_str()) {
             return; // our toned-down copy of a teammate's pin is not an edit of ours
+        }
+        if kind == "memory" && get_kv(db, &format!("scrub:{}", op.id)).ok().flatten().as_deref() == Some("1") {
+            op.scrub = Some(true);
         }
         op.author = Some(me.clone()); // in the envelope, not the payload: fingerprints stay equal on every machine
         if applied.get(&op.id).map(|fp| fp == &op.fingerprint) != Some(true) {
@@ -343,15 +437,22 @@ pub fn read_delta_file(path: &Path) -> Vec<DeltaOp> {
 
 /// An `.enc` file needs the key; without it the file is skipped with a warning.
 pub fn read_delta_file_keyed(path: &Path, key: Option<&[u8; 32]>) -> Vec<DeltaOp> {
+    let ring: Vec<[u8; 32]> = key.into_iter().copied().collect();
+    read_delta_file_ring(path, &ring)
+}
+
+/// Like [`read_delta_file_keyed`] with the current key first and the keys of earlier epochs after it
+/// (files written before a device was revoked). An empty ring means a vault without encryption.
+pub fn read_delta_file_ring(path: &Path, keys: &[[u8; 32]]) -> Vec<DeltaOp> {
     let text = if path.extension().and_then(|e| e.to_str()) == Some("enc") {
-        let Some(key) = key else {
+        if keys.is_empty() {
             tracing::warn!(path = %path.display(), "delta file is encrypted and no key is available: skipped");
             return Vec::new();
-        };
+        }
         let plain = fs::read(path)
             .ok()
             .and_then(|b| serde_json::from_slice::<crate::crypto::EncryptedBlob>(&b).ok())
-            .and_then(|blob| crate::crypto::BlindCrypto::decrypt(key, &blob).ok())
+            .and_then(|blob| keys.iter().find_map(|k| crate::crypto::BlindCrypto::decrypt(k, &blob).ok()))
             .and_then(|p| String::from_utf8(p).ok());
         let Some(plain) = plain else {
             tracing::warn!(path = %path.display(), "delta file could not be decrypted with this key: skipped");
@@ -361,7 +462,7 @@ pub fn read_delta_file_keyed(path: &Path, key: Option<&[u8; 32]>) -> Vec<DeltaOp
     } else {
         // With a key in use, only authenticated (.enc) deltas count: a plaintext file could have been
         // pushed by anyone with write access to the vault repository.
-        if key.is_some() {
+        if !keys.is_empty() {
             tracing::warn!(path = %path.display(), "delta file is not encrypted but this vault uses a key: skipped");
             return Vec::new();
         }
@@ -441,6 +542,62 @@ fn already_proposed(db: &Database, target_id: &str) -> bool {
         .unwrap_or_default()
         .iter()
         .any(|p| p.proposal_type == "sync_conflict" && p.target_id == target_id)
+}
+
+fn already_proposed_of(db: &Database, kind: &str, target_id: &str) -> bool {
+    db.list_pending_proposals(None)
+        .unwrap_or_default()
+        .iter()
+        .any(|p| p.proposal_type == kind && p.target_id == target_id)
+}
+
+fn authority_proposal(op: &DeltaOp, incoming: &Memory) -> ReviewProposal {
+    ReviewProposal {
+        id: format!("sync-{}", uuid::Uuid::now_v7().simple()),
+        project_id: op.project_id.clone(),
+        proposal_type: "sync_authority".to_string(),
+        target_id: format!("{}:{}", op.kind, op.id),
+        description: format!(
+            "Device {} sent a change to a note a person wrote or pinned here: \"{}\". It was not applied. Reject keeps your note; to take the change, edit the note yourself.",
+            op.device_id, incoming.summary
+        ),
+        suggested_action: "keep_local".to_string(),
+        status: "pending".to_string(),
+        created_at: Utc::now(),
+        decided_at: None,
+    }
+}
+
+/// Two devices can each record a decision for one topic while apart. Both stay; a person picks which is in force.
+fn flag_decisions_in_conflict(db: &Database, decision_id: &str) -> Result<()> {
+    let Some(d) = db.get_decision_by_id(decision_id)? else { return Ok(()) };
+    if d.status != DecisionStatus::Active {
+        return Ok(());
+    }
+    let topic = d.topic.trim().to_lowercase();
+    let rivals = db
+        .list_decisions(d.project_id.as_deref(), Some(DecisionStatus::Active), ALL_ROWS)?
+        .into_iter()
+        .filter(|o| o.id != d.id && o.topic.trim().to_lowercase() == topic)
+        .count();
+    let target = format!("decision-topic:{}:{}", d.project_id.as_deref().unwrap_or(""), topic);
+    if rivals > 0 && !already_proposed_of(db, "sync_conflict", &target) {
+        db.save_proposal(&ReviewProposal {
+            id: format!("sync-{}", uuid::Uuid::now_v7().simple()),
+            project_id: d.project_id.clone(),
+            proposal_type: "sync_conflict".to_string(),
+            target_id: target,
+            description: format!(
+                "Two decisions are in force for \"{}\" because two computers each recorded one. Both are kept. Record the one you want with `automemory decision record`; the other becomes superseded.",
+                d.topic
+            ),
+            suggested_action: "record_one".to_string(),
+            status: "pending".to_string(),
+            created_at: Utc::now(),
+            decided_at: None,
+        })?;
+    }
+    Ok(())
 }
 
 /// Core merge rule, clock-free:
@@ -557,6 +714,25 @@ fn apply_op(
                 record.status = MemoryStatus::Active;
                 record.set_trust_tier(TrustTier::UserStatement);
             }
+            // Authority: a copy that is not person-authored never replaces one a person wrote or pinned, even when
+            // the local copy is untouched (a fast-forward). It becomes a request; the local copy stays.
+            if local.as_ref().is_some_and(|l| l.is_person_authored() && !record.is_person_authored())
+                && fp.as_deref() != Some(op.fingerprint.as_str())
+            {
+                let target = format!("memory:{}", op.id);
+                if !already_proposed_of(db, "sync_authority", &target) {
+                    let _ = db.save_proposal(&authority_proposal(&op, &record));
+                }
+                report.conflicts += 1;
+                return Ok(None);
+            }
+            if wire.scrub == Some(true) {
+                // The sender removed a secret: take its clean copy over ours (even if we edited), and clean the history.
+                db.save_memory_direct(&record)?;
+                db.forget_memory_versions(&op.id)?;
+                report.applied += 1;
+                return Ok(Some((op.id.clone(), op.fingerprint.clone())));
+            }
             let applied_now = merge_one(db, applied, seen, &op, fp, updated, || db.save_memory_direct(&record), report)?;
             if applied_now.is_some() {
                 if clamp {
@@ -614,7 +790,13 @@ fn apply_op(
         "trace" => apply_kind!(SuccessTrace, get_trace_by_id, save_trace, updated_at),
         "failure" => apply_kind!(FailureRecord, get_failure_by_id, save_failure, updated_at),
         "skill" => apply_kind!(ProceduralSkill, get_skill_by_id, save_skill, updated_at),
-        "decision" => apply_kind!(Decision, get_decision_by_id, save_decision_direct, updated_at),
+        "decision" => {
+            let applied_now = apply_kind!(Decision, get_decision_by_id, save_decision_direct, updated_at)?;
+            if applied_now.is_some() {
+                flag_decisions_in_conflict(db, &op.id)?;
+            }
+            Ok(applied_now)
+        }
         "baton" => apply_kind!(Baton, get_baton_by_id, save_baton_direct, created_at),
         other => {
             tracing::warn!(kind = other, id = %op.id, "delta apply: unknown record kind skipped");
@@ -648,8 +830,12 @@ pub fn apply_all_deltas_keyed(
     let mut newly_seen: Vec<String> = Vec::new();
 
     let mut all_ops = Vec::new();
+    let mut ring: Vec<[u8; 32]> = key.into_iter().copied().collect();
+    if key.is_some() {
+        ring.extend(super::epochs::old_keys(db));
+    }
     for path in list_delta_files(vault_root) {
-        for op in read_delta_file_keyed(&path, key) {
+        for op in read_delta_file_ring(&path, &ring) {
             if op.device_id == self_device {
                 report.skipped_own += 1;
                 continue;
@@ -657,6 +843,9 @@ pub fn apply_all_deltas_keyed(
             all_ops.push(op);
         }
     }
+
+    // Sync v2: register announced devices, drop forged or unacceptable ops.
+    let mut all_ops = super::devices::screen(db, all_ops, &mut report);
 
     // Sort ops oldest first by updated_at so earlier revisions are applied before later ones
     all_ops.sort_by(|a, b| {
@@ -997,7 +1186,9 @@ mod tests {
         a.save_memory_direct(&memory_in(Some("dangling-project"), "m-dangling", "x")).unwrap();
         assert!(collect_deltas(&a, "dev-a").unwrap().is_empty());
         sync_cycle(&a, &dir).unwrap();
-        assert!(list_delta_files(&dir).is_empty());
+        // Only the device's own announcement (its public key) is ever written; no record leaves the machine.
+        let sent: Vec<DeltaOp> = list_delta_files(&dir).iter().flat_map(|p| read_delta_file(p)).collect();
+        assert!(sent.iter().all(|o| o.kind == "device"), "{sent:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1202,6 +1393,301 @@ mod tests {
         let b_mem = dev_b.get_memory_by_id("m-versioned").unwrap().expect("mem exists on b");
         assert_eq!(b_mem.content, "version 2", "newest version must be kept");
         assert_eq!(b_mem.summary, "v2 summary");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn person_memory(id: &str, summary: &str, source: MemorySourceKind) -> Memory {
+        Memory {
+            id: id.to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("pa".to_string()),
+            memory_type: MemoryType::Fact,
+            content: format!("content {summary}"),
+            summary: summary.to_string(),
+            confidence: 0.9,
+            importance: 0.5,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: source,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn an_agent_sourced_copy_never_replaces_a_note_a_person_wrote() {
+        let dir = test_vault("authority");
+        let (dev_a, dev_b) = (test_db(), test_db());
+        register_project(&dev_a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&dev_b, "pb", "shop", Some("git:github.com/team/shop"));
+        dev_a.save_memory_direct(&person_memory("m-rule", "use tabs", MemorySourceKind::User)).unwrap();
+        sync_cycle(&dev_a, &dir).unwrap();
+        sync_cycle(&dev_b, &dir).unwrap();
+        assert_eq!(dev_b.get_memory_by_id("m-rule").unwrap().unwrap().summary, "use tabs");
+
+        // A third computer sends the same note as an agent's claim (an old or modified client). B's copy is
+        // untouched, so this used to fast-forward over the person's note.
+        let dev_c = test_db();
+        register_project(&dev_c, "pc", "shop", Some("git:github.com/team/shop"));
+        let mut rewritten = person_memory("m-rule", "use spaces", MemorySourceKind::Agent);
+        rewritten.project_id = Some("pc".to_string());
+        rewritten.updated_at = Utc::now() + chrono::Duration::seconds(5);
+        dev_c.save_memory_direct(&rewritten).unwrap();
+        let ops = collect_deltas(&dev_c, "dev-c").unwrap();
+        write_delta_file(&dir, "dev-c", &ops).unwrap();
+        let report = sync_cycle(&dev_b, &dir).unwrap();
+
+        assert_eq!(report.conflicts, 1, "{report:?}");
+        assert_eq!(dev_b.get_memory_by_id("m-rule").unwrap().unwrap().summary, "use tabs", "the person's note is kept");
+        assert!(dev_b.list_pending_proposals(None).unwrap().iter().any(|p| p.proposal_type == "sync_authority" && p.target_id == "memory:m-rule"));
+        // Pulling again does not file it twice.
+        sync_cycle(&dev_b, &dir).unwrap();
+        assert_eq!(dev_b.list_pending_proposals(None).unwrap().iter().filter(|p| p.proposal_type == "sync_authority").count(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_persons_own_edit_on_another_device_still_syncs() {
+        let dir = test_vault("authority-ok");
+        let (dev_a, dev_b) = (test_db(), test_db());
+        register_project(&dev_a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&dev_b, "pb", "shop", Some("git:github.com/team/shop"));
+        dev_a.save_memory_direct(&person_memory("m-rule", "use tabs", MemorySourceKind::User)).unwrap();
+        sync_cycle(&dev_a, &dir).unwrap();
+        sync_cycle(&dev_b, &dir).unwrap();
+        let mut edited = person_memory("m-rule", "use spaces", MemorySourceKind::User);
+        edited.updated_at = Utc::now() + chrono::Duration::seconds(5);
+        dev_a.save_memory_direct(&edited).unwrap();
+        sync_cycle(&dev_a, &dir).unwrap();
+        let report = sync_cycle(&dev_b, &dir).unwrap();
+        assert_eq!(report.conflicts, 0);
+        assert_eq!(dev_b.get_memory_by_id("m-rule").unwrap().unwrap().summary, "use spaces");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_decisions_for_one_topic_from_two_computers_become_one_review_item() {
+        let dir = test_vault("decisions");
+        let (dev_a, dev_b) = (test_db(), test_db());
+        register_project(&dev_a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&dev_b, "pb", "shop", Some("git:github.com/team/shop"));
+        for (db, pid, text) in [(&dev_a, "pa", "use Postgres"), (&dev_b, "pb", "use MySQL")] {
+            db.record_decision(DecisionRecordArgs {
+                project_id: Some(pid),
+                topic: "database",
+                decision: text,
+                reason: "because",
+                alternatives: &[],
+                dissent: None,
+                agent: "claude",
+                symbols: &[],
+                evidence: &[],
+            })
+            .unwrap();
+        }
+        for _ in 0..2 {
+            sync_cycle(&dev_a, &dir).unwrap();
+            sync_cycle(&dev_b, &dir).unwrap();
+        }
+        for db in [&dev_a, &dev_b] {
+            let n = db.list_pending_proposals(None).unwrap().iter().filter(|p| p.proposal_type == "sync_conflict" && p.target_id.starts_with("decision-topic:")).count();
+            assert_eq!(n, 1, "exactly one review item per computer");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Two computers that have each announced their key and exchanged records.
+    fn paired(name: &str) -> (Database, Database, PathBuf) {
+        let dir = test_vault(name);
+        let (a, b) = (test_db(), test_db());
+        register_project(&a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&b, "pb", "shop", Some("git:github.com/team/shop"));
+        sync_cycle(&a, &dir).unwrap();
+        sync_cycle(&b, &dir).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        (a, b, dir)
+    }
+
+    #[test]
+    fn devices_announce_keys_and_signed_ops_are_accepted() {
+        let (a, b, dir) = paired("v2-ok");
+        assert_eq!(b.list_sync_devices().unwrap().len(), 2, "B knows itself and A");
+        a.save_memory_direct(&person_memory("m-1", "signed note", MemorySourceKind::User)).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        let report = sync_cycle(&b, &dir).unwrap();
+        assert_eq!(report.rejected, 0);
+        assert!(b.get_memory_by_id("m-1").unwrap().is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_forged_or_tampered_op_is_rejected() {
+        let (a, b, dir) = paired("v2-forged");
+        a.save_memory_direct(&person_memory("m-real", "real", MemorySourceKind::User)).unwrap();
+        let device_a = device_id(&a).unwrap();
+        let mut ops = collect_deltas(&a, &device_a).unwrap();
+        super::super::devices::sign_ops(&a, &mut ops).unwrap();
+        // Someone with the vault key changes the payload (and fingerprint) after A signed it.
+        ops[0].payload["summary"] = serde_json::json!("forged");
+        ops[0].fingerprint = fingerprint(&ops[0].payload);
+        write_delta_file(&dir, &device_a, &ops).unwrap();
+        let report = sync_cycle(&b, &dir).unwrap();
+        assert_eq!(report.rejected, 1);
+        assert!(b.get_memory_by_id("m-real").unwrap().is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_signed_op_from_an_unknown_device_is_rejected_and_v1_needs_the_compat_window() {
+        let (_a, b, dir) = paired("v2-unknown");
+        let stranger = test_db();
+        register_project(&stranger, "ps", "shop", Some("git:github.com/team/shop"));
+        let mut m = person_memory("m-s", "stranger", MemorySourceKind::User);
+        m.project_id = Some("ps".to_string());
+        stranger.save_memory_direct(&m).unwrap();
+        let sid = device_id(&stranger).unwrap();
+        let mut ops = collect_deltas(&stranger, &sid).unwrap();
+        super::super::devices::sign_ops(&stranger, &mut ops).unwrap(); // signed, but never announced
+        write_delta_file(&dir, &sid, &ops).unwrap();
+        assert_eq!(sync_cycle(&b, &dir).unwrap().rejected, 1);
+
+        // An unsigned v1 op is accepted in the compat window and refused once strict mode is on.
+        let v1_dir = test_vault("v2-v1");
+        let ops = collect_deltas(&stranger, &sid).unwrap();
+        write_delta_file(&v1_dir, &sid, &ops).unwrap();
+        assert_eq!(sync_cycle(&b, &v1_dir).unwrap().rejected, 0);
+        assert!(b.get_memory_by_id("m-s").unwrap().is_some());
+        let strict = test_db();
+        strict.set_sync_requires_signatures(true);
+        register_project(&strict, "px", "shop", Some("git:github.com/team/shop"));
+        assert_eq!(sync_cycle(&strict, &v1_dir).unwrap().rejected, 1);
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&v1_dir);
+    }
+
+    #[test]
+    fn a_second_key_for_a_known_device_is_refused() {
+        let (a, b, dir) = paired("v2-hijack");
+        let device_a = device_id(&a).unwrap();
+        let impostor = test_db();
+        let mut op = super::super::devices::announce_op(&impostor, &device_a).unwrap(); // same device id, other key
+        op.device_id = device_a.clone();
+        write_delta_file(&dir, "dev-impostor", &[op]).unwrap();
+        assert_eq!(sync_cycle(&b, &dir).unwrap().rejected, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn three_devices(name: &str, key: &[u8; 32]) -> (Database, Database, Database, PathBuf) {
+        let dir = test_vault(name);
+        let dbs = [test_db(), test_db(), test_db()];
+        for (i, db) in dbs.iter().enumerate() {
+            register_project(db, &format!("p{i}"), "shop", Some("git:github.com/team/shop"));
+        }
+        for _ in 0..2 {
+            for db in &dbs {
+                sync_cycle_keyed(db, &dir, Some(key)).unwrap();
+            }
+        }
+        let [a, b, c] = dbs;
+        (a, b, c, dir)
+    }
+
+    #[test]
+    fn a_revoked_device_is_cut_off_and_the_others_follow_the_new_key() {
+        let k0 = [7u8; 32];
+        let (a, b, c, dir) = three_devices("revoke", &k0);
+        let (id_a, id_c) = (device_id(&a).unwrap(), device_id(&c).unwrap());
+        assert_eq!(a.list_sync_devices().unwrap().len(), 3);
+
+        let k1 = super::super::epochs::revoke(&a, &dir, &id_c, &k0).unwrap();
+        assert_ne!(k0, k1);
+        let mut m = person_memory("m-after", "after revoke", MemorySourceKind::User);
+        m.project_id = Some("p0".to_string());
+        a.save_memory_direct(&m).unwrap();
+        sync_cycle_keyed(&a, &dir, Some(&k1)).unwrap();
+
+        // B still holds the old key, finds the bulletin, unwraps the new one and carries on.
+        sync_cycle_keyed(&b, &dir, Some(&k0)).unwrap();
+        assert_eq!(super::super::epochs::take_pending_key(&b), Some(k1));
+        assert_eq!(b.get_sync_device(&id_c).unwrap().unwrap().status, "revoked");
+        sync_cycle_keyed(&b, &dir, Some(&k1)).unwrap();
+        assert!(b.get_memory_by_id("m-after").unwrap().is_some(), "B reads what A wrote under the new key");
+
+        // C is told it was removed and never sees anything written afterwards.
+        assert!(sync_cycle_keyed(&c, &dir, Some(&k0)).is_err());
+        assert!(c.get_memory_by_id("m-after").unwrap().is_none());
+
+        // C writes under the old key anyway: A can read the file, but refuses the ops.
+        let mut cm = person_memory("m-c", "from the revoked device", MemorySourceKind::User);
+        cm.project_id = Some("p2".to_string());
+        c.save_memory_direct(&cm).unwrap();
+        let mut ops = collect_deltas(&c, &id_c).unwrap();
+        super::super::devices::sign_ops(&c, &mut ops).unwrap();
+        write_delta_file_keyed(&dir, &id_c, &ops, Some(&k0)).unwrap();
+        let report = sync_cycle_keyed(&a, &dir, Some(&k1)).unwrap();
+        assert!(report.rejected >= 1, "{report:?}");
+        assert!(a.get_memory_by_id("m-c").unwrap().is_none());
+        let _ = id_a;
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn revoking_needs_a_known_other_device() {
+        let k0 = [9u8; 32];
+        let (a, _b, _c, dir) = three_devices("revoke-bad", &k0);
+        assert!(super::super::epochs::revoke(&a, &dir, &device_id(&a).unwrap(), &k0).is_err(), "not yourself");
+        assert!(super::super::epochs::revoke(&a, &dir, "dev-nobody", &k0).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_scrubbed_secret_is_removed_from_the_note_its_history_and_every_computer() {
+        let phrase = "correct-horse-battery-staple";
+        let dir = test_vault("scrub");
+        let (a, b) = (test_db(), test_db());
+        register_project(&a, "pa", "shop", Some("git:github.com/team/shop"));
+        register_project(&b, "pb", "shop", Some("git:github.com/team/shop"));
+        let mut m = person_memory("m-leak", &format!("login uses {phrase}"), MemorySourceKind::User);
+        m.content = format!("the admin phrase is {phrase}");
+        a.save_memory_direct(&m).unwrap();
+        // A second version, so the history holds the phrase too.
+        a.update_memory(&m, Some("second"), &[]).unwrap();
+        sync_cycle(&a, &dir).unwrap();
+        sync_cycle(&b, &dir).unwrap();
+        assert!(b.get_memory_by_id("m-leak").unwrap().unwrap().content.contains(phrase));
+
+        // B edits its copy meanwhile; A then scrubs. The scrub still wins on B.
+        let mut local = b.get_memory_by_id("m-leak").unwrap().unwrap();
+        local.summary = format!("B edit {phrase}");
+        local.updated_at = Utc::now() + chrono::Duration::seconds(3);
+        b.save_memory_direct(&local).unwrap();
+
+        assert!(a.scrub_memory("m-leak", Some(phrase)).unwrap());
+        mark_scrubbed(&a, "m-leak");
+        sync_cycle(&a, &dir).unwrap();
+        sync_cycle(&b, &dir).unwrap();
+
+        for db in [&a, &b] {
+            let m = db.get_memory_by_id("m-leak").unwrap().unwrap();
+            assert!(!m.content.contains(phrase) && !m.summary.contains(phrase), "{m:?}");
+            let versions = db.conn().query_row(
+                "SELECT COUNT(*) FROM memory_versions WHERE memory_id = 'm-leak' AND (content LIKE ?1 OR summary LIKE ?1)",
+                rusqlite::params![format!("%{phrase}%")],
+                |r| r.get::<_, i64>(0),
+            ).unwrap();
+            if versions != 0 {
+                let who = device_id(db).unwrap();
+                let conn = db.conn();
+                let mut st = conn.prepare("SELECT version_num, content, summary FROM memory_versions WHERE memory_id='m-leak'").unwrap();
+                let rows: Vec<(i64, String, String)> = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(|r| r.unwrap()).collect();
+                panic!("history not clean on {who}: {rows:?}");
+            }
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 }
