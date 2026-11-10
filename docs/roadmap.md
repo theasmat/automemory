@@ -36,7 +36,7 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 | X4 `automemory worktree` helper wired to tasks and overlap checks | Practitioners isolate parallel agents with worktrees | Two agents edit one file in separate worktrees; overlap warns before merge |
 | X5 SKILL.md export of verified knowledge | One format reaches 30+ tools | A skill written for one agent is read by a second; disconnect removes only ours |
 | X6 `valid_from` / `invalid_at` and a "what changed" view | Contradiction and forgetting are where memory fails | A superseded decision stays readable with dates; recall never returns an invalid note |
-| X8 Rules text: do only what was asked (no commits, batons or failure housekeeping unasked) | A trial agent committed 16 files unasked | The same neutral prompt no longer commits |
+| X8 Rules text: do only what was asked (no commits, batons or failure housekeeping unasked) | A trial agent committed 16 files unasked | The same neutral prompt no longer commits. **Text changed and tested; the live trial is still to run** |
 | X9 Hook adapters for Cursor, Windsurf, Gemini CLI, Copilot from recorded payloads (`automemory hooks record`) | Biggest reach gap; needs real captures | One fixture per agent |
 | Rooms R5 to R7: decision-record export, room types and roles, chat-style post ownership | See [specs/rooms.md](specs/rooms.md) | Only after the room A/B shows value |
 | Library L6: attachments, model abstracts | See [specs/library.md](specs/library.md) | Decide after use |

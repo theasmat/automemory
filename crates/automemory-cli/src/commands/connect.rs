@@ -530,6 +530,7 @@ pub(crate) const CURSOR_RULES: &str = r#"# AutoMemory Persistent Intelligence Ru
 - You have deep AST code intelligence via `codebase-memory` MCP server (`index_repository`, `query_graph`, `trace_path`).
 - At the start of a task, call `memory.list` with `view: context` to load prior decisions, learnings, and golden trajectories.
 - Zero-SQL Rule: Never run raw sqlite3 queries on internal databases. Use the official MCP tools and CLI commands.
+- Do only what was asked: do not commit, push, pass a hand-off, or save memories unless the person asked for it.
 "#;
 pub(crate) fn connect_cursor_unified(
     home: &Path,
@@ -1036,7 +1037,9 @@ license: MIT
 
 You are operating with **AutoMemory**—the autonomous cognitive memory, safety guardrail, and multi-agent coordination layer. AutoMemory automatically tracks your actions via out-of-process hooks, prevents collisions across git worktrees, and distills durable memories and success traces.
 
-Follow this autonomous protocol for all tasks in this repository.
+**Scope first: do only what was asked.** Do not commit, push, pass a hand-off, or save memories and lessons unless the person asked for it. The steps below describe what to do when a task calls for them; they are not extra work to add to every task.
+
+Follow this protocol for all tasks in this repository.
 
 ---
 
@@ -1063,8 +1066,8 @@ stored notes from `memory.search`). End the revision with a short list of steps 
 records the decision and creates the tasks, so do not call `decision.record` for it. Claim tasks with `task.next`.
 
 ## 4. Continuity
-Another agent (or you, later) may pick this project up. Call `continuity.brief` (action `get`) at the start of a task. Before you
-stop, before a context compaction, and whenever the human says "hand off", call it with action `add`: the goal, what was
+Another agent (or you, later) may pick this project up. Call `continuity.brief` (action `get`) at the start of a task. When the human says
+"hand off", or you must stop before the task is finished (a context compaction, a limit), call it with action `add`: the goal, what was
 decided, **what you ruled out and why** (kind `rejected`), open questions, and next steps. Items marked draft need your
 `confirm` or `correct`. Do not repeat what is already there; items written by a person are theirs to change.
 
@@ -1088,7 +1091,7 @@ When you establish a key architectural policy, choose between alternative librar
 When encountering an unexpected build error, test failure, or runtime issue:
 1. Diagnose the root cause using codebase evidence.
 2. Apply the verified fix.
-3. If the bug was subtle or dangerous, call `failure.save` or `memory.save` with `category: "lesson"` to prevent future agents from repeating the same mistake.
+3. Save a lesson (`failure.save`, or `memory.save` with `category: "lesson"`) only when the person asks for it.
 
 ---
 
@@ -1122,10 +1125,11 @@ pub(crate) fn automemory_rules_content() -> &'static str {
     r#"# AutoMemory Multi-Agent Coordination Guidelines
 
 This workspace is integrated with **AutoMemory**.
+- **Do only what was asked**: Do not commit, push, pass a hand-off, or save memories and lessons unless the person asked for it (or says "hand off"). Finish the task you were given, then stop.
 - **Context Awareness**: At the start of tasks, call `memory.list` (`view: context` or `view: constitution`) to load project invariants and active decisions.
 - **Mutual Exclusion**: File locks are automatic (hooks lock a file when you edit it). Do not call `lock.acquire` yourself; if an edit is reported as held by another agent, pick other work or wait.
 - **Architectural Policy**: Record non-trivial architectural decisions with `decision.record` so all parallel agents see them with 0ms latency.
-- **Handoffs**: Pass context to peer workers using `continuity.brief` (`action: handoff`).
+- **Handoffs**: When the person asks, or you must stop before the task is done, pass context to peer workers using `continuity.brief` (`action: handoff`).
 - **Planning rooms**: For a design choice worth a second opinion, `room.join` a room, take turns with `room.post` (propose, critique, revise; evidence required), end with steps as `- step` lines. `room.pending` lists rooms waiting for you, `room.status` shows one. A human approves it; then claim the tasks with `task.next` and finish each with `task.submit` (`task.create` adds one).
 - **Continuity**: `continuity.brief` (action `get` at the start of a task; action `add` before you stop, before a compaction, or when the human says "hand off": goal, decisions, what you ruled out and why, open questions, next steps). Confirm or correct items marked draft. To find what was said before, `memory.search` (`scope: chat`), then open the exchange with `chat.get`.
 - **Suggesting notes**: `memory.propose` puts a note (with evidence) in the person's Inbox; only they make it trusted.
@@ -1209,6 +1213,18 @@ pub(crate) fn remove_git_post_commit_hook(workspace_root: &Path) -> Result<bool>
 #[cfg(test)]
 mod guideline_tests {
     use super::*;
+
+    /// X8: a trial agent committed 16 files nobody asked for. Every text agents read says to do only what was asked.
+    #[test]
+    fn every_agent_text_says_to_do_only_what_was_asked() {
+        for (name, text) in [("rules", automemory_rules_content()), ("skill", automemory_skill_content()), ("cursor", CURSOR_RULES)] {
+            assert!(text.to_lowercase().contains("do only what was asked") || text.to_lowercase().contains("only what was asked"), "{name}");
+            assert!(text.contains("commit"), "{name} names commits as something not to do unasked");
+        }
+        let skill = automemory_skill_content();
+        assert!(!skill.contains("to prevent future agents"), "no unasked failure housekeeping");
+        assert!(!skill.contains("Before you\nstop"), "no unconditional stop-time hand-off");
+    }
 
     #[test]
     fn our_guidelines_are_refreshed_and_user_files_are_untouched() {
