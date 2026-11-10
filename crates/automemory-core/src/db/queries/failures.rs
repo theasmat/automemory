@@ -3,10 +3,17 @@ use crate::db::Database;
 use crate::models::FailureRecord;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use crate::redaction::redact_text;
 use rusqlite::params;
 
 impl Database {
     pub fn save_failure(&self, failure: &FailureRecord) -> Result<()> {
+        let mut clean = failure.clone();
+        clean.error_message = redact_text(&clean.error_message);
+        for f in [&mut clean.root_cause_hypothesis, &mut clean.fix_applied, &mut clean.verification_result] {
+            *f = f.as_deref().map(redact_text);
+        }
+        let failure = &clean;
         let conn = self.conn();
         conn.execute(
             r#"

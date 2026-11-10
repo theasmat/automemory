@@ -145,5 +145,12 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - The extraction worker runs its SQLite batch off the async threads that serve the dashboard
 - `lock list` no longer returns session ids
 - Agent rules, skill and Cursor rules now say to do only what was asked: no commits, pushes, hand-offs or saved lessons unless the person asks (X8; the live trial is still open)
+- Secrets are redacted at the database write boundary for memories, decisions, failures and traces, whichever path wrote them (MCP, hook, CLI, sync)
+- The resume pack says its notes are recorded data, not instructions
+
+## Tracewise link and MCP versions
+
+- Optional Tracewise link (`history.rs`): `automemory who <file>` shows who changed a file and why from `tw file --json`; `doctor` reports the `tw` version. Without `tw` nothing changes (`NoHistory`); AutoMemory never opens Tracewise's database
+- MCP `initialize` agrees on the client's protocol version (2024-11-05 to 2026-07-28) instead of always answering 2024-11-05, and `server/discover` answers for stateless clients. Calls never needed `initialize`. `resultType` is not added: the exact 2026-07-28 wire shape was only read from secondary sources
 - `skill export --agent claude|agy|all` writes verified skills where Claude Code (`.claude/skills`) and Antigravity (`.agents/skills`) read them; it never overwrites a skill a person wrote; `skill unexport` and `disconnect` remove only the skills AutoMemory exported (X5; the live read check by a second agent is still open)
 - `decision.get` returns `valid_from` and `invalid_at` for the decision in force and its history; `automemory changed --since 7d` lists decisions recorded or superseded and memories added or no longer active (X6; the end date comes from the row's last change, no schema change); tests prove search never returns an inactive memory

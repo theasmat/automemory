@@ -13,6 +13,9 @@ impl Database {
     /// Records an architectural decision. If a prior active decision exists for the same topic,
     /// it is marked as 'superseded' with a pointer to the new decision ID.
     pub fn record_decision(&self, args: DecisionRecordArgs<'_>) -> Result<Decision> {
+        let (decision_text, reason_text) = (crate::redaction::redact_text(args.decision), crate::redaction::redact_text(args.reason));
+        let dissent_text = args.dissent.map(crate::redaction::redact_text);
+        let args = DecisionRecordArgs { decision: &decision_text, reason: &reason_text, dissent: dissent_text.as_deref(), ..args };
         let now = Utc::now();
         let now_str = now.to_rfc3339();
         let id = format!("dec-{}", Uuid::new_v4().simple());

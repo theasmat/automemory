@@ -2,6 +2,8 @@
 
 **Status: design, not built.** Everything here is a proposal to be checked by the experiments in section 9. Claims from outside sources are marked *(reported)*: they come from project READMEs, blogs or preprints we have not reproduced.
 
+**Decision (Nov 2026): Tracewise is the recorder.** AutoMemory reads it through an optional link (`history.rs`, `automemory who <file>`); without `tw` the answer is empty and nothing else changes. Still open: lock ownership when both are installed (AutoMemory owns locks), shared actor and session ids, and showing "changed by" next to a stale memory.
+
 **Overlap to settle before building:** Tracewise (a separate tool, `tw`) already records who changed every line, when and why, and undoes by line. The snapshotter and ledger below should use it as the recorder instead of a second one, which leaves this design with the worktree boundary, the integration order and the notifier. Open question for section 9: does Tracewise's record carry enough (author, reason, task) to be the ledger?
 
 Goal: several agents (and several people) work on one repository at the same time, and

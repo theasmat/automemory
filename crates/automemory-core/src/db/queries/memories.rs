@@ -3,6 +3,7 @@ use crate::db::Database;
 use crate::models::{
     Memory, MemoryScope, MemorySourceKind, MemoryStatus, MemoryType, MemoryVersion,
 };
+use crate::redaction::redact_text;
 use crate::retrieval::VectorEngine;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -20,8 +21,17 @@ pub fn text_hash(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
+/// Secrets never reach the database, whichever path wrote the memory (MCP, hook, CLI, sync apply).
+fn redacted(mem: &Memory) -> Memory {
+    let mut m = mem.clone();
+    m.content = redact_text(&m.content);
+    m.summary = redact_text(&m.summary);
+    m
+}
+
 impl Database {
     pub fn save_memory(&self, mem: &Memory) -> Result<()> {
+        let mem = &redacted(mem);
         // Scope-Aware Deduplication: Check if active memory with same summary exists in this scope
         let existing_id: Option<String> = {
             let conn = self.conn();
@@ -48,6 +58,7 @@ impl Database {
     /// Directly inserts or overwrites by ID without checking for summary duplicates in scope.
     /// Useful for raw imports or testing consolidation proposal generation.
     pub fn save_memory_direct(&self, mem: &Memory) -> Result<()> {
+        let mem = &redacted(mem);
         let conn = self.conn();
         conn.execute(
             r#"
@@ -115,6 +126,7 @@ impl Database {
         reason: Option<&str>,
         evidence_ids: &[String],
     ) -> Result<()> {
+        let mem = &redacted(mem);
         let conn = self.conn();
         // Get next version number
         let next_ver: i32 = conn.query_row(
@@ -689,6 +701,54 @@ fn metadata_files(m: &Memory) -> Vec<String> {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    fn secrets_are_redacted_on_every_write_path() {
+        let db = Database::open_in_memory().expect("open db");
+        let key = "AKIAIOSFODNN7EXAMPLE";
+        let mem = Memory {
+            id: Uuid::now_v7().to_string(),
+            scope: MemoryScope::Project,
+            project_id: Some("p".to_string()),
+            memory_type: MemoryType::Decision,
+            content: format!("deploy with key {key}"),
+            summary: format!("uses {key}"),
+            confidence: 0.9,
+            importance: 0.8,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+        db.save_memory(&mem).expect("save");
+        let mut direct = mem.clone();
+        direct.id = Uuid::now_v7().to_string();
+        direct.summary = format!("direct {key}");
+        db.save_memory_direct(&direct).expect("direct");
+        for m in db.list_memories(Some("p"), None, None, 10).expect("list") {
+            assert!(!m.content.contains(key) && !m.summary.contains(key), "secret stored: {m:?}");
+        }
+        let d = db
+            .record_decision(crate::models::DecisionRecordArgs {
+                project_id: Some("p"),
+                topic: "deploy",
+                decision: &format!("export AWS key {key}"),
+                reason: &format!("token = {key}abcdef"),
+                alternatives: &[],
+                dissent: None,
+                agent: "a",
+                symbols: &[],
+                evidence: &[],
+            })
+            .expect("decision");
+        assert!(!d.decision.contains(key) && !d.reason.contains(key));
+    }
 
     #[test]
     fn test_save_memory_deduplication_in_same_scope() {

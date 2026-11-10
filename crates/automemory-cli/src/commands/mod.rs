@@ -33,5 +33,6 @@ pub mod rule;
 pub mod rules_export;
 pub mod serve;
 pub mod changed;
+pub mod who;
 pub mod skill;
 pub mod sync;

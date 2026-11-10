@@ -368,6 +368,21 @@ enum Commands {
         command: EvalCommands,
     },
 
+    /// Who changed a file and why (needs Tracewise `tw`; empty without it)
+    #[command(next_help_heading = "Advanced")]
+    Who {
+        /// File path
+        path: String,
+
+        /// Most recent changes to show
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+
+        /// Output JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// What changed: decisions recorded or superseded, memories added or no longer active
     #[command(next_help_heading = "Advanced")]
     Changed {
@@ -1357,6 +1372,7 @@ async fn main() -> Result<()> {
             RuleCommands::Toggle { id, enabled } => commands::rule::toggle(&id, enabled)?,
             RuleCommands::Passwd { from_env } => commands::rule::passwd(from_env)?,
         },
+        Commands::Who { path, limit, json } => commands::who::run(&path, limit, json)?,
         Commands::Changed { since, project, json } => commands::changed::run(project, &since, json)?,
         Commands::Skill { command } => match command {
             SkillCommands::List { project } => commands::skill::list(project)?,

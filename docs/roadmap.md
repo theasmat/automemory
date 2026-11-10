@@ -32,7 +32,7 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 ### Product
 | Item | Why | Done when |
 |---|---|---|
-| X2 MCP 2026-07-28 compatibility: stateless requests, `resultType`, old handshake kept | Hosts will move to it | Contract tests for both versions pass |
+| X2 MCP 2026-07-28 compatibility: stateless requests, `resultType`, old handshake kept | Hosts will move to it | Contract tests for both versions pass. **Partly built: version negotiation and `server/discover`; calls already need no handshake. Still to do: check `resultType` and `_meta` against modelcontextprotocol.io, and a contract test with a real 2026 client** |
 | X4 `automemory worktree` helper wired to tasks and overlap checks | Practitioners isolate parallel agents with worktrees | Two agents edit one file in separate worktrees; overlap warns before merge |
 | X5 SKILL.md export of verified knowledge | One format reaches 30+ tools | A skill written for one agent is read by a second; disconnect removes only ours. **Built: `skill export --agent claude\|agy\|all`, `skill unexport`, disconnect removes only ours; the live check that a second agent reads a skill is still to do** |
 | X6 `valid_from` / `invalid_at` and a "what changed" view | Contradiction and forgetting are where memory fails | A superseded decision stays readable with dates; recall never returns an invalid note. **Built without a schema change: `decision.get` returns `valid_from` / `invalid_at`, `automemory changed --since 7d`; the end date of a memory is its last change, not a stored column** |
@@ -52,6 +52,12 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 - Per-person trust tiers for team sync and a person-setting UI.
 - Coverage-guided fuzzing in CI (seeded fuzzing exists).
 - Read `automemory locks --coverage` after a week of real use; below 80%, look at which writes dominate.
+- From the Nov 2026 architecture research (not built; weak evidence marked in the report):
+  - Sync v2: signed per-device events with a hybrid logical clock, authority-ranked merge (person beats agent, lock wins, tombstone wins), per-device keys and revocation. Needs a migration, `docs/architecture/sync.md` and `decisions.md` first. Wait for the memory-on-versus-off result.
+  - A smaller default MCP tool list (about 10 of 49) with the rest behind a category listing; changes the tool contract, so decide first.
+  - Eval arms beyond off/on/verify: a static AGENTS.md arm and seeded stale and poisoned memories; report cost with success.
+  - A "changed by" field next to a stale memory, read from Tracewise (`history.rs`), and one owner for locks when both tools are installed.
+  - An IDE extension for one-click `connect`, a lock and approval status bar and an approval inbox (no chat participant).
 
 ### Packaging and hosting
 - Windows: the CI job is written but has not run; make it required after its first green run.

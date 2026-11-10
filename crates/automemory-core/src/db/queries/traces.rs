@@ -3,10 +3,21 @@ use crate::db::Database;
 use crate::models::SuccessTrace;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use crate::redaction::redact_text;
 use rusqlite::params;
 
 impl Database {
     pub fn save_trace(&self, trace: &SuccessTrace) -> Result<()> {
+        let mut clean = trace.clone();
+        clean.title = redact_text(&clean.title);
+        clean.preconditions = clean.preconditions.iter().map(|s| redact_text(s)).collect();
+        clean.caveats = clean.caveats.iter().map(|s| redact_text(s)).collect();
+        for step in &mut clean.steps {
+            step.action = redact_text(&step.action);
+            step.command = step.command.as_deref().map(redact_text);
+            step.verification = step.verification.as_deref().map(redact_text);
+        }
+        let trace = &clean;
         let conn = self.conn();
         conn.execute(
             r#"

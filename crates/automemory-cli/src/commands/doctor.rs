@@ -125,6 +125,13 @@ pub fn execute() -> Result<()> {
         None => println!("⚠ not installed; symbol checks fall back to file hashes"),
     }
 
+    // Change history: optional Tracewise link (who changed a file and why)
+    print!("Checking change history (Tracewise)... ");
+    match automemory_core::history::tw_version() {
+        Some(v) => println!("✓ OK ({v}); `automemory who <file>` shows who changed it and why"),
+        None => println!("- not installed (optional); `automemory who` stays empty"),
+    }
+
     // Registrations: what AutoMemory has installed in agents, and Antigravity's three surfaces
     {
         let home = dirs::home_dir().unwrap_or_default();
