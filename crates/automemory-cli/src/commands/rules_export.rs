@@ -85,6 +85,17 @@ fn stays_inside(root: &Path, path: &Path) -> bool {
     path.ancestors().skip(1).find_map(|a| a.canonicalize().ok()).is_some_and(|a| a.starts_with(&root))
 }
 
+/// Temp file then rename, keeping the original file's permissions.
+fn write_atomic(path: &Path, text: &str) -> Result<()> {
+    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    fs::write(&tmp, text)?;
+    if let Ok(meta) = fs::metadata(path) {
+        let _ = fs::set_permissions(&tmp, meta.permissions());
+    }
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
 fn write_one(root: &Path, t: &Target, view: &str, create: bool) -> Result<Option<Outcome>> {
     let path = root.join(t.path);
     if !stays_inside(root, &path) {
@@ -102,9 +113,7 @@ fn write_one(root: &Path, t: &Target, view: &str, create: bool) -> Result<Option
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
-    fs::write(&tmp, &new)?;
-    fs::rename(&tmp, &path)?;
+    write_atomic(&path, &new)?;
     Ok(Some(if existing.is_some() { Outcome::Updated } else { Outcome::Created }))
 }
 
@@ -122,7 +131,7 @@ pub fn remove_one(root: &Path, t: &Target) -> Result<bool> {
     if rest.trim().is_empty() || (!t.front.is_empty() && rest.trim() == t.front.trim()) {
         fs::remove_file(&path)?;
     } else {
-        fs::write(&path, rest)?;
+        write_atomic(&path, &rest)?;
     }
     Ok(true)
 }

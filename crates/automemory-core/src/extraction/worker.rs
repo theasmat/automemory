@@ -84,8 +84,12 @@ impl ExtractionWorker {
             ticker.tick().await;
             tick_counter = tick_counter.wrapping_add(1);
 
-            if let Err(e) = self.process_pending_batch(50) {
-                warn!("Extraction batch error: {}", e);
+            // SQLite work is blocking; keep it off the async threads that serve the dashboard.
+            let me = self.clone();
+            match tokio::task::spawn_blocking(move || me.process_pending_batch(50)).await {
+                Ok(Err(e)) => warn!("Extraction batch error: {}", e),
+                Err(e) => warn!("Extraction batch panicked: {}", e),
+                Ok(Ok(_)) => {}
             }
 
             // Every 10 iterations (~40s), run autonomous skill promotion pass
