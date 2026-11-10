@@ -135,3 +135,12 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - R2 Legacy vault and cloud client removed from the CLI and dashboard server (`sync export/import/restore/init/status/push/pull/watch`, `/api/cloud/*`, the edge branch of `memory search --semantic`); `sync pair` keeps the recovery phrase and no longer talks to a cloud. Kept on purpose: `[cloud] encryption_key` in config (it can still be the vault key), and the `link` command (hidden, superseded by the Library)
 - R3 `connect` for kilo, aider, warp, devin, openclaw and hermes removed (`disconnect` still removes what an older version wrote); `connect other --mcp-file <path> --name <agent>` covers any tool that reads an MCP servers JSON file. The audit said 19 of 22 targets were untested: wrong, 13 of them have a connect/disconnect/instruction-file check in `tests/scenarios/agents_matrix.py` (still no live-agent trial), so those were kept
 - R4 Own code graph code deleted (`graph/`, graph tables via schema v20, `/api/graph`, the "Index the code graph" job; `NoCodeIntel` replaces the file-hash fallback); skills are no longer written by the daemon unless `[skills] auto = true`; `plugin` and `adapter` hidden from `--help`
+
+## Security hardening
+
+- Agents cannot overwrite or unlock a locked preference (database rule and MCP refusal); changing the human password needs the current one
+- Documents: symlinks, excluded paths and files with secrets are no longer tracked; same-named documents no longer overwrite each other; categories match whole path words
+- Git sync refuses remote and branch names that start with `-`
+- Rules export keeps the file's permissions (temp file, then rename)
+- The extraction worker runs its SQLite batch off the async threads that serve the dashboard
+- `lock list` no longer returns session ids

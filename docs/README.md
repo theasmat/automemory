@@ -4,7 +4,7 @@
 |---|---|
 | [features](features.md) | What the product does, v1 scope, success metrics |
 | [architecture/overview.md](architecture/overview.md) | How it is built: ports, hook pipeline, data model, interfaces, guardrails |
-| [architecture/](architecture/) | One page per subsystem: [locking](architecture/locking.md), [retrieval and keys](architecture/retrieval.md), [sync](architecture/sync.md), [dashboard control](architecture/dashboard-control.md), [identity](architecture/identity.md) |
+| [architecture/](architecture/) | One page per subsystem: [locking](architecture/locking.md), [retrieval and keys](architecture/retrieval.md), [sync](architecture/sync.md), [dashboard control](architecture/dashboard-control.md), [identity](architecture/identity.md), [change ledger (design)](architecture/change-ledger.md) |
 | [decisions](decisions.md) | Settled choices and why |
 | [roadmap](roadmap.md) | Open work, gates, risks, undecided questions |
 | [../CHANGELOG.md](../CHANGELOG.md) | What shipped |
