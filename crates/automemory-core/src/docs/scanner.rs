@@ -83,23 +83,24 @@ impl DocumentScanner {
             .to_string_lossy()
             .to_string();
 
-        // Exclude check
-        for exc in &project.document_config.exclude_patterns {
-            if rel_path.contains(exc)
-                || (rel_path.starts_with('.') && !rel_path.starts_with(".cursor"))
-            {
-                // skip excluded files
-            }
+        // A symlink could point at a private file outside the project (e.g. AGENTS.md -> ~/.ssh/id_ed25519).
+        if fs::symlink_metadata(file_path)?.file_type().is_symlink() {
+            anyhow::bail!("{rel_path} is a symlink; not tracked");
+        }
+        if project.document_config.exclude_patterns.iter().any(|p| {
+            glob::Pattern::new(p).is_ok_and(|g| g.matches(&rel_path))
+        }) {
+            anyhow::bail!("{rel_path} is excluded");
         }
 
         let content = fs::read_to_string(file_path)?;
 
-        // Secret detection
         if contains_secrets(&content) {
             warn!(
-                "Document {} in project {} contains unredacted secrets. Blocking sync to vault.",
+                "Document {} in project {} contains secrets; not tracked.",
                 rel_path, project.slug
             );
+            anyhow::bail!("{rel_path} contains secrets; not tracked");
         }
 
         // Hash content
@@ -119,27 +120,16 @@ impl DocumentScanner {
             });
 
         let lower_path = rel_path.to_lowercase();
-        let category = if lower_path.contains("/prd/") || lower_path.contains("prd") {
+        let has = |words: &[&str]| lower_path.split('/').any(|seg| words.iter().any(|w| seg.starts_with(w)));
+        let category = if has(&["prd"]) {
             "prd"
-        } else if lower_path.contains("/adr/")
-            || lower_path.contains("adr")
-            || lower_path.contains("architect")
-        {
+        } else if has(&["adr", "architect"]) {
             "adr"
-        } else if lower_path.contains("/rules/")
-            || lower_path.contains("business")
-            || lower_path.contains("invariant")
-        {
+        } else if has(&["rules", "business", "invariant"]) {
             "business-rules"
-        } else if lower_path.contains("/api/")
-            || lower_path.contains("spec")
-            || lower_path.contains("rfc")
-        {
+        } else if has(&["api", "spec", "rfc"]) {
             "api"
-        } else if lower_path.contains("plan")
-            || lower_path.contains("roadmap")
-            || lower_path.contains("todo")
-        {
+        } else if has(&["plan", "roadmap", "todo"]) {
             "plan"
         } else {
             "general"
@@ -206,8 +196,7 @@ impl DocumentScanner {
         if let Some(context_root) = target_root {
             let target_dir = context_root.join("docs").join(&category);
             let _ = fs::create_dir_all(&target_dir);
-            let fname = Path::new(&rel_path).file_name().unwrap_or_default();
-            let _ = fs::write(target_dir.join(fname), &content);
+            let _ = fs::write(target_dir.join(rel_path.replace(['/', '\\'], "__")), &content);
             let compiler = DocCompiler::new(&self.db);
             let _ = compiler.compile_project_docs(&project.id, &context_root);
             info!(
@@ -217,5 +206,51 @@ impl DocumentScanner {
         }
 
         Ok(doc)
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use crate::models::Project;
+    use std::sync::Arc;
+
+    fn setup() -> (DocumentScanner, Project, std::path::PathBuf) {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        let dir = std::env::temp_dir().join(format!("am-scan-{}", Uuid::new_v4()));
+        fs::create_dir_all(dir.join("docs")).unwrap();
+        let project = Project {
+            id: Uuid::new_v4().to_string(),
+            slug: "p".into(),
+            display_name: "p".into(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            capture_policy: Default::default(),
+            context_budget: Default::default(),
+            document_config: Default::default(),
+            sync_config: Default::default(),
+        };
+        db.save_project(&project).unwrap();
+        (DocumentScanner::new(db), project, dir)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_document_is_not_tracked() {
+        let (scanner, project, dir) = setup();
+        let secret = dir.join("private.txt");
+        fs::write(&secret, "# private\nnot for memory").unwrap();
+        std::os::unix::fs::symlink(&secret, dir.join("AGENTS.md")).unwrap();
+        assert!(scanner.process_file(&project, &dir, &dir.join("AGENTS.md")).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn same_named_docs_do_not_collide_and_categories_use_whole_words() {
+        let (scanner, project, dir) = setup();
+        fs::write(dir.join("docs/address-book.md"), "# Address book").unwrap();
+        let d = scanner.process_file(&project, &dir, &dir.join("docs/address-book.md")).unwrap();
+        assert_eq!(d.category, "general");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
