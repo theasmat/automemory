@@ -36,6 +36,8 @@ enum Removal {
     NativeHooks(PathBuf),
     /// Strip the `automemory` key from an Antigravity hooks.json (other hooks stay).
     AgyHooks(PathBuf),
+    /// Delete the skills `automemory skill export` wrote into this folder (a SKILL.md with our marker); others stay.
+    ExportedSkills(PathBuf),
     /// Delete a folder we created (skill or legacy plugin) when only our files are in it.
     OwnedDir(PathBuf),
     /// Delete a file only if it still holds exactly what `connect` wrote.
@@ -93,6 +95,7 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
                     Removal::McpServerJson(ws(&[".agents", "mcp_config.json"])),
                     Removal::AgyHooks(ws(&[".agents", "hooks.json"])),
                     Removal::OwnedDir(ws(&[".agents", "skills", "automemory"])),
+                    Removal::ExportedSkills(ws(&[".agents", "skills"])),
                     Removal::OwnedDir(ws(&[".agents", "plugins", "automemory"])),
                     Removal::OwnedFile(
                         ws(&[".agents", "rules", "automemory.md"]),
@@ -124,6 +127,7 @@ fn targets(agent: &str, home: &Path, cwd: &Path, global: bool) -> Result<Vec<Rem
                 ws(&["CLAUDE.md"]),
                 super::connect::automemory_rules_content().to_string(),
             ),
+            Removal::ExportedSkills(if global { home.join(".claude/skills") } else { ws(&[".claude", "skills"]) }),
         ],
         "claude-desktop" => {
             #[cfg(target_os = "macos")]
@@ -457,6 +461,7 @@ fn apply(op: &Removal) -> Result<bool> {
         Removal::NativeHooks(p) => super::connect::strip_native_hooks(p),
         Removal::AgyHooks(p) => super::connect::strip_agy_hooks(p),
         Removal::OwnedDir(p) => Ok(remove_owned_dir(p)),
+        Removal::ExportedSkills(p) => Ok(!automemory_core::models::skill::remove_exported_skills(p).is_empty()),
         Removal::OwnedFile(p, expected) => match fs::read_to_string(p) {
             Ok(content) if &content == expected => {
                 fs::remove_file(p)?;
@@ -488,6 +493,7 @@ fn describe(op: &Removal) -> String {
         Removal::NativeHooks(p) => format!("AutoMemory hooks in {}", p.display()),
         Removal::AgyHooks(p) => format!("Antigravity hooks in {}", p.display()),
         Removal::OwnedDir(p) => format!("folder {}", p.display()),
+        Removal::ExportedSkills(p) => format!("exported skills in {}", p.display()),
         Removal::OwnedFile(p, _) => format!("generated file {}", p.display()),
         Removal::GitHook(p) => format!("git post-commit block in {}", p.display()),
         Removal::RulesBlock(root, path) => format!("AutoMemory block in {}", root.join(path).display()),
@@ -529,6 +535,9 @@ fn present(op: &Removal) -> bool {
         | Removal::AiderYaml(p)
         | Removal::CodexToml(p) => has(p),
         Removal::OwnedDir(p) => p.is_dir(),
+        Removal::ExportedSkills(p) => fs::read_dir(p).is_ok_and(|rd| {
+            rd.flatten().any(|e| fs::read_to_string(e.path().join("SKILL.md")).is_ok_and(|t| t.contains(automemory_core::models::skill::SKILL_MARKER)))
+        }),
         Removal::CursorRules(p) => p.is_file(),
         Removal::OwnedFile(p, expected) => fs::read_to_string(p).is_ok_and(|t| &t == expected),
         Removal::RulesBlock(root, path) => fs::read_to_string(root.join(path)).is_ok_and(|t| t.contains("<!-- automemory:begin")),

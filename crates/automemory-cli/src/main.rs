@@ -895,13 +895,27 @@ enum SkillCommands {
         #[arg(short, long)]
         project: Option<String>,
 
-        /// Target root directory (defaults to .agents/skills)
+        /// Which agent's skill folder: claude (.claude/skills), agy (.agents/skills) or all
+        #[arg(short, long, default_value = "agy")]
+        agent: String,
+
+        /// Target root directory (overrides --agent)
         #[arg(short, long)]
         target: Option<String>,
 
         /// Minimum successful runs required to export (defaults to 1)
         #[arg(short, long, default_value_t = 1)]
         min_runs: usize,
+    },
+    /// Remove the skills `export` wrote; skills written by anyone else stay
+    Unexport {
+        /// Which agent's skill folder: claude, agy or all
+        #[arg(short, long, default_value = "all")]
+        agent: String,
+
+        /// Target root directory (overrides --agent)
+        #[arg(short, long)]
+        target: Option<String>,
     },
 }
 
@@ -1331,11 +1345,13 @@ async fn main() -> Result<()> {
             SkillCommands::List { project } => commands::skill::list(project)?,
             SkillCommands::Export {
                 project,
+                agent,
                 target,
                 min_runs,
             } => {
-                commands::skill::export(project, target, min_runs)?;
+                commands::skill::export(project, &agent, target, min_runs)?;
             }
+            SkillCommands::Unexport { agent, target } => commands::skill::unexport(&agent, target)?,
         },
         Commands::Proposal { command } => match command {
             ProposalCommands::Summary { project } => commands::proposal::summary(project)?,

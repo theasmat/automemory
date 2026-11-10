@@ -54,8 +54,38 @@ pub fn list(project_slug: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Skill folders by agent: Claude Code reads `.claude/skills`; Antigravity and other SKILL.md readers use `.agents/skills`.
+fn target_dirs(agent: &str, target: Option<String>) -> Result<Vec<PathBuf>> {
+    if let Some(dir) = target {
+        return Ok(vec![PathBuf::from(dir)]);
+    }
+    let claude = Path::new(".claude").join("skills");
+    let agents = Path::new(".agents").join("skills");
+    match agent {
+        "claude" => Ok(vec![claude]),
+        "agy" | "agents" => Ok(vec![agents]),
+        "all" => Ok(vec![claude, agents]),
+        other => anyhow::bail!("unknown agent '{other}' (claude, agy or all)"),
+    }
+}
+
+/// Removes the skills `export` wrote (a skill someone else wrote, even with the same name, stays).
+pub fn unexport(agent: &str, target: Option<String>) -> Result<()> {
+    let mut total = 0;
+    for dir in target_dirs(agent, target)? {
+        let removed = automemory_core::models::skill::remove_exported_skills(&dir);
+        for name in &removed {
+            println!("  removed {}", dir.join(name).display());
+        }
+        total += removed.len();
+    }
+    println!("Removed {total} exported skill(s).");
+    Ok(())
+}
+
 pub fn export(
     project_slug: Option<String>,
+    agent: &str,
     target_dir_arg: Option<String>,
     min_runs: usize,
 ) -> Result<()> {
@@ -75,30 +105,25 @@ pub fn export(
     }
 
     let skills = db.list_skills(project_id, 100)?;
-    let target_base: PathBuf = if let Some(dir) = target_dir_arg {
-        PathBuf::from(dir)
-    } else {
-        Path::new(".agents").join("skills")
-    };
+    let targets = target_dirs(agent, target_dir_arg)?;
 
-    println!(
-        "Exporting {} procedural skill(s) to {:?}",
-        skills.len(),
-        target_base
-    );
+    println!("Exporting {} procedural skill(s) to {:?}", skills.len(), targets);
 
     let mut exported_count = 0;
-    for skill in &skills {
-        if (skill.success_count as usize) < min_runs {
-            continue;
+    for target_base in &targets {
+        for skill in &skills {
+            if (skill.success_count as usize) < min_runs {
+                continue;
+            }
+            match skill.export_to_skill_dir(target_base) {
+                Ok(file_path) => {
+                    println!("  ✓ Exported skill '{}' -> {:?}", skill.skill_slug(), file_path);
+                    exported_count += 1;
+                }
+                // a skill a person wrote under the same name is kept, not an error
+                Err(e) => println!("  ⚠ {e:#}"),
+            }
         }
-        let file_path = skill.export_to_skill_dir(&target_base)?;
-        println!(
-            "  ✓ Exported skill '{}' -> {:?}",
-            skill.skill_slug(),
-            file_path
-        );
-        exported_count += 1;
     }
 
     println!(

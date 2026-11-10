@@ -145,3 +145,4 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - The extraction worker runs its SQLite batch off the async threads that serve the dashboard
 - `lock list` no longer returns session ids
 - Agent rules, skill and Cursor rules now say to do only what was asked: no commits, pushes, hand-offs or saved lessons unless the person asks (X8; the live trial is still open)
+- `skill export --agent claude|agy|all` writes verified skills where Claude Code (`.claude/skills`) and Antigravity (`.agents/skills`) read them; it never overwrites a skill a person wrote; `skill unexport` and `disconnect` remove only the skills AutoMemory exported (X5; the live read check by a second agent is still open)

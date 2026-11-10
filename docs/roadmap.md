@@ -34,7 +34,7 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 |---|---|---|
 | X2 MCP 2026-07-28 compatibility: stateless requests, `resultType`, old handshake kept | Hosts will move to it | Contract tests for both versions pass |
 | X4 `automemory worktree` helper wired to tasks and overlap checks | Practitioners isolate parallel agents with worktrees | Two agents edit one file in separate worktrees; overlap warns before merge |
-| X5 SKILL.md export of verified knowledge | One format reaches 30+ tools | A skill written for one agent is read by a second; disconnect removes only ours |
+| X5 SKILL.md export of verified knowledge | One format reaches 30+ tools | A skill written for one agent is read by a second; disconnect removes only ours. **Built: `skill export --agent claude\|agy\|all`, `skill unexport`, disconnect removes only ours; the live check that a second agent reads a skill is still to do** |
 | X6 `valid_from` / `invalid_at` and a "what changed" view | Contradiction and forgetting are where memory fails | A superseded decision stays readable with dates; recall never returns an invalid note |
 | X8 Rules text: do only what was asked (no commits, batons or failure housekeeping unasked) | A trial agent committed 16 files unasked | The same neutral prompt no longer commits. **Text changed and tested; the live trial is still to run** |
 | X9 Hook adapters for Cursor, Windsurf, Gemini CLI, Copilot from recorded payloads (`automemory hooks record`) | Biggest reach gap; needs real captures | One fixture per agent |
