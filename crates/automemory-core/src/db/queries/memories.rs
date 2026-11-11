@@ -29,6 +29,15 @@ fn redacted(mem: &Memory) -> Memory {
     m
 }
 
+/// Words that make a question a question and say nothing about the answer. The last five are what `expand_hyde_query`
+/// appends to how/what/where/why questions.
+const QUESTION_FILLER: &[&str] = &[
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "do", "does", "did", "we", "i", "you", "it", "our", "my",
+    "of", "to", "in", "on", "at", "for", "and", "or", "with", "from", "by", "as", "if", "this", "that", "there", "can",
+    "should", "would", "could", "how", "what", "which", "where", "when", "why", "who", "me", "us",
+    "architecture", "setup", "configuration", "pattern", "implementation",
+];
+
 impl Database {
     pub fn save_memory(&self, mem: &Memory) -> Result<()> {
         let mem = &redacted(mem);
@@ -323,12 +332,9 @@ impl Database {
                 }
             })
             .collect();
-        let words: Vec<String> = sanitized
-            .split_whitespace()
-            .filter(|w| !w.is_empty())
-            .map(|w| format!("{}*", w))
-            .collect();
-        let fts_query = if words.is_empty() {
+        let terms: Vec<String> = sanitized.split_whitespace().map(|w| w.to_lowercase()).collect();
+        let words: Vec<String> = terms.iter().map(|w| format!("{}*", w)).collect();
+        if words.is_empty() {
             let list = self.list_memories(project_id, Some(MemoryStatus::Active), None, limit)?;
             return Ok(list
                 .into_iter()
@@ -338,9 +344,19 @@ impl Database {
                 })
                 .map(|m| (m, 1.0))
                 .collect());
-        } else {
-            words.join(" ")
-        };
+        }
+        // Precise first: every word must be in the note. A question has words no note contains ("which", "do", "we"), so
+        // when that finds nothing, fall back to notes that contain any of the words that carry meaning, best match first.
+        let all_words = words.join(" ");
+        let meaningful: Vec<String> = terms
+            .iter()
+            .filter(|t| t.chars().count() > 1 && !QUESTION_FILLER.contains(&t.as_str()))
+            .map(|t| format!("{}*", t))
+            .collect();
+        let mut attempts = vec![all_words];
+        if meaningful.len() > 1 || (meaningful.len() == 1 && words.len() > 1) {
+            attempts.push(meaningful.join(" OR "));
+        }
 
         let mut sql = r#"
             SELECT m.id, m.scope, m.project_id, m.memory_type, m.content, m.summary,
@@ -365,17 +381,21 @@ impl Database {
         sql.push_str(" ORDER BY rank ASC LIMIT ?2");
 
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![fts_query, limit as i64], |row| {
-            let mem = Self::row_to_memory(row)?;
-            let rank: f64 = row.get(17)?;
-            Ok((mem, rank))
-        })?;
-
-        let mut results = Vec::new();
-        for r in rows {
-            results.push(r?);
+        for fts_query in attempts {
+            let rows = stmt.query_map(params![fts_query, limit as i64], |row| {
+                let mem = Self::row_to_memory(row)?;
+                let rank: f64 = row.get(17)?;
+                Ok((mem, rank))
+            })?;
+            let mut results = Vec::new();
+            for r in rows {
+                results.push(r?);
+            }
+            if !results.is_empty() {
+                return Ok(results);
+            }
         }
-        Ok(results)
+        Ok(Vec::new())
     }
 
     pub fn archive_memory(&self, id: &str) -> Result<bool> {
@@ -737,6 +757,60 @@ fn metadata_files(m: &Memory) -> Vec<String> {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    fn note(id: &str, text: &str) -> Memory {
+        Memory {
+            id: id.into(),
+            scope: MemoryScope::Global,
+            project_id: None,
+            memory_type: MemoryType::Fact,
+            content: text.into(),
+            summary: text.into(),
+            confidence: 1.0,
+            importance: 0.5,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::User,
+            version: Some(1),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn a_question_finds_the_note_that_answers_it() {
+        let db = Database::open_in_memory().unwrap();
+        for (id, t) in [
+            ("pg", "We use Postgres 15 because the reporting team needs window functions"),
+            ("round", "Never round before tax; round the cart total at the end"),
+            ("deploy", "Deploys go through make release; never push tags by hand"),
+            ("pnpm", "The frontend uses pnpm, not npm"),
+            ("reset", "Reset the test database with scripts/reset_db.sh before running integration tests"),
+        ] {
+            db.save_memory_direct(&note(id, t)).unwrap();
+        }
+        let top = |q: &str| db.search_memories_fts(q, None, 5).unwrap().into_iter().map(|(m, _)| m.id).collect::<Vec<_>>();
+
+        // Sentences used to return nothing: every word had to be in the note.
+        assert_eq!(top("how do I deploy a release")[0], "deploy");
+        assert_eq!(top("when do I round the total")[0], "round");
+        assert_eq!(top("package manager for the frontend")[0], "pnpm");
+        assert_eq!(top("how to reset test data")[0], "reset");
+        assert!(top("which database do we use").contains(&"reset".to_string()), "matches the word it has");
+        assert!(top("which database do we use").contains(&"pg".to_string()), "and the note that says what we use");
+        // A question with the padding the context builder adds to how/what/where/why questions.
+        assert_eq!(top("how do I deploy a release architecture setup configuration pattern implementation")[0], "deploy");
+
+        // Precise queries stay precise: all words match, so only that note comes back.
+        assert_eq!(top("pnpm"), vec!["pnpm"]);
+        assert_eq!(top("round tax"), vec!["round"]);
+        // Words no note has still find nothing.
+        assert!(top("kubernetes helm chart").is_empty());
+    }
 
     #[test]
     fn secrets_are_redacted_on_every_write_path() {

@@ -43,6 +43,7 @@ Rule: every phase ends with a measurement. A later phase starts only if the gate
 | Continuity: Z code reader | Last unwritten reader | Passes the reader testkit |
 
 ### Technical
+- Recall measurement: the sentence-query fix is tested on five notes; measure hit rate on real notes and real agent questions (eval `non_inferable` tasks) before trusting it. Synonyms and plurals beyond a prefix need hybrid mode.
 - Symbol-level hash for staleness: wire `CodeIntel::symbol_hash` into the verifier (file hashes today).
 - Contract fixtures per agent version once more than one version is in use.
 - Connect and disconnect are two parallel per-agent lists; move `rules_target()` and `disconnect()` onto the adapter trait.

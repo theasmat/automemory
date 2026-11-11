@@ -369,9 +369,9 @@ fn test_strict_project_isolation_and_global_preference_resolution() {
     let results_b_leak_check = db
         .search_memories_fts("gRPC telemetry port", Some(proj_b), 5)
         .unwrap();
-    assert_eq!(
-        results_b_leak_check.len(),
-        0,
+    // A shared word ("port") may find Beta's own note; what must never appear is Alpha's.
+    assert!(
+        results_b_leak_check.iter().all(|(m, _)| m.id != "mem-alpha-01" && m.project_id.as_deref() != Some(proj_a)),
         "Project Beta must not see Project Alpha's memories"
     );
 

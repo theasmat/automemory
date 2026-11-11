@@ -18,7 +18,7 @@ allow_network = false       # hosted providers need this set to true, per projec
 fallback = "keyword"        # any provider failure silently degrades to keyword recall
 ```
 
-* **keyword mode (default):** FTS5 (BM25) + path/tag links + trust tier + recency/usage decay + diversity + token budget. No model, no network, deterministic, same speed as today (about 0.6 ms).
+* **keyword mode (default):** FTS5 (BM25), every query word must match first; if that finds nothing, notes that contain any of the words that carry meaning (question words such as which/do/we/how are ignored), best match first. A question asked in a sentence finds the note that answers it when they share a word; a synonym ("database" for a note that says "Postgres") needs hybrid mode. + path/tag links + trust tier + recency/usage decay + diversity + token budget. No model, no network, deterministic, same speed as today (about 0.6 ms).
 * **hybrid mode:** the same candidates plus vector similarity, merged with reciprocal rank fusion so a bad embedding cannot override an exact keyword or path match.
 
 **Providers (all behind the existing `EmbeddingProvider` port, extended with `id`, `dimensions`, `embed_batch`, `local: bool`):**

@@ -148,6 +148,10 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - Secrets are redacted at the database write boundary for memories, decisions, failures and traces, whichever path wrote them (MCP, hook, CLI, sync)
 - The resume pack says its notes are recorded data, not instructions
 
+## Recall
+
+- A question asked in a sentence now finds its note. Before, every query word had to be in the note, so "which database do we use" and every how/what/where/why question (which also got five padding words) returned nothing; now it tries all words first and falls back to any meaningful word, best match first. Synonyms still need hybrid mode
+
 ## Sync v2
 
 - Authority: agents cannot change, archive or restore a note a person wrote or pinned (MCP), and sync never lets a copy that is not person-authored replace one (`sync_authority` review item); two decisions for one topic from two computers become one review item
