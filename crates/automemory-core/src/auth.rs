@@ -156,6 +156,19 @@ pub fn stored_password_hash() -> Option<String> {
     }
 }
 
+/// True when a person is provably at this command: a terminal on stdin (an agent's shell tool pipes it), or the human password in the
+/// environment matching the stored one. Used to decide whether a record may carry the name "human".
+pub fn is_proven_human(stored_hash: Option<&str>) -> bool {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        return true;
+    }
+    match (stored_hash.filter(|h| !h.trim().is_empty() && *h != UNREADABLE_CONFIG), std::env::var(PASSWORD_ENV_VAR)) {
+        (Some(hash), Ok(pw)) => !pw.is_empty() && verify_password(&pw, hash),
+        _ => false,
+    }
+}
+
 /// Interactive password setup: prompts twice (no echo) and returns the
 /// confirmed secret. Never prints or logs the value.
 pub fn prompt_new_password() -> Result<String> {

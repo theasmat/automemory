@@ -278,6 +278,46 @@ enum Commands {
         command: RoomCommands,
     },
 
+    /// Look for repeated notes, notes about deleted files and unused notes, and put each in the Inbox for you to approve (changes nothing itself)
+    #[command(next_help_heading = "Advanced")]
+    Tidy {
+        /// Report what it would file, file nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Delete ALL AutoMemory data (every project's notes, decisions, brief, library, sync vault); needs the human password
+    #[command(next_help_heading = "Advanced")]
+    Reset {
+        /// Also delete the saved backups (kept by default)
+        #[arg(long)]
+        include_backups: bool,
+        /// Do not ask for the typed confirmation (the password is still required)
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Write your notes and decisions to a versioned JSON file (and optionally a Markdown folder)
+    #[command(next_help_heading = "Advanced")]
+    Export {
+        /// JSON file to write (default: print to the terminal)
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// Also write one Markdown file per note and decision into this folder
+        #[arg(long)]
+        markdown: Option<std::path::PathBuf>,
+        /// Only this project (default: everything)
+        #[arg(long)]
+        project: Option<String>,
+    },
+
+    /// Add the notes and decisions of an export file that this database does not have (asks for the human password)
+    #[command(next_help_heading = "Advanced")]
+    Import {
+        /// A file written by `automemory export`
+        file: std::path::PathBuf,
+    },
+
     /// Save, list and restore copies of the database
     #[command(next_help_heading = "Advanced")]
     Backup {
@@ -293,6 +333,21 @@ enum Commands {
         days: i64,
         #[arg(long)]
         json: bool,
+    },
+
+    /// The optional Tracewise companion (file locks and history): status, install, auto|on|off
+    ///
+    /// Examples:
+    ///   automemory companion
+    ///   automemory companion install
+    ///   automemory companion off
+    #[command(next_help_heading = "Setup")]
+    Companion {
+        /// status (default), install, auto, on or off
+        action: Option<String>,
+        /// Do not ask for confirmation (install)
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
 
     /// Install the latest release (checksum-verified; asks first, `--check` only reports)
@@ -361,7 +416,7 @@ enum Commands {
         command: GuardrailCommands,
     },
 
-    /// Run the local eval suites (retrieval, stale flags, leases, hook latency)
+    /// Run the local eval suites (retrieval, stale flags, hook latency)
     #[command(next_help_heading = "Advanced")]
     Eval {
         #[command(subcommand)]
@@ -413,7 +468,7 @@ enum Commands {
         command: ProposalCommands,
     },
 
-    /// View and inspect active multi-agent file and symbol locks
+    /// Show the files agents hold right now (locks come from the Tracewise companion)
     ///
     /// Examples:
     ///   automemory locks
@@ -424,7 +479,7 @@ enum Commands {
         #[arg(short, long)]
         project: Option<String>,
 
-        /// Instead of listing leases, report how many file changes a lease covered
+        /// Instead of listing locks, show how much of file capture Tracewise has in place
         #[arg(long)]
         coverage: bool,
 
@@ -445,7 +500,7 @@ enum Commands {
         branch: Option<String>,
     },
 
-    /// Release or override an active resource lock
+    /// Release a file lock (asks Tracewise)
     #[command(next_help_heading = "Daily")]
     Unlock {
         /// Resource scope (file path, glob pattern, or symbol)
@@ -509,7 +564,7 @@ enum Commands {
         command: BatonCommands,
     },
 
-    /// Kill switch: release every active lease, halting multi-agent work
+    /// Kill switch: release every lock Tracewise holds
     #[command(next_help_heading = "Advanced")]
     Stop {
         /// Limit the halt to one project slug or ID
@@ -610,9 +665,10 @@ enum DecisionCommands {
         project: Option<String>,
     },
 
-    /// Get the active decision and preserved history/dissent for a topic
+    /// Get the active decision and preserved history/dissent for a topic (a decision id works too)
+    #[command(visible_alias = "show")]
     Get {
-        /// Topic to query (e.g. auth)
+        /// Topic to query (e.g. auth), or a decision id (dec-...)
         topic: String,
 
         /// Optional project slug or ID
@@ -633,6 +689,10 @@ enum DecisionCommands {
         /// Limit number of decisions returned
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
+
+        /// Every project's decisions (default: the project of this folder)
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -814,6 +874,11 @@ enum EvalCommands {
         /// Emit the full report as JSON
         #[arg(long, default_value_t = false)]
         json: bool,
+    },
+    /// Score recall on a labelled set of notes and queries (recall@5, nDCG@10, MRR, per query kind)
+    Recall {
+        /// JSON file with `notes` and `queries` (default: the built-in synthetic starter set)
+        file: Option<std::path::PathBuf>,
     },
 }
 
@@ -1040,6 +1105,10 @@ enum MemoryCommands {
         /// Group output by field ('type' or 'scope')
         #[arg(short = 'g', long)]
         group_by: Option<String>,
+
+        /// Every project's memories (default: the project of this folder)
+        #[arg(long)]
+        all: bool,
     },
 
     /// Generate an activity and progress digest for a specific time span
@@ -1309,8 +1378,9 @@ async fn main() -> Result<()> {
                 project,
                 limit,
                 group_by,
+                all,
             } => {
-                commands::memory::list(project, limit, group_by)?;
+                commands::memory::list(project, limit, group_by, all)?;
             }
             MemoryCommands::Digest {
                 span,
@@ -1386,6 +1456,7 @@ async fn main() -> Result<()> {
         },
         Commands::Eval { command } => match command {
             EvalCommands::Run { json } => commands::eval::run(json)?,
+            EvalCommands::Recall { file } => commands::eval::recall(file)?,
         },
         Commands::Doc { command } => match command {
             DocCommands::Track {
@@ -1467,7 +1538,9 @@ async fn main() -> Result<()> {
         },
         Commands::Note { text, kind } => commands::continuity::note(&text, &kind)?,
         Commands::ExportRules { agent, all, check } => commands::rules_export::execute(agent, all, check)?,
-        Commands::Embeddings { command } => match command {
+        // these use reqwest's blocking client, which must not run on the async threads (it panics when it drops its runtime)
+        Commands::Embeddings { command } => tokio::task::block_in_place(|| -> Result<()> {
+        match command {
             EmbeddingsCommands::Status => commands::embeddings::status()?,
             EmbeddingsCommands::Test => commands::embeddings::test()?,
             EmbeddingsCommands::Reindex { all } => commands::embeddings::reindex(all)?,
@@ -1491,8 +1564,12 @@ async fn main() -> Result<()> {
             EmbeddingsCommands::Models => commands::embeddings::models()?,
             EmbeddingsCommands::Clean => commands::embeddings::clean()?,
             EmbeddingsCommands::Eval { file } => commands::embeddings::eval(file)?,
-        },
-        Commands::Llm { command } => match command {
+        }
+        Ok(())
+        })?,
+        // these use reqwest's blocking client, which must not run on the async threads (it panics when it drops its runtime)
+        Commands::Llm { command } => tokio::task::block_in_place(|| -> Result<()> {
+        match command {
             LlmCommands::Status => commands::llm::status()?,
             LlmCommands::Use { model, endpoint, api_key_env, allow_network } => commands::llm::use_model(model, endpoint, api_key_env, allow_network)?,
             LlmCommands::Off => commands::llm::off()?,
@@ -1505,7 +1582,9 @@ async fn main() -> Result<()> {
                 LlmProfileCommands::Remove { name } => commands::llm::profile_remove(name)?,
             },
             LlmCommands::Run { what } => commands::llm::run(&what)?,
-        },
+        }
+        Ok(())
+        })?,
         Commands::Library { command } => match command {
             LibraryCommands::Add { file, r#as, r#move, personal, allow_secrets } => commands::library::add(&file, r#as, r#move, personal, allow_secrets)?,
             LibraryCommands::New { name, personal } => commands::library::new(&name, personal)?,
@@ -1543,19 +1622,26 @@ async fn main() -> Result<()> {
             RoomCommands::Reject { id } => commands::room::reject(&id)?,
             RoomCommands::Again { id } => commands::room::again(&id)?,
         },
+        Commands::Tidy { dry_run } => commands::backup::tidy(dry_run)?,
+        Commands::Reset { include_backups, yes } => commands::backup::reset(include_backups, yes)?,
+        Commands::Export { out, markdown, project } => commands::backup::export(out, markdown, project)?,
+        Commands::Import { file } => commands::backup::import(file)?,
         Commands::Backup { command } => match command.unwrap_or(BackupCommands::Create) {
             BackupCommands::Create => commands::backup::create()?,
             BackupCommands::List => commands::backup::list()?,
+            BackupCommands::Drill => commands::backup::drill()?,
             BackupCommands::Restore { file, yes } => commands::backup::restore(&file, yes)?,
         },
         Commands::Stats { days, json } => commands::stats::run(days, json)?,
-        Commands::Update { check, yes } => commands::update::run(check, yes)?,
+        // reqwest's blocking client builds and drops its own runtime, which panics inside this async main unless it runs off the async threads
+        Commands::Update { check, yes } => tokio::task::block_in_place(|| commands::update::run(check, yes))?,
         Commands::Resume => commands::continuity::resume()?,
         Commands::Handoff { note, message } => commands::continuity::handoff(note.or(message)).await?,
         Commands::Locks { project, coverage: true, days } => {
             let _ = project;
             commands::lock::coverage(days)?
         }
+        Commands::Companion { action, yes } => tokio::task::block_in_place(|| commands::companion::run(action.as_deref(), yes))?,
         Commands::Locks { project, .. } => commands::lock::list_locks(project.as_deref())?,
         Commands::Overlap { base, branch } => commands::lock::overlap(&base, branch.as_deref())?,
         Commands::Unlock {
@@ -1594,8 +1680,9 @@ async fn main() -> Result<()> {
                 project,
                 status,
                 limit,
+                all,
             } => {
-                commands::decision::list_decisions(project.as_deref(), status.as_deref(), limit)?;
+                commands::decision::list_decisions(project.as_deref(), status.as_deref(), limit, all)?;
             }
         },
         Commands::Pin { id } => {
@@ -1691,6 +1778,7 @@ enum LibraryCommands {
         personal: bool,
     },
     /// List library files with a one-line summary
+    #[command(visible_alias = "list")]
     Ls { prefix: Option<String> },
     /// Print a file (--tier 0 title, 1 outline, 2 whole file)
     Show {
@@ -1812,6 +1900,8 @@ enum BackupCommands {
     Create,
     /// Show saved copies and whether each one opens
     List,
+    /// Prove the newest backup restores: open a scratch copy and count what is in it (the live database is not touched)
+    Drill,
     /// Replace the database with a saved copy (the current one is kept)
     Restore {
         file: String,

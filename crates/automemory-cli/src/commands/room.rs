@@ -17,7 +17,7 @@ pub fn list() -> Result<()> {
         let note = match (db.room_outcome(&r.id), r.state) {
             (Some(o), _) => format!("{} by you", o.outcome),
             (None, automemory_core::models::RoomState::Decided) => "WAITING FOR YOUR VERDICT".to_string(),
-            (None, s) => format!("{s}, turn: {}", r.turn_holder.as_deref().unwrap_or("-")),
+            (None, s) => format!("{s}, turn: {}", r.turn_holder.as_deref().map(|t| db.agent_label(t)).unwrap_or_else(|| "open".into())),
         };
         println!("{}  {:<28} {} post(s)  {}", r.id, r.topic.chars().take(28).collect::<String>(), posts, note);
     }
@@ -27,9 +27,10 @@ pub fn list() -> Result<()> {
 pub fn show(id: &str) -> Result<()> {
     let db = db()?;
     let room = db.get_room(id)?.ok_or_else(|| anyhow::anyhow!("room not found"))?;
-    println!("{}: {} [{}], members: {}", room.id, room.topic, room.state, room.members.join(", "));
+    let members: Vec<String> = room.members.iter().map(|m| db.agent_label(m)).collect();
+    println!("{}: {} [{}], members: {}", room.id, room.topic, room.state, members.join(", "));
     for p in db.room_posts(id)? {
-        println!("\n--- {} ({}) ---\n{}", p.kind, p.author_session, p.body);
+        println!("\n--- {} ({}) ---\n{}", p.kind, db.agent_label(&p.author_session), p.body);
         if !p.evidence.is_empty() {
             println!("evidence: {}", p.evidence.join(", "));
         }

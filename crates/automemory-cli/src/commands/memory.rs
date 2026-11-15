@@ -6,9 +6,16 @@ use chrono::Utc;
 use std::str::FromStr;
 use uuid::Uuid;
 
-pub fn list(project: Option<String>, limit: usize, group_by: Option<String>) -> Result<()> {
+/// The project of the current folder, when it is a registered one: the default scope of what the terminal lists, as for an agent's MCP calls.
+pub(crate) fn folder_project(db: &Database) -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    db.find_project_by_path(&cwd.to_string_lossy()).ok().flatten().map(|p| p.id)
+}
+
+pub fn list(project: Option<String>, limit: usize, group_by: Option<String>, all: bool) -> Result<()> {
     let config = Config::default_config();
     let db = Database::open(&config.db_path)?;
+    let project = if all { project } else { project.or_else(|| folder_project(&db)) };
     let memories = db.list_memories(project.as_deref(), Some(MemoryStatus::Active), None, limit)?;
 
     if memories.is_empty() {
@@ -83,6 +90,8 @@ pub async fn search(
 ) -> Result<()> {
     let config = Config::default_config();
     let db = Database::open(&config.db_path)?;
+    // this folder's project unless one is named, as for an agent's MCP calls
+    let project = project.or_else(|| folder_project(&db));
 
     if semantic {
         let vector_engine = automemory_core::ports::LocalEmbeddings::new();
@@ -324,6 +333,14 @@ pub fn save(args: MemorySaveArgs) -> Result<()> {
         metadata_map.insert("files_modified".to_string(), serde_json::json!(fls_vec));
     }
 
+    // A note saved from a shell is a person's only when a person is here; an agent's shell tool runs this command too, and what it saves
+    // must be a tier 4 claim labelled with its name, not trusted text that would be exported into every agent's instructions.
+    let who = automemory_core::actor::current(automemory_core::auth::stored_password_hash().as_deref());
+    let (source_kind, confidence) = if who.is_human() { (MemorySourceKind::User, 1.0) } else { (MemorySourceKind::Agent, 0.9) };
+    if !who.is_human() {
+        metadata_map.insert("saved_by".to_string(), serde_json::json!(who.name));
+        eprintln!("note: saved as an unverified note written by '{}' (no terminal or human password here).", who.name);
+    }
     let mem = Memory {
         id: Uuid::now_v7().to_string(),
         scope: parsed_scope,
@@ -331,11 +348,11 @@ pub fn save(args: MemorySaveArgs) -> Result<()> {
         memory_type: parsed_type,
         content: args.content,
         summary: args.summary.clone(),
-        confidence: 1.0,
+        confidence,
         importance: 0.8,
         freshness: 1.0,
         status: MemoryStatus::Active,
-        source_kind: MemorySourceKind::User,
+        source_kind,
         version: Some(1),
         created_at: Utc::now(),
         updated_at: Utc::now(),

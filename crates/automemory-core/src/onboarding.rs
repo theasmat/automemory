@@ -256,22 +256,6 @@ pub fn seed_demo(db: &Database) -> Result<()> {
         }
     }
 
-    // 6. File locks held right now (Agents & locks)
-    for (agent, session, file, goal) in [
-        ("claude", "demo-session-claude", "src/checkout.rs", "Add the Stripe checkout flow"),
-        ("cursor", "demo-session-cursor", "src/ui/cart.tsx", "Show the cart total after tax"),
-    ] {
-        let _ = db.acquire_lease(LeaseAcquireArgs {
-            project_id: Some("demo"),
-            agent,
-            session_id: session,
-            scope: file,
-            scope_type: LeaseScopeType::File,
-            goal,
-            ttl_seconds: 1800,
-        });
-    }
-
     // 7. A hand-off note, what worked, problems and fixes, a learned skill
     db.save_baton_direct(&Baton {
         id: format!("demo-baton-{}", Uuid::new_v4().simple()),
@@ -362,7 +346,6 @@ pub fn remove_demo(db: &Database) -> Result<()> {
         "DELETE FROM review_proposals WHERE project_id = 'demo'",
         "DELETE FROM tool_events WHERE project_id = 'demo'",
         "DELETE FROM sessions WHERE project_id = 'demo'",
-        "DELETE FROM leases WHERE project_id = 'demo'",
         "DELETE FROM batons WHERE project_id = 'demo'",
         "DELETE FROM success_traces WHERE project_id = 'demo'",
         "DELETE FROM failure_records WHERE project_id = 'demo'",
@@ -442,7 +425,7 @@ mod tests {
         let count = |table: &str| -> i64 {
             db.conn().query_row(&format!("SELECT COUNT(*) FROM {table} WHERE project_id = 'demo'"), [], |r| r.get(0)).unwrap()
         };
-        for (table, min) in [("tool_events", 12), ("sessions", 3), ("leases", 2), ("batons", 1), ("success_traces", 1), ("failure_records", 2), ("procedural_skills", 1)] {
+        for (table, min) in [("tool_events", 12), ("sessions", 3), ("batons", 1), ("success_traces", 1), ("failure_records", 2), ("procedural_skills", 1)] {
             assert!(count(table) >= min, "{table} should have at least {min} demo rows");
         }
 
@@ -458,7 +441,7 @@ mod tests {
         assert_eq!(decisions.len(), 0);
         let proposals = db.list_pending_proposals(Some("demo")).unwrap();
         assert_eq!(proposals.len(), 0);
-        for table in ["tool_events", "sessions", "leases", "batons", "success_traces", "failure_records", "procedural_skills"] {
+        for table in ["tool_events", "sessions", "batons", "success_traces", "failure_records", "procedural_skills"] {
             assert_eq!(count(table), 0, "{table} should be empty after removal");
         }
     }

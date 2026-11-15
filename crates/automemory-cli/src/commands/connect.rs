@@ -51,6 +51,13 @@ pub fn execute(agent: &str, global: bool) -> Result<()> {
     };
 
     if res.is_ok() {
+        // AutoMemory's hook calls Tracewise itself; Tracewise's own registration for the same agent would handle each event twice.
+        let agents: Vec<String> = if agent.eq_ignore_ascii_case("all") {
+            ["claude", "codex", "gemini", "antigravity", "cursor"].map(String::from).to_vec()
+        } else {
+            vec![agent.to_string()]
+        };
+        super::companion::dedupe_hooks(&agents);
         let config = automemory_core::Config::default_config();
         if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
             // A workspace connect makes the folder a project, so memories, modes and decisions attach to it.
@@ -270,7 +277,7 @@ pub(crate) fn connect_agy(
         println!("  🔌 MCP:    .agents/mcp_config.json");
         println!("  🧠 Skill:  .agents/skills/automemory/SKILL.md");
         println!("  📜 Rules:  .agents/rules/automemory.md (AGENTS.md, GEMINI.md if absent)");
-        println!("  ⚓ Git post-commit hook: active");
+        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
     }
     Ok(())
 }
@@ -516,7 +523,7 @@ pub(crate) fn connect_claude(
         merge_native_hooks(&settings, exe_path, "claude", CLAUDE_HOOKS)?;
         println!("  🪝 Registered hooks in: {}", settings.display());
         println!("  📝 Guidelines configured in CLAUDE.md");
-        println!("  ⚓ Git post-commit hook: active");
+        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
     }
 
     Ok(())
@@ -574,7 +581,7 @@ pub(crate) fn connect_cursor(
         target_path.display()
     );
     println!("  📝 Created/updated .cursorrules guidelines");
-    println!("  ⚓ Git post-commit hook: active");
+    println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
     Ok(())
 }
 
@@ -1025,11 +1032,10 @@ pub(crate) fn automemory_skill_content() -> &'static str {
     r#"---
 name: automemory
 description: >
-  Autonomous multi-agent memory, zero-staleness blackboard, cross-worktree advisory leases,
-  and automatic session distillation. Use whenever working on codebases with AutoMemory enabled
-  to automatically recall context, lease files before editing, sync decisions, record lessons,
+  Autonomous multi-agent memory, zero-staleness blackboard, and automatic session distillation. Use whenever working on codebases with AutoMemory enabled
+  to automatically recall context, sync decisions, record lessons,
   and update memories.
-argument-hint: "[context|status|lease|record]"
+argument-hint: "[context|status|record]"
 license: MIT
 ---
 
@@ -1054,10 +1060,9 @@ At the start of any new task, feature, or refactoring:
 
 ---
 
-## 2. File Locks (automatic)
-Locks are automatic: AutoMemory's hooks take a lock when you edit a file and release it when the session ends.
-Do not call `lock.acquire` or `lock.release` yourself. If an edit is reported as held by another agent, read the
-holder and its goal, then pick other work or wait.
+## 2. File Locks (Tracewise)
+File locks are provided by Tracewise, when it is installed: it takes a lock when you edit a file and releases it when your turn ends.
+There is nothing to call. If an edit is reported as held by another agent, read the holder, then pick other work or wait (`lock.status` lists the held files).
 
 ## 3. Planning rooms
 For a design choice worth a second opinion, open a room with `room.join` (topic, your session id) and ask the other agent to
@@ -1097,8 +1102,7 @@ When encountering an unexpected build error, test failure, or runtime issue:
 
 ## 5. Task Handoff & Completion
 When finishing your assigned task or when reaching context window limits:
-1. Release all active file leases (`lock.release`).
-2. If another agent or subsequent session will continue the work, call `continuity.brief` with `action: handoff` and:
+1. If another agent or subsequent session will continue the work, call `continuity.brief` with `action: handoff` and:
    - `addressed_to`: name of receiving agent or role.
    - `context`: concise summary of work done and immediate next steps.
    - `artifacts`: list of files modified or created.
@@ -1148,23 +1152,46 @@ fn git_hooks_dir(workspace_root: &Path) -> Option<PathBuf> {
     git_dir.exists().then(|| git_dir.join("hooks"))
 }
 
-/// Adds our block to `.git/hooks/post-commit`. An existing hook of the user's is kept; our block
-/// is appended (or replaced in place), never overwriting what is there.
+const GIT_PRE_BEGIN: &str = "# >>> automemory pre-commit >>>";
+const GIT_PRE_END: &str = "# <<< automemory pre-commit <<<";
+
+/// Adds our blocks to `.git/hooks/post-commit` (marks notes about the committed files `changed`) and `.git/hooks/pre-commit`
+/// (shows a warning about files another agent holds, and blocks the commit when the hook answers deny, which only Strict mode
+/// does). An existing hook of the user's is kept; our block is appended (or replaced in place), never overwriting what is there.
+/// The pre-commit block fails open: if AutoMemory errors or is missing, the commit goes ahead.
 pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str) -> Result<()> {
-    let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(()) };
-    fs::create_dir_all(&hooks_dir)?;
-    let path = hooks_dir.join("post-commit");
     let exe_path = &exe_path.replace('\\', "/"); // the hook is a sh script (Git for Windows runs it): no backslashes
-    let block = format!(
+    let post = format!(
         "{GIT_HOOK_BEGIN}\nAUTOMEMORY_EXE=\"{exe_path}\"\nif [ -x \"$AUTOMEMORY_EXE\" ]; then\n    \"$AUTOMEMORY_EXE\" hook --agent git --event post-commit --project auto >/dev/null 2>&1 || true\nfi\n{GIT_HOOK_END}\n"
     );
+    let pre = format!(
+        r#"{GIT_PRE_BEGIN}
+AUTOMEMORY_EXE="{exe_path}"
+if [ -x "$AUTOMEMORY_EXE" ]; then
+    am_out=$("$AUTOMEMORY_EXE" hook --agent git --event pre-commit --project auto </dev/null 2>/dev/null) || am_out=""
+    case "$am_out" in
+        *'"decision":"deny"'*) echo "AutoMemory: commit blocked: $am_out" >&2; exit 1 ;;
+        *'"reason"'*) echo "AutoMemory: $am_out" >&2 ;;
+    esac
+fi
+{GIT_PRE_END}
+"#
+    );
+    write_git_block(workspace_root, "post-commit", GIT_HOOK_BEGIN, GIT_HOOK_END, &post)?;
+    write_git_block(workspace_root, "pre-commit", GIT_PRE_BEGIN, GIT_PRE_END, &pre)
+}
+
+fn write_git_block(workspace_root: &Path, hook: &str, begin: &str, end: &str, block: &str) -> Result<()> {
+    let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(()) };
+    fs::create_dir_all(&hooks_dir)?;
+    let path = hooks_dir.join(hook);
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    let base = strip_git_block(&existing);
+    let base = strip_git_block(&existing, begin, end);
     let mut out = if base.trim().is_empty() { "#!/bin/sh\n".to_string() } else { base };
     if !out.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(&block);
+    out.push_str(block);
     fs::write(&path, out)?;
     #[cfg(unix)]
     {
@@ -1175,16 +1202,16 @@ pub(crate) fn install_git_post_commit_hook(workspace_root: &Path, exe_path: &str
 }
 
 /// The hook text without our block, and without the whole-file hook older versions wrote.
-fn strip_git_block(text: &str) -> String {
-    if text.contains("# AutoMemory Git Post-Commit Hook") && !text.contains(GIT_HOOK_BEGIN) {
+fn strip_git_block(text: &str, begin: &str, end: &str) -> String {
+    if begin == GIT_HOOK_BEGIN && text.contains("# AutoMemory Git Post-Commit Hook") && !text.contains(GIT_HOOK_BEGIN) {
         return String::new(); // older versions overwrote the file with only our script
     }
     let mut out = Vec::new();
     let mut skipping = false;
     for line in text.lines() {
-        if line.trim() == GIT_HOOK_BEGIN {
+        if line.trim() == begin {
             skipping = true;
-        } else if line.trim() == GIT_HOOK_END {
+        } else if line.trim() == end {
             skipping = false;
         } else if !skipping {
             out.push(line);
@@ -1193,15 +1220,21 @@ fn strip_git_block(text: &str) -> String {
     if out.is_empty() { String::new() } else { out.join("\n") + "\n" }
 }
 
-/// Removes our block; deletes the file if nothing else (but the shebang) remains.
+/// Removes our blocks from both git hooks; deletes a file if nothing else (but the shebang) remains.
 pub(crate) fn remove_git_post_commit_hook(workspace_root: &Path) -> Result<bool> {
+    let post = remove_git_block(workspace_root, "post-commit", GIT_HOOK_BEGIN, GIT_HOOK_END, Some("# AutoMemory Git Post-Commit Hook"))?;
+    let pre = remove_git_block(workspace_root, "pre-commit", GIT_PRE_BEGIN, GIT_PRE_END, None)?;
+    Ok(post || pre)
+}
+
+fn remove_git_block(workspace_root: &Path, hook: &str, begin: &str, end: &str, legacy_marker: Option<&str>) -> Result<bool> {
     let Some(hooks_dir) = git_hooks_dir(workspace_root) else { return Ok(false) };
-    let path = hooks_dir.join("post-commit");
+    let path = hooks_dir.join(hook);
     let Ok(text) = fs::read_to_string(&path) else { return Ok(false) };
-    if !text.contains(GIT_HOOK_BEGIN) && !text.contains("# AutoMemory Git Post-Commit Hook") {
+    if !text.contains(begin) && !legacy_marker.is_some_and(|m| text.contains(m)) {
         return Ok(false);
     }
-    let rest = strip_git_block(&text);
+    let rest = strip_git_block(&text, begin, end);
     if rest.lines().all(|l| l.trim().is_empty() || l.starts_with("#!")) {
         fs::remove_file(&path)?;
     } else {
@@ -1252,10 +1285,80 @@ mod guideline_tests {
             // maintenance the person normally does in the dashboard
             "memory.update", "memory.archive", "memory.restore", "memory.redact", "preference.set", "preference.lock", "project.register",
             "memory.proposals.list", "memory.proposals.summary", "memory.proposals.decide", "memory.proposals.decide_all", "failure.resolve",
-            // the lock tools are rarely needed: edits are locked automatically
-            "lock.acquire", "lock.release", "lock.status",
+            // lock.status only reads what Tracewise holds; there is nothing to call before editing
+            "lock.status",
         ];
         let missing: Vec<_> = tools.iter().map(|t| t.name.as_str()).filter(|n| !OPTIONAL.contains(n) && !rules.contains(n)).collect();
         assert!(missing.is_empty(), "teach these tools in automemory_rules_content (or add them to OPTIONAL with a reason): {missing:?}");
     }
 }
+
+#[cfg(test)]
+mod git_hook_tests {
+    use super::*;
+    use std::process::Command;
+
+    fn sandbox(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("am-githook-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        assert!(Command::new("git").args(["init", "-q"]).current_dir(&dir).status().unwrap().success());
+        dir
+    }
+
+    /// A stand-in for the automemory binary that prints `reply` (or crashes when `reply` is empty).
+    fn fake_exe(dir: &Path, reply: &str) -> String {
+        let path = dir.join("fake-automemory");
+        let body = if reply.is_empty() { "#!/bin/sh\nexit 3\n".to_string() } else { format!("#!/bin/sh\necho '{reply}'\n") };
+        fs::write(&path, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path.to_string_lossy().to_string()
+    }
+
+    fn run_pre_commit(repo: &Path) -> (i32, String) {
+        let out = Command::new("sh").arg(repo.join(".git/hooks/pre-commit")).current_dir(repo).output().unwrap();
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stderr).to_string())
+    }
+
+    #[test]
+    fn the_pre_commit_block_blocks_only_on_deny_and_fails_open() {
+        let repo = sandbox("pre");
+        for (reply, code, says) in [
+            (r#"{"decision":"deny","reason":"held by claude"}"#, 1, "commit blocked"),
+            (r#"{"decision":"allow","reason":"src/a.rs is held by claude"}"#, 0, "held by claude"),
+            (r#"{"decision":"allow"}"#, 0, ""),
+            ("", 0, ""), // the binary crashes: the commit goes ahead
+        ] {
+            let exe = fake_exe(&repo, reply);
+            install_git_post_commit_hook(&repo, &exe).unwrap();
+            let (status, err) = run_pre_commit(&repo);
+            assert_eq!(status, code, "reply {reply:?}: {err}");
+            assert!(says.is_empty() && err.is_empty() || err.contains(says), "reply {reply:?}: {err}");
+        }
+        // The binary is gone: still goes ahead.
+        install_git_post_commit_hook(&repo, "/nonexistent/automemory").unwrap();
+        assert_eq!(run_pre_commit(&repo).0, 0);
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_users_own_git_hooks_survive_install_and_removal() {
+        let repo = sandbox("user");
+        fs::create_dir_all(repo.join(".git/hooks")).unwrap();
+        fs::write(repo.join(".git/hooks/pre-commit"), "#!/bin/sh\necho my lint\n").unwrap();
+        install_git_post_commit_hook(&repo, "/bin/automemory").unwrap();
+        install_git_post_commit_hook(&repo, "/bin/automemory").unwrap(); // again: replaced in place, not duplicated
+        let hook = fs::read_to_string(repo.join(".git/hooks/pre-commit")).unwrap();
+        assert!(hook.contains("echo my lint") && hook.contains("automemory pre-commit"), "{hook}");
+        assert_eq!(hook.matches("automemory pre-commit >>>").count(), 1);
+        assert!(remove_git_post_commit_hook(&repo).unwrap());
+        assert_eq!(fs::read_to_string(repo.join(".git/hooks/pre-commit")).unwrap(), "#!/bin/sh\necho my lint\n");
+        assert!(!repo.join(".git/hooks/post-commit").exists(), "ours only: removed");
+        let _ = fs::remove_dir_all(&repo);
+    }
+}
+

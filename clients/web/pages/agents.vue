@@ -60,7 +60,7 @@
       <div v-if="store.activeLeases.length === 0" class="py-2">
         <EmptyState
           title="No files currently locked"
-          description="When an agent edits a file or claims a scoped task, it locks the file here so parallel agents do not overwrite each other."
+          description="File locks come from Tracewise. With it installed, a file an agent is editing shows up here so parallel agents do not overwrite each other; without it nothing is locked."
         />
       </div>
 
@@ -106,8 +106,8 @@
       <details class="mt-4 pt-3 border-t border-border/60 text-xs text-text-muted">
         <summary class="cursor-pointer text-accent font-medium">How file locks work</summary>
         <p class="mt-2 leading-relaxed">
-          Before modifying shared files, agents automatically acquire an advisory file lock with a time-to-live.
-          If another parallel worker attempts to edit the same file, it is notified immediately to coordinate rather than overwrite.
+          Tracewise (the optional companion, github.com/cmdworks/tracewise) takes a lock when an agent edits a file and frees it when the agent's turn ends.
+          If another agent tries the same file, it is told who holds it. Install Tracewise to turn this on; memory works without it.
         </p>
       </details>
     </Card>

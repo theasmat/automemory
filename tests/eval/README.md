@@ -56,3 +56,11 @@ python3 tests/eval/run_eval.py report --md      # median and min-max per arm
 python3 tests/eval/run_eval.py gate --save      # store the baseline; later `gate` fails on a regression
 ```
 A command may print `tokens=N` to record tokens. Report medians and spread in FEATURES.md, with the date and agent versions.
+
+## Recall set
+
+`automemory eval recall [file]` scores how well a question finds the note that answers it, without any agent: recall@5, nDCG@10 and MRR, overall and per query `kind`
+(paraphrase, identifier, morphology, keyword, temporal). The file is JSON: `notes` (`id`, `type`, `summary`, `content`, `tags`) and `queries` (`query`, `expect` ids, `kind`).
+`tests/eval/recall/shop.json` is a **synthetic** starter. Replace or extend it with notes and questions replayed from your own sessions before trusting any number.
+Set `RECALL_EVAL_MISSES=1` to print each query that missed and what ranked instead. Use it before and after every retrieval change; a change that moves one kind and
+hurts another is visible here.

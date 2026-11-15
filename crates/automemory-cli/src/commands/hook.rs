@@ -3,7 +3,7 @@ use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::db::Database;
 use automemory_core::hooks::{
     merge_decision, run_pipeline, CanonicalEvent, GateDecision, GuardrailHandler, HooksConfig,
-    LockCheckHandler, PipelineCtx,
+    PipelineCtx,
 };
 use automemory_core::models::*;
 use automemory_core::ports::{HandlerEnv, HookHandler};
@@ -72,7 +72,7 @@ pub fn run(agent: &str, event: &str, project_arg: &str) {
     super::hooks_admin::record_payload(agent, event, &input);
     let db = Config::default_config();
     let db = Database::open(&db.db_path).ok();
-    let key = automemory_core::locking::hook_key(agent, event, &input);
+    let key = automemory_core::hook_state::hook_key(agent, event, &input);
     // Only payloads that identify one specific step can be told apart from a genuine repeat
     // (an agent retrying the same edit a moment later must get a fresh decision).
     let claimable = has_unique_step_id(&input);
@@ -173,30 +173,13 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     // Gated off by default: PRD pull-principle (§5) reserves context for
     // explicit queries; enable with [defaults] boot_injection = true.
     let canonical = CanonicalEvent::from_cli(event);
-    let lock_cfg = GlobalConfig::load().map(|g| g.locks).unwrap_or_default();
-    let known_session = session_id != "unknown-session";
-    let command_text: Option<String> = tool_info
-        .as_ref()
-        .filter(|t| t.category == "command")
-        .and_then(|t| t.input.as_ref())
-        .and_then(|i| i.get("command").or_else(|| i.get("CommandLine")))
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    // Any activity keeps the session's leases alive; they lapse when it goes quiet.
-    if known_session
-        && matches!(
-            canonical,
-            Some(
-                CanonicalEvent::SessionStart
-                    | CanonicalEvent::PreToolUse
-                    | CanonicalEvent::PostToolUse
-                    | CanonicalEvent::UserPromptSubmit
-                    | CanonicalEvent::SubagentStart
-            )
-        )
-    {
-        let _ = db.heartbeat_lease(&session_id, None);
-    }
+    let global_cfg = GlobalConfig::load().unwrap_or_default();
+    // Tracewise, nested: asked once for this event, with the agent's raw payload (docs/specs/tracewise-companion.md). Fail-open: no companion, a slow
+    // one or an unknown API means no answer, and AutoMemory goes on alone.
+    let companion = automemory_core::companion::detect(&global_cfg.companion, &db);
+    let nested = companion.as_ref().and_then(|c| {
+        automemory_core::companion::call(c, agent, event, input, std::time::Duration::from_millis(global_cfg.companion.timeout_ms))
+    });
     if canonical == Some(CanonicalEvent::SessionStart) {
         let boot_on = GlobalConfig::load()
             .map(|g| g.defaults.boot_injection)
@@ -207,10 +190,13 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         spawn_background_sync(&db);
         if agy_style(agent) {
             let mut parts = db.drain_notes(&session_id);
-            parts.extend(others_leases_note(&db, effective_project_id, &session_id));
             parts.extend(db.room_lines_for(effective_project_id, &session_id, agent));
             let first_step = raw_payload.get("invocationNum").and_then(|v| v.as_i64()) == Some(0);
             if first_step {
+                parts.extend(resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)));
+            } else if session_id != "unknown-session" && refresh_due(&db, &session_id, STEPS_PER_REFRESH) {
+                // no compaction signal from this agent: hand the pack over again after enough steps or hours
+                db.sync_kv_delete(&format!("resume_shown:{session_id}"));
                 parts.extend(resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)));
             }
             if boot_on && first_step {
@@ -257,11 +243,14 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         let mut parts: Vec<String> = [
             resume_once(&db, effective_project_id, &session_id, &dir_of(&project_ref.root_path)),
             pending_work_nudge(&db, effective_project_id, &session_id),
-            others_leases_note(&db, effective_project_id, &session_id),
         ]
         .into_iter()
         .flatten()
         .collect();
+        // what Tracewise says (files others changed, overlaps) comes first
+        if let Some(a) = &nested {
+            parts.splice(0..0, a.context.iter().cloned());
+        }
         // Planning rooms that wait for this agent (its turn, or an invitation), told once per turn.
         parts.extend(db.room_lines_for(effective_project_id, &session_id, agent));
         if parts.is_empty() {
@@ -292,16 +281,6 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             .and_then(|t| t.input.as_ref())
             .unwrap_or(&raw_payload);
         let (mut paths, symbols) = extract_target_paths_and_symbols(tool_name, tool_args);
-        // A shell command is leased on the files it will write, before it runs.
-        let shell_targets = command_text
-            .as_deref()
-            .map(automemory_core::locking::shell_write_targets)
-            .unwrap_or_default();
-        for t in &shell_targets {
-            if !paths.contains(t) {
-                paths.push(t.clone());
-            }
-        }
         if gate_event == CanonicalEvent::PreCommit {
             for f in staged_files(&project_ref.root_path) {
                 if !paths.contains(&f) {
@@ -318,8 +297,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             paths: &paths,
             symbols: &symbols,
             is_mutation: gate_event == CanonicalEvent::PreCommit
-                || is_mutation_tool(tool_name)
-                || !shell_targets.is_empty(),
+                || is_mutation_tool(tool_name),
         };
         let hooks_cfg = HooksConfig::load(
             &config.home_dir.join("hooks.toml"),
@@ -330,11 +308,13 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             project_id: effective_project_id,
             mode: autopilot_mode,
         };
-        let lock_check = LockCheckHandler;
         let guardrail = GuardrailHandler;
-        let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
+        let handlers: Vec<&dyn HookHandler> = vec![&guardrail];
         let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
-        let merged = merge_decision(&results);
+        let mut merged = merge_decision(&results);
+        if let Some(a) = &nested {
+            merged = merge_companion(merged, a);
+        }
         // Blocks and questions leave a trace (dashboard "recently blocked"); allowed calls are in the event log.
         if matches!(merged.decision.as_str(), "deny" | "ask") {
             let _ = db.log_audit(
@@ -378,16 +358,6 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             PathBuf::from(&project_root)
         }
     };
-    // Before a shell command: remember what git sees, to find what the command changes.
-    if canonical == Some(CanonicalEvent::PreToolUse)
-        && command_text.is_some()
-        && known_session
-        && lock_cfg.reconcile
-    {
-        if let Some(snap) = automemory_core::locking::snapshot(&root_dir()) {
-            let _ = db.begin_snapshot(&session_id, effective_project_id, &snap);
-        }
-    }
     let normalized_event = build_normalized_event(
         agent,
         event,
@@ -399,29 +369,10 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     );
     let _ = db.append_event(&normalized_event);
 
-    // After a shell command: lease the files it changed that nothing covered, and tell the
-    // agent when one of them is held by someone else.
-    let mut post_note: Option<String> = None;
-    if canonical == Some(CanonicalEvent::PostToolUse)
-        && command_text.is_some()
-        && known_session
-        && lock_cfg.reconcile
-    {
-        if let (Ok(Some(before)), Some(after)) = (
-            db.finish_snapshot(&session_id),
-            automemory_core::locking::snapshot(&root_dir()),
-        ) {
-            let r = automemory_core::locking::reconcile(
-                &db,
-                &lock_cfg,
-                effective_project_id,
-                &session_id,
-                agent,
-                &before,
-                &after,
-            );
-            post_note = lock_conflict_note(&r.conflicts);
-        }
+    // A compaction summarises the conversation and can drop what the session was told at its start (the brief, the decisions, who holds
+    // which file). Forgetting that it was shown makes the next prompt hand the resume pack over again.
+    if canonical == Some(CanonicalEvent::PreCompact) {
+        db.sync_kv_delete(&format!("resume_shown:{session_id}"));
     }
 
     if matches!(canonical, Some(CanonicalEvent::Stop | CanonicalEvent::SessionEnd | CanonicalEvent::PreCompact)) {
@@ -434,11 +385,8 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
 
     // The session is over: its files are free for other agents at once.
     if canonical == Some(CanonicalEvent::SessionEnd) {
-        // Release first, so the hand-off does not list files as "holding" that are already free.
-        let _ = db.release_leases(&session_id, None);
         maybe_handoff(&db, effective_project_id, &session_id, agent, &root_dir());
         spawn_background_sync(&db);
-        db.drop_snapshot(&session_id);
         emit!("{{}}");
         return Ok(());
     }
@@ -484,7 +432,14 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     if canonical == Some(CanonicalEvent::Stop) {
         // Remind once per piece of owed work, then let the agent stop: a person may have told it to wait, and
         // blocking every Stop traps it in a loop of acknowledgements (seen in trial T11).
-        let owed = pending_work_nudge(&db, effective_project_id, &session_id);
+        let companion_owed = nested
+            .as_ref()
+            .filter(|a| a.decision == automemory_core::companion::Decision::Deny)
+            .and_then(|a| a.reason.clone());
+        let owed = match (pending_work_nudge(&db, effective_project_id, &session_id), companion_owed) {
+            (Some(a), Some(b)) => Some(format!("{a} {b}")),
+            (a, b) => a.or(b),
+        };
         let reminded_key = format!("stop_reminded:{session_id}");
         let already = owed.is_some() && db.sync_kv_get(&reminded_key) == owed;
         if let Some(owed) = owed.filter(|_| !already) {
@@ -498,22 +453,23 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
             }
             return Ok(());
         }
-        // Stop fires after every agent turn, so leases stay (renewed by activity, expiring
-        // when idle); SessionEnd releases them. Only the in-flight marker is cleared.
-        let _ = db.finish_snapshot(&session_id);
-        // Antigravity has no SessionEnd. A Stop with nothing left running means the agent has
-        // finished, so its files are free; the next edit takes them again.
+        // Antigravity has no SessionEnd: a Stop with nothing left running means the agent has finished.
         if agy_style(agent) && raw_payload.get("fullyIdle").and_then(|v| v.as_bool()) == Some(true) {
             maybe_handoff(&db, effective_project_id, &session_id, agent, &root_dir());
             spawn_background_sync(&db);
-            let _ = db.release_leases(&session_id, None);
         }
     }
 
     // PostCommit staleness: committed files flip linked memories to `changed`.
     if canonical == Some(CanonicalEvent::PostCommit) {
         let files = commit_files(&project_root);
-        match db.flag_memories_changed_by_files(effective_project_id, &files) {
+        // With a CodeIntel engine, a memory that stored the hash of its symbols is flagged only if one of them changed.
+        let intel = automemory_core::codeintel::CbmCodeIntel::detect(std::path::Path::new(&project_root));
+        let current_hash = |symbol: &str| -> Option<String> {
+            use automemory_core::ports::CodeIntel;
+            intel.as_ref().and_then(|i| i.symbol_hash(None, symbol))
+        };
+        match db.flag_memories_changed_by_files_with(effective_project_id, &files, &current_hash) {
             Ok(flipped) if !flipped.is_empty() => eprintln!(
                 "[AutoMemory] PostCommit: {} linked memories marked changed ({} files).",
                 flipped.len(),
@@ -523,6 +479,12 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         }
     }
 
+    // What Tracewise noticed after a shell command (files it changed that another agent holds) goes back to the agent.
+    let post_note: Option<String> = nested
+        .as_ref()
+        .filter(|_| canonical == Some(CanonicalEvent::PostToolUse))
+        .map(|a| a.context.join(" "))
+        .filter(|t| !t.is_empty());
     if !matches!(
         canonical,
         Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
@@ -612,16 +574,55 @@ fn spawn_background_sync(db: &Database) {
     }
 }
 
+/// Tracewise's nested answer joins AutoMemory's: the strictest decision wins, and what Tracewise says goes in front of the reason.
+fn merge_companion(mut m: automemory_core::hooks::HandlerOutput, a: &automemory_core::companion::Answer) -> automemory_core::hooks::HandlerOutput {
+    use automemory_core::companion::Decision;
+    use automemory_core::hooks::GateDecision;
+    let theirs = match a.decision {
+        Decision::Deny => GateDecision::Deny,
+        Decision::Ask => GateDecision::Ask,
+        Decision::Allow if !a.context.is_empty() => GateDecision::Warn,
+        Decision::Allow => GateDecision::Allow,
+    };
+    let text = a.reason.iter().chain(a.context.iter()).cloned().collect::<Vec<_>>().join("; ");
+    if theirs >= m.decision && !text.is_empty() {
+        m.reason = if m.reason.is_empty() || theirs > m.decision { text } else { format!("{text}; {}", m.reason) };
+    }
+    if theirs > m.decision {
+        m.decision = theirs;
+    }
+    m
+}
+
+/// A long session loses what it was told at its start: the agent compacts its context (only Claude says so, through PreCompact), or simply
+/// stops attending to something said hours ago. So the pack is handed over again after this many prompts, or this many hours, whichever comes first.
+const PROMPTS_PER_REFRESH: i64 = 25;
+/// Antigravity's hook runs before every model step, many per prompt, so it counts steps.
+const STEPS_PER_REFRESH: i64 = 120;
+const HOURS_PER_REFRESH: i64 = 3;
+
+/// Counts one more call of the session and says whether the resume pack is due again.
+fn refresh_due(db: &Database, session_id: &str, every: i64) -> bool {
+    let calls_key = format!("resume_calls:{session_id}");
+    let calls = db.sync_kv_get(&calls_key).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) + 1;
+    db.sync_kv_set(&calls_key, &calls.to_string());
+    let shown_at = db.sync_kv_get(&format!("resume_at:{session_id}")).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+    let old = shown_at > 0 && chrono::Utc::now().timestamp() - shown_at >= HOURS_PER_REFRESH * 3600;
+    calls >= every || old
+}
+
 /// The resume pack, once per session.
 fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &Path) -> Option<String> {
     if session_id == "unknown-session" {
         return None;
     }
     let key = format!("resume_shown:{session_id}");
-    if db.sync_kv_get(&key).is_some() {
+    if db.sync_kv_get(&key).is_some() && !refresh_due(db, session_id, PROMPTS_PER_REFRESH) {
         return None;
     }
     db.sync_kv_set(&key, "1");
+    db.sync_kv_set(&format!("resume_at:{session_id}"), &chrono::Utc::now().timestamp().to_string());
+    db.sync_kv_set(&format!("resume_calls:{session_id}"), "0");
     // Keep instruction files that already carry our block current (never creates new ones).
     super::rules_export::refresh_existing(db, project_id, cwd);
     // Project library: copies and INDEX.md are in place before the agent looks (cheap; nothing happens for an empty library).
@@ -672,46 +673,6 @@ fn maybe_handoff(db: &Database, project_id: Option<&str>, session_id: &str, agen
         .is_ok_and(|d| d.metrics.edits_count > 0);
     if edited && automemory_core::resume::build_handoff(db, project_id, session_id, agent, cwd, None).is_ok() {
         db.sync_kv_set(&key, &now.to_string());
-    }
-}
-
-/// What the agent is told when a command changed files that another session holds.
-fn lock_conflict_note(conflicts: &[automemory_core::models::LeaseConflict]) -> Option<String> {
-    if conflicts.is_empty() {
-        return None;
-    }
-    let items: Vec<String> = conflicts
-        .iter()
-        .take(5)
-        .map(|c| {
-            format!(
-                "'{}' is leased by agent '{}' (goal: '{}', {}s left)",
-                c.scope, c.holder_agent, c.goal, c.remaining_seconds
-            )
-        })
-        .collect();
-    Some(format!(
-        "Lock warning: that command changed files another agent holds: {}. Coordinate before changing them again.",
-        items.join("; ")
-    ))
-}
-
-/// Files other sessions hold right now, so the agent can avoid them before it starts.
-fn others_leases_note(db: &Database, project_id: Option<&str>, session_id: &str) -> Option<String> {
-    let leases = db.list_active_leases(project_id).ok()?;
-    let others: Vec<String> = leases
-        .iter()
-        .filter(|l| l.session_id != session_id)
-        .take(8)
-        .map(|l| format!("{} ({}: {})", l.scope, l.agent, l.goal))
-        .collect();
-    if others.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "Files other agents are editing right now: {}. Avoid them or coordinate first.",
-            others.join("; ")
-        ))
     }
 }
 
@@ -914,8 +875,33 @@ fn save_session_checkpoint(db: &Database, session_id: &str, project_id: Option<&
             "session": session_id,
             "device": automemory_core::resume::device_label(db),
         });
+        let status_text = mem.content.clone();
         let _ = db.save_memory(&mem);
+        draft_status(db, project_id, session_id, &status_text);
     }
+}
+
+/// An agent that edits files and never writes the brief leaves the next one with decisions but no "where it stands". When no one wrote a
+/// status, the checkpoint (files edited, tests, next step) goes into the brief as a draft status, marked as drafted by the checkpoint.
+/// A status an agent or a person wrote is never replaced; the draft only replaces an earlier checkpoint draft.
+fn draft_status(db: &Database, project_id: Option<&str>, session_id: &str, checkpoint: &str) {
+    use automemory_core::continuity::{ItemKind, NewItem, Origin};
+    let items = db.brief_list(project_id, false).unwrap_or_default();
+    let current = items.iter().find(|i| i.kind == ItemKind::Status && i.project_id.as_deref() == project_id);
+    if current.is_some_and(|i| i.author != "checkpoint") {
+        return;
+    }
+    let text: String = checkpoint.lines().next().unwrap_or("").chars().take(380).collect();
+    let _ = db.brief_add(NewItem {
+        project_id: project_id.map(String::from),
+        kind: ItemKind::Status,
+        text,
+        reason: None,
+        ref_id: None,
+        origin: Origin::Transcript,
+        author: "checkpoint".to_string(),
+        session: Some(session_id.to_string()),
+    });
 }
 
 /// Automatically rescans and recompiles document intelligence if any tracked document was touched.
@@ -1295,8 +1281,8 @@ fn extract_target_paths_and_symbols(
         }
     }
 
-    // Codex apply_patch carries file paths inside the patch text.
-    for key in ["input", "patch"] {
+    // Codex apply_patch carries file paths inside the patch text; real payloads put that text under `command`.
+    for key in ["input", "patch", "command"] {
         if let Some(text) = tool_args.get(key).and_then(|v| v.as_str()) {
             paths.extend(patch_paths(text));
         }
@@ -1418,6 +1404,12 @@ mod native_hook_tests {
         assert_eq!(patch_paths(patch), ["src/new.rs", "src/old.rs", "gone.rs"]);
         let (paths, _) = extract_target_paths_and_symbols("edit", &json!({ "input": patch }));
         assert!(paths.contains(&"src/old.rs".to_string()));
+        // What Codex really sends (recorded payload): the patch is `tool_input.command`.
+        let (paths, _) = extract_target_paths_and_symbols("edit", &json!({ "command": patch }));
+        assert!(paths.contains(&"src/old.rs".to_string()) && paths.contains(&"src/new.rs".to_string()));
+        // An ordinary shell command is not read as a patch.
+        let (paths, _) = extract_target_paths_and_symbols("command", &json!({ "command": "echo hi" }));
+        assert!(paths.is_empty());
     }
 
     #[test]

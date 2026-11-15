@@ -16,7 +16,7 @@ pub struct GlobalConfig {
     #[serde(default)]
     pub security: SecurityConfig,
     #[serde(default)]
-    pub locks: LockSettings,
+    pub companion: CompanionSettings,
     #[serde(default)]
     pub retrieval: RetrievalSettings,
     #[serde(default)]
@@ -40,6 +40,9 @@ pub struct RetrievalSettings {
     /// (the same plus vector similarity from `[embeddings]`, fused by rank).
     #[serde(default = "default_retrieval_mode")]
     pub mode: String,
+    /// Extra synonym groups for keyword recall, e.g. `[["billing", "invoice"]]`; added to the built-in ones.
+    #[serde(default)]
+    pub synonyms: Vec<Vec<String>>,
 }
 
 fn default_retrieval_mode() -> String {
@@ -48,7 +51,7 @@ fn default_retrieval_mode() -> String {
 
 impl Default for RetrievalSettings {
     fn default() -> Self {
-        Self { mode: default_retrieval_mode() }
+        Self { mode: default_retrieval_mode(), synonyms: Vec::new() }
     }
 }
 
@@ -318,61 +321,31 @@ impl Default for EmbeddingSettings {
     }
 }
 
-/// Automatic file locking (`[locks]` in config.toml).
+/// `[companion]`: Tracewise called from inside AutoMemory's own hook, for locks, file history and notices (docs/specs/tracewise-companion.md).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockSettings {
-    /// Paths that never take or conflict on a lease (build output, dependencies, lockfiles).
-    /// Patterns: `dir/**` for a folder, `*.ext` for a suffix, otherwise an exact path or segment.
-    #[serde(default = "default_lock_ignore")]
-    pub ignore: Vec<String>,
-    /// A lease expires this many seconds after its holder's last tool event.
-    #[serde(default = "default_lock_idle_ttl")]
-    pub idle_ttl_seconds: i64,
-    /// After each shell command, compare `git status` before and after to find files it
-    /// changed that no lease covered.
-    #[serde(default = "default_true")]
-    pub reconcile: bool,
+pub struct CompanionSettings {
+    /// `auto` (use it when it is installed and answers the companion API), `on` (same, and `doctor` complains when it is missing), `off`.
+    #[serde(default = "default_companion_mode")]
+    pub tracewise: String,
+    /// Where `tracewise` is, when it is not on `PATH` or in `~/.tracewise/bin`.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// How long a hook waits for Tracewise before going on without it (milliseconds).
+    #[serde(default = "default_companion_timeout")]
+    pub timeout_ms: u64,
 }
 
-fn default_lock_ignore() -> Vec<String> {
-    [
-        "target/**", "node_modules/**", "dist/**", "build/**", ".next/**", ".nuxt/**", ".git/**",
-        "__pycache__/**", "*.lock", "*.pyc", "*.log", ".DS_Store",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+fn default_companion_mode() -> String {
+    "auto".to_string()
 }
 
-fn default_lock_idle_ttl() -> i64 {
-    600
+fn default_companion_timeout() -> u64 {
+    150
 }
 
-impl Default for LockSettings {
+impl Default for CompanionSettings {
     fn default() -> Self {
-        Self {
-            ignore: default_lock_ignore(),
-            idle_ttl_seconds: default_lock_idle_ttl(),
-            reconcile: true,
-        }
-    }
-}
-
-impl LockSettings {
-    /// True when `path` (relative or absolute) is covered by an ignore pattern.
-    pub fn is_ignored(&self, path: &str) -> bool {
-        let p = path.trim_start_matches("./");
-        self.ignore.iter().any(|pat| {
-            if let Some(dir) = pat.strip_suffix("/**") {
-                p == dir
-                    || p.starts_with(&format!("{dir}/"))
-                    || p.contains(&format!("/{dir}/"))
-            } else if let Some(ext) = pat.strip_prefix('*') {
-                p.ends_with(ext)
-            } else {
-                p == pat || p.ends_with(&format!("/{pat}"))
-            }
-        })
+        Self { tracewise: default_companion_mode(), path: None, timeout_ms: default_companion_timeout() }
     }
 }
 
@@ -409,7 +382,7 @@ impl Default for GlobalConfig {
             vault: VaultConfig::default(),
             defaults: DefaultSettings::default(),
             security: SecurityConfig::default(),
-            locks: LockSettings::default(),
+            companion: CompanionSettings::default(),
             retrieval: RetrievalSettings::default(),
             embeddings: EmbeddingSettings::default(),
             llm: LlmSettings::default(),
@@ -483,10 +456,6 @@ pub struct DefaultSettings {
     /// Human-turn ping channel: "stderr" or "silent".
     #[serde(default = "default_notifier")]
     pub notifier: String,
-    /// Take a file lease automatically when an agent is about to edit a file, so
-    /// agents never need to call `lock.acquire`. Released when the session stops.
-    #[serde(default = "default_true")]
-    pub auto_lease: bool,
 }
 
 fn default_mode() -> String {
@@ -514,7 +483,6 @@ impl Default for DefaultSettings {
             boot_injection: false,
             trust_policy: default_trust_policy(),
             notifier: default_notifier(),
-            auto_lease: true,
         }
     }
 }

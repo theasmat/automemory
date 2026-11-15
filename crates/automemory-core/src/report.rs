@@ -22,14 +22,10 @@ pub fn value_report(db: &Database, days: i64) -> Value {
         count(db, "SELECT COUNT(*) FROM audit_log WHERE action = 'hook.ask' AND timestamp > ?1", &since),
     );
     let collisions = blocked("hook.deny", "LIKE") + blocked("hook.ask", "LIKE");
-    let (before, after, _) = crate::locking::coverage_summary(&db.coverage_since(days).unwrap_or_default());
     json!({
         "days": days,
         "collisions_prevented": collisions,
-        "collisions_reported_after": count(db, "SELECT COUNT(*) FROM lock_alerts WHERE ts > ?1", &since),
         "risky_commands_stopped": (deny_all + ask_all - collisions).max(0),
-        "writes_leased_before": before,
-        "writes_leased_after": after,
         "notes_recalled": count(db, "SELECT COUNT(*) FROM memories WHERE last_recalled_at > ?1 AND (project_id IS NULL OR project_id != 'demo')", &since),
         "notes_added_by_you": count(db, "SELECT COUNT(*) FROM memories WHERE source_kind = 'user' AND created_at > ?1 AND (project_id IS NULL OR project_id != 'demo')", &since),
         "notes_added_by_agents": count(db, "SELECT COUNT(*) FROM memories WHERE source_kind != 'user' AND status = 'active' AND created_at > ?1 AND (project_id IS NULL OR project_id != 'demo')", &since),
@@ -46,7 +42,6 @@ pub fn summary(v: &Value) -> String {
     let n = |k: &str| v[k].as_i64().unwrap_or(0);
     let rows = [
         (n("collisions_prevented"), "edit collisions prevented"),
-        (n("collisions_reported_after"), "collisions reported after the fact"),
         (n("risky_commands_stopped"), "risky commands stopped or questioned"),
         (n("notes_recalled"), "notes given to agents"),
         (n("notes_added_by_you"), "notes you added"),
@@ -55,13 +50,8 @@ pub fn summary(v: &Value) -> String {
         (n("handoffs_picked_up"), "hand-offs picked up"),
     ];
     let body: Vec<String> = rows.iter().filter(|(c, _)| *c > 0).map(|(c, l)| format!("  {c:>4}  {l}")).collect();
-    let (before, after) = (n("writes_leased_before"), n("writes_leased_after"));
-    let total = before + after;
     let mut out = format!("Last {} days\n", v["days"]);
     out += &if body.is_empty() { "  Nothing yet. Connect an agent and use it; this fills in as it works.\n".to_string() } else { body.join("\n") + "\n" };
-    if total > 0 {
-        out += &format!("  {:>3}%  of {total} file writes were locked before they happened\n", before * 100 / total);
-    }
     out + &format!("Now: {} active notes, {} waiting for your review\n", n("active_notes"), n("waiting_for_review"))
 }
 

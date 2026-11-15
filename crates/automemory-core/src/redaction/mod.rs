@@ -36,6 +36,18 @@ fn get_rules() -> &'static Vec<(Regex, &'static str)> {
                 Regex::new(r"\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b").unwrap(),
                 "[REDACTED_JWT]",
             ),
+            // Slack, Stripe, Google, npm, SendGrid, GitLab, Hugging Face tokens (the shapes gitleaks and GitHub secret scanning list)
+            (Regex::new(r"\bxox[abposr]-[A-Za-z0-9-]{10,}\b").unwrap(), "[REDACTED_SLACK_TOKEN]"),
+            (Regex::new(r"\b[sr]k_(live|test)_[A-Za-z0-9]{16,}\b").unwrap(), "[REDACTED_STRIPE_KEY]"),
+            (Regex::new(r"\bAIza[0-9A-Za-z_-]{35}\b").unwrap(), "[REDACTED_GOOGLE_KEY]"),
+            (Regex::new(r"\bnpm_[A-Za-z0-9]{36}\b").unwrap(), "[REDACTED_NPM_TOKEN]"),
+            (Regex::new(r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b").unwrap(), "[REDACTED_SENDGRID_KEY]"),
+            (Regex::new(r"\bglpat-[A-Za-z0-9_-]{20,}\b").unwrap(), "[REDACTED_GITLAB_TOKEN]"),
+            (Regex::new(r"\bhf_[A-Za-z0-9]{34,}\b").unwrap(), "[REDACTED_HF_TOKEN]"),
+            // The password inside a connection URL: postgres://user:PASSWORD@host
+            (Regex::new(r"\b([a-z][a-z0-9+.-]*://[^\s:/@]+):([^\s@/]{3,})@").unwrap(), "$1:[REDACTED_PASSWORD]@"),
+            // AWS secret access key assigned by name
+            (Regex::new(r#"(?i)\baws_secret_access_key\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}["']?"#).unwrap(), "aws_secret_access_key=[REDACTED_AWS_SECRET]"),
             // Generic Bearer Token
             (
                 Regex::new(r"(?i)\bBearer\s+[a-zA-Z0-9_.-]{20,}\b").unwrap(),
@@ -130,5 +142,37 @@ mod tests {
         assert_eq!(redacted["normal"], "hello");
         assert_eq!(redacted["api_key"], "[REDACTED_FIELD]");
         assert_eq!(redacted["nested"]["auth_token"], "[REDACTED_FIELD]");
+    }
+
+    /// A seeded corpus: every known shape must be caught, and ordinary notes about tokens, keys and passwords must pass untouched.
+    #[test]
+    fn seeded_secrets_are_caught_and_prose_is_not() {
+        let secrets = [
+            "slack xoxb-123456789012-abcdefghijkl",
+            "stripe sk_live_abcdefghijklmnop1234",
+            "google AIzaSyA1234567890abcdefghijklmnopqrstuv",
+            "npm npm_abcdefghijklmnopqrstuvwxyz0123456789",
+            "sendgrid SG.abcdefghijklmnop.qrstuvwxyz012345",
+            "gitlab glpat-abcdefghij0123456789",
+            "hf hf_abcdefghijklmnopqrstuvwxyz01234567",
+            "DATABASE_URL=postgres://shop:hunter2pass@db.internal:5432/shop",
+            "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        ];
+        for s in secrets {
+            assert!(contains_secrets(s), "missed: {s}");
+            assert!(redact_text(s).contains("REDACTED"), "not redacted: {s}");
+        }
+        let prose = [
+            "Auth uses a short-lived JWT plus a refresh token cookie; revocation list in Redis.",
+            "Never log request bodies: they can contain card tokens and addresses.",
+            "Rotate the API key every 90 days and store it in the keychain.",
+            "The password policy requires twelve characters; see docs/auth.md.",
+            "Use the sk prefix convention for storage keys, e.g. sk-user-id.",
+            "Connect with postgres://localhost:5432/shop (no credentials in the URL).",
+            "The tokenizer splits on unicode61 word boundaries.",
+            "Set STRIPE webhook secret in the dashboard, not in code.",
+        ];
+        let flagged: Vec<_> = prose.iter().filter(|p| contains_secrets(p)).collect();
+        assert!(flagged.len() <= 1, "false positives (under 2% target is unproven on small samples): {flagged:?}");
     }
 }

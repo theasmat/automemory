@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::hooks::{merge_decision, run_pipeline, CanonicalEvent, HooksConfig, PipelineCtx};
 use crate::models::{
-    LeaseAcquireArgs, LeaseAcquireResult, LeaseScopeType, Memory, MemoryScope, MemorySourceKind,
+    Memory, MemoryScope, MemorySourceKind,
     MemoryStatus, MemoryType,
 };
 use crate::ports::HandlerEnv;
@@ -57,7 +57,6 @@ pub fn run_local_suites() -> EvalReport {
         stale_flag_precision(&db),
         recall_precision_at_3(&db),
         contradiction_detection(),
-        lease_collision_race(&db),
         hook_pipeline_latency(),
     ];
     // Keep output stable for `--json` diffing across runs.
@@ -104,7 +103,7 @@ fn stale_flag_precision(db: &Database) -> EvalCheck {
     for i in 0..4 {
         seed_memory(db, &format!("old fact {i}"), "legacy stack fact", 120, 0.5);
     }
-    let verifier = DecayVerifier::default();
+    let verifier = DecayVerifier;
     let all = db
         .list_memories(None, Some(MemoryStatus::Active), None, 50)
         .unwrap_or_default();
@@ -177,30 +176,6 @@ fn contradiction_detection() -> EvalCheck {
     }
 }
 
-/// PRD G2: zero silent overwrites — holder must win, waiter must conflict.
-fn lease_collision_race(db: &Database) -> EvalCheck {
-    let acquire = |agent: &str, session: &str| {
-        db.acquire_lease(LeaseAcquireArgs {
-            project_id: None,
-            agent,
-            session_id: session,
-            scope: "src/auth/session.ts",
-            scope_type: LeaseScopeType::File,
-            goal: "refactor",
-            ttl_seconds: 300,
-        })
-    };
-    let first = matches!(acquire("a", "s-a"), Ok(LeaseAcquireResult::Acquired { .. }));
-    let conflict = matches!(acquire("b", "s-b"), Ok(LeaseAcquireResult::Conflict { .. }));
-    let _ = db.release_leases("s-a", None);
-    let after = matches!(acquire("b", "s-b"), Ok(LeaseAcquireResult::Acquired { .. }));
-    EvalCheck {
-        name: "lease collision race".to_string(),
-        passed: first && conflict && after,
-        detail: format!("acquire={first} conflict={conflict} reacquire={after}"),
-    }
-}
-
 /// PRD §3 gate: hook p95 latency under 5 ms.
 fn hook_pipeline_latency() -> EvalCheck {
     let specs = HooksConfig::with_defaults();
@@ -248,6 +223,6 @@ mod tests {
     fn local_suites_all_pass() {
         let report = run_local_suites();
         assert!(report.passed(), "{}", report.summary());
-        assert_eq!(report.checks.len(), 5);
+        assert_eq!(report.checks.len(), 4);
     }
 }

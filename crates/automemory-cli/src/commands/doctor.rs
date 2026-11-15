@@ -118,11 +118,11 @@ pub fn execute() -> Result<()> {
     match automemory_core::codeintel::binary_version() {
         Some(v) if automemory_core::codeintel::version_supported(&v) => println!("✓ OK ({v})"),
         Some(v) => println!(
-            "⚠ {v} is older than {}.{}; using the local file-hash fallback where output differs",
+            "⚠ {v} is older than {}.{}; symbol questions answer \"unknown\" where its output differs",
             automemory_core::codeintel::MIN_ENGINE_VERSION.0,
             automemory_core::codeintel::MIN_ENGINE_VERSION.1
         ),
-        None => println!("⚠ not installed; symbol checks fall back to file hashes"),
+        None => println!("⚠ not installed; symbol questions answer \"unknown\" and notes are checked by age and file hash"),
     }
 
     // Change history: optional Tracewise link (who changed a file and why)
@@ -137,7 +137,7 @@ pub fn execute() -> Result<()> {
         let home = dirs::home_dir().unwrap_or_default();
         let cwd = std::env::current_dir().unwrap_or_default();
         let regs = super::disconnect::inventory(&home, &cwd);
-        println!("Registrations: {} (run `automemory disconnect all --everywhere --dry-run` to list)", regs.len());
+        println!("Registrations: {} (`automemory disconnect all --everywhere --dry-run` lists them; the same count)", regs.len());
         let g = home.join(".gemini");
         let surfaces: Vec<&str> = [
             ("antigravity-cli", "CLI"),
@@ -157,16 +157,6 @@ pub fn execute() -> Result<()> {
         if has(g.join("config/hooks.json")) && has(cwd.join(".agents/hooks.json")) {
             println!("  ⚠ Antigravity hooks are registered globally AND in this workspace; each hook runs twice (AutoMemory answers once, but run `automemory connect agy` here to drop the duplicate).");
             all_passed = false;
-        }
-    }
-
-    // Lock coverage
-    {
-        print!("Checking lock coverage... ");
-        if let Ok(db) = Database::open(&config.db_path) {
-            println!("✓ {}", super::lock::coverage_line(&db, 7));
-        } else {
-            println!("– database unavailable");
         }
     }
 
@@ -221,7 +211,15 @@ pub fn execute() -> Result<()> {
                 continue;
             }
             if v["configured"].as_bool() != Some(true) {
-                problems.push(format!("\"{client}\" connected without an agent name: run `automemory connect {who}` again so its records are signed {who}"));
+                // Only a name `connect` knows can be fixed by running it again; anything else (a desktop app, a custom client) needs the name in its own MCP entry.
+                let fix = if super::adapter::ADAPTERS.iter().any(|a| a.id == who) {
+                    format!("run `automemory connect {who}` again so its records are signed {who}")
+                } else if client.to_lowercase().contains("claude") {
+                    "this is Claude Desktop or Claude's own app: run `automemory connect claude-desktop` so its records are signed claude".to_string()
+                } else {
+                    "add `--agent <name>` to the `automemory mcp` command in its MCP entry so its records are signed".to_string()
+                };
+                problems.push(format!("\"{client}\" connected without an agent name: {fix}"));
             } else if automemory_mcp::canonical_agent(client) != who {
                 problems.push(format!("the entry for {who} was started by \"{client}\": another program uses it, or the entry was copied; run `automemory connect <agent>` for each"));
             }
@@ -281,6 +279,39 @@ pub fn execute() -> Result<()> {
             (_, false) => println!("⚠ {} unreadable: {}", bad.len(), bad.iter().map(|(f, ..)| f.display().to_string()).collect::<Vec<_>>().join(", ")),
             (Some((_, _, when)), true) => println!("✓ {} readable, newest {} day(s) old", all.len(), (chrono::Utc::now() - *when).num_days()),
         }
+        print!("Checking companion (Tracewise)... ");
+        {
+            let settings = automemory_core::config::GlobalConfig::load().map(|g| g.companion).unwrap_or_default();
+            match automemory_core::db::Database::open(&config.db_path).ok().and_then(|d| automemory_core::companion::detect(&settings, &d)) {
+                Some(c) => {
+                    let t = std::time::Instant::now();
+                    let _ = automemory_core::companion::probe(&c.path);
+                    println!("✓ tracewise {} at {} (companion api {}, answers in {} ms; file locks come from it)", c.version, c.path.display(), automemory_core::companion::API, t.elapsed().as_millis());
+                    if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
+                        let dup = super::companion::duplicate_hooks(&db);
+                        if !dup.is_empty() {
+                            println!("  ⚠ Tracewise also has its own hooks for {}; they would run twice. Run `automemory connect <agent>` to remove them.", dup.join(", "));
+                        }
+                    }
+                }
+                None if settings.tracewise.eq_ignore_ascii_case("off") => println!("– off"),
+                None if settings.tracewise.eq_ignore_ascii_case("on") => println!("⚠ set to on, but no Tracewise answers the companion api (install or update it)"),
+                None => println!("– not installed (optional: file locks and history come from Tracewise)"),
+            }
+        }
+        print!("Checking nightly tidy... ");
+        match automemory_core::db::Database::open(&config.db_path).ok().and_then(|d| automemory_core::tidy::days_since(&d)) {
+            None => println!("– has not run yet (`automemory tidy`; the daemon runs it nightly)"),
+            Some(d) if d > 7 => println!("⚠ last ran {d} days ago: is `automemory serve` running?"),
+            Some(d) => println!("✓ ran {d} day(s) ago"),
+        }
+        print!("Checking restore drill... ");
+        match automemory_core::backup::days_since_drill(&config.home_dir) {
+            None if all.is_empty() => println!("– no backups to test yet"),
+            None => println!("⚠ never run: automemory backup drill (the daemon runs one weekly)"),
+            Some(d) if d > 30 => println!("⚠ last passed {d} days ago: automemory backup drill"),
+            Some(d) => println!("✓ passed {d} day(s) ago"),
+        }
     }
 
     // 7. Native agent hooks (Claude Code, Codex)
@@ -290,12 +321,20 @@ pub fn execute() -> Result<()> {
             ("Codex", home.join(".codex/hooks.json"), "codex"),
         ] {
             print!("Checking {name} hooks... ");
-            let installed = std::fs::read_to_string(&path)
-                .is_ok_and(|t| t.contains(super::connect::HOOK_MARKER));
-            if installed {
-                println!("✓ OK ({})", path.display());
+            // This folder's hooks count: `connect` without -g writes them next to the project (.claude/settings.local.json, .codex/hooks.json).
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let local: Vec<std::path::PathBuf> = if hint == "claude" {
+                vec![cwd.join(".claude/settings.local.json"), cwd.join(".claude/settings.json")]
             } else {
-                println!("– not installed (run `automemory connect {hint} -g`)");
+                vec![cwd.join(".codex/hooks.json")]
+            };
+            let has = |p: &std::path::Path| std::fs::read_to_string(p).is_ok_and(|t| t.contains(super::connect::HOOK_MARKER));
+            if let Some(p) = local.iter().find(|p| has(p)) {
+                println!("✓ OK (this folder: {})", p.display());
+            } else if has(&path) {
+                println!("✓ OK (global: {})", path.display());
+            } else {
+                println!("– not installed (run `automemory connect {hint}` for this folder, or `-g` for every project)");
             }
         }
     }

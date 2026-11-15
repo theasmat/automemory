@@ -55,7 +55,9 @@ fn test_mcp_comprehensive_tool_suite_execution() {
             "name": "memory.recall",
             "arguments": {
                 "query": "Redis session TTL",
-                "project_id": "mcp-test-app"
+                "project_id": "mcp-test-app",
+                // An agent's own note is a Tier 4 claim (its confidence is capped), so it is returned only on request.
+                "include_untrusted": true
             }
         })),
     };

@@ -1707,161 +1707,47 @@ fn test_suite_10_failure_catalog_and_mcp_suite() {
 }
 
 // ============================================================================
-// SUITE 11: MULTI-AGENT LOCKS, LEASES & COLLISION PREVENTION (UC-109 to UC-115)
+// SUITE 11: FILE LOCKS ARE TRACEWISE'S (UC-109 to UC-115)
+// The lease tools were removed; lock.status only reads what Tracewise holds, and says so when there is no Tracewise.
 // ============================================================================
 #[test]
 pub fn test_suite_11_multi_agent_locks_and_leases() {
     let (db, _project) = setup_test_db("proj-multi-agent");
     let server = McpServer::new(Arc::clone(&db));
-
-    // UC-109: MCP lock.acquire grants a new file lease with next_action
-    let acquire_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(109)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.acquire",
-            "arguments": {
-                "project_id": "proj-multi-agent",
-                "scope": "src/auth/session.rs",
-                "goal": "Refactoring session validation logic",
-                "agent": "agent-alpha",
-                "session_id": "session-alpha",
-                "ttl_seconds": 300
-            }
-        })),
+    let call = |id: i64, name: &str, args: serde_json::Value| -> (bool, serde_json::Value) {
+        let resp = server
+            .handle_request(JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: Some(json!(id)),
+                method: "tools/call".to_string(),
+                params: Some(json!({ "name": name, "arguments": args })),
+            })
+            .unwrap();
+        let res = resp.result.unwrap();
+        let text = res["content"][0]["text"].as_str().unwrap().to_string();
+        (res["is_error"].as_bool().unwrap_or(false), serde_json::from_str(&text).unwrap_or(json!(text)))
     };
-    let resp = server.handle_request(acquire_req).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "granted", "UC-109: Lease status granted");
-    assert!(parsed["next_action"].as_str().unwrap().contains("lock.release"));
 
-    // UC-110: MCP lock.acquire renews lease when called by same session
-    let renew_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(110)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.acquire",
-            "arguments": {
-                "project_id": "proj-multi-agent",
-                "scope": "src/auth/session.rs",
-                "goal": "Refactoring session validation logic part 2",
-                "agent": "agent-alpha",
-                "session_id": "session-alpha",
-                "ttl_seconds": 400
-            }
-        })),
-    };
-    let resp = server.handle_request(renew_req).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "renewed", "UC-110: Same session renews lease");
+    // UC-109..112: the lease tools are gone, and the answer says where locks come from
+    for (id, name) in [(109, "lock.acquire"), (110, "lock.release")] {
+        let (is_err, body) = call(id, name, json!({ "scope": "src/a.rs", "goal": "edit", "session_id": "s1" }));
+        assert!(is_err, "UC-{id}: {name} is refused");
+        assert!(body.as_str().unwrap_or_default().contains("Tracewise"), "UC-{id}: names Tracewise");
+    }
+    let listing = server
+        .handle_request(JsonRpcRequest { jsonrpc: "2.0".to_string(), id: Some(json!(111)), method: "tools/list".to_string(), params: None })
+        .unwrap()
+        .result
+        .unwrap();
+    let listed: Vec<String> = listing["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
+    assert!(!listed.contains(&"lock.acquire".to_string()) && !listed.contains(&"lock.release".to_string()), "UC-111: not offered any more");
+    assert!(listed.contains(&"lock.status".to_string()), "UC-112: lock.status stays");
 
-    // UC-111: MCP lock.acquire detects collision from different session
-    let conflict_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(111)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.acquire",
-            "arguments": {
-                "project_id": "proj-multi-agent",
-                "scope": "src/auth/session.rs",
-                "goal": "Concurrent edit attempt",
-                "agent": "agent-beta",
-                "session_id": "session-beta",
-                "ttl_seconds": 300
-            }
-        })),
-    };
-    let resp = server.handle_request(conflict_req.clone()).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "conflict", "UC-111: Collision detected");
-    assert_eq!(parsed["conflict"]["holder_agent"], "agent-alpha");
-    assert!(parsed["next_action"].as_str().unwrap().contains("Wait for lease"));
-
-    // UC-112: MCP lock.acquire detects glob collision overlap
-    let glob_conflict_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(112)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.acquire",
-            "arguments": {
-                "project_id": "proj-multi-agent",
-                "scope": "src/auth/*.rs",
-                "scope_type": "glob",
-                "goal": "Attempting wide lock over existing file lease",
-                "agent": "agent-gamma",
-                "session_id": "session-gamma",
-                "ttl_seconds": 300
-            }
-        })),
-    };
-    let resp = server.handle_request(glob_conflict_req).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "conflict", "UC-112: Glob vs file collision detected");
-
-    // UC-113: MCP lock.status lists active leases with TTL
-    let status_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(113)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.status",
-            "arguments": {
-                "project_id": "proj-multi-agent"
-            }
-        })),
-    };
-    let resp = server.handle_request(status_req).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["count"], 1, "UC-113: One active lease reported");
-
-    // UC-114: Direct collision check helper
-    let collision = db.check_collision(
-        Some("proj-multi-agent"),
-        "session-beta",
-        &["src/auth/session.rs".to_string()],
-        &[]
-    ).unwrap();
-    assert!(collision.is_some(), "UC-114: Collision check reports collision");
-    assert_eq!(collision.unwrap().holder_agent, "agent-alpha");
-
-    // UC-115: MCP lock.release releases lease and allows agent-beta to acquire
-    let release_req = JsonRpcRequest {
-        jsonrpc: "2.0".to_string(),
-        id: Some(json!(115)),
-        method: "tools/call".to_string(),
-        params: Some(json!({
-            "name": "lock.release",
-            "arguments": {
-                "session_id": "session-alpha"
-            }
-        })),
-    };
-    let resp = server.handle_request(release_req).unwrap();
-    let res_obj = resp.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "released", "UC-115: Lease released");
-
-    // Now beta can acquire
-    let beta_retry = server.handle_request(conflict_req).unwrap();
-    let res_obj = beta_retry.result.unwrap();
-    let content = res_obj["content"][0]["text"].as_str().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
-    assert_eq!(parsed["status"], "granted", "UC-115: Agent-beta acquired after release");
+    // UC-113: lock.status answers in one shape with or without Tracewise installed
+    let (is_err, body) = call(113, "lock.status", json!({}));
+    assert!(!is_err, "UC-113: lock.status never errors");
+    assert!(body["locks"].is_array(), "UC-114: a list of locks, empty when there is no Tracewise: {body}");
+    assert!(matches!(body["source"].as_str(), Some("tracewise" | "none")), "UC-115: says where the answer came from");
 }
 
 // ============================================================================

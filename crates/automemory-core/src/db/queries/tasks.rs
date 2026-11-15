@@ -1,5 +1,5 @@
 use crate::db::Database;
-use crate::models::{LeaseAcquireArgs, LeaseScopeType, TaskState, WorkTask};
+use crate::models::{TaskState, WorkTask};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
@@ -115,7 +115,16 @@ impl Database {
         Ok(task)
     }
 
-    fn session_agent_id(&self, session_id: &str) -> Option<String> {
+    /// `claude/b3d66002` for a session id: the agent's name and the start of the id, so a person reading a room or a lock sees who it is.
+    pub fn agent_label(&self, session_id: &str) -> String {
+        let short: String = session_id.chars().take(8).collect();
+        match self.session_agent_id(session_id) {
+            Some(agent) if !session_id.to_lowercase().starts_with(&agent) => format!("{agent}/{short}"),
+            _ => session_id.to_string(),
+        }
+    }
+
+    pub(crate) fn session_agent_id(&self, session_id: &str) -> Option<String> {
         self.sync_kv_get(&format!("session_agent:{session_id}"))
             .filter(|n| !n.trim().is_empty())
             .or_else(|| {
@@ -143,7 +152,7 @@ impl Database {
 
     /// Claims the oldest open task for `session_id`. The conditional UPDATE
     /// makes double-claims lose cleanly under concurrency. When a claimed task
-    /// has scoped `files`, file leases are acquired for the claiming session.
+    /// has scoped `files`, they are only advice: file locks come from Tracewise.
     pub fn claim_next_task(
         &self,
         project_id: Option<&str>,
@@ -181,22 +190,6 @@ impl Database {
                 params![session_id, now, candidate.id],
             )?;
             if claimed == 1 {
-                let agent_label = my_agent
-                    .clone()
-                    .or_else(|| candidate.assigned_agent.clone())
-                    .unwrap_or_else(|| session_id.to_string());
-                let goal = format!("Task: {}", candidate.title);
-                for file in &candidate.files {
-                    let _ = self.acquire_lease(LeaseAcquireArgs {
-                        project_id: candidate.project_id.as_deref().or(project_id),
-                        agent: &agent_label,
-                        session_id,
-                        scope: file,
-                        scope_type: LeaseScopeType::File,
-                        goal: &goal,
-                        ttl_seconds: 600,
-                    });
-                }
                 return self.get_task(&candidate.id);
             }
         }
@@ -248,11 +241,6 @@ impl Database {
             params![result, inferred_check, now, id, session_id],
         )?;
         if rows == 1 {
-            if let Some(task) = existing {
-                for file in &task.files {
-                    let _ = self.release_leases(session_id, Some(file));
-                }
-            }
             Ok(true)
         } else {
             Ok(false)
@@ -341,20 +329,12 @@ impl Database {
     }
 
     pub fn cancel_task(&self, id: &str) -> Result<bool> {
-        let existing = self.get_task(id)?;
         let now = Utc::now().to_rfc3339();
         let updated = self.conn().execute(
             "UPDATE tasks SET cancelled = 1, updated_at = ?1 WHERE id = ?2 AND cancelled = 0",
             params![now, id],
         )?;
         if updated == 1 {
-            if let Some(t) = existing {
-                if let Some(owner) = t.owner_session.as_deref() {
-                    for f in &t.files {
-                        let _ = self.release_leases(owner, Some(f));
-                    }
-                }
-            }
             Ok(true)
         } else {
             Ok(false)

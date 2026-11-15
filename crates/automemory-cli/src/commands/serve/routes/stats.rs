@@ -97,20 +97,15 @@ pub async fn api_coordination(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    let now = Utc::now();
-    let leases: Vec<_> = state
-        .db
-        .list_active_leases(params.project_id.as_deref())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|l| {
-            json!({
-                "agent": l.agent, "session_id": l.session_id, "scope": l.scope,
-                "scope_type": l.scope_type.to_string(), "goal": l.goal,
-                "remaining_seconds": l.remaining_seconds(now),
-            })
-        })
-        .collect();
+    let held = automemory_core::companion::held_locks(
+        &automemory_core::config::GlobalConfig::load().unwrap_or_default().companion,
+        &state.db,
+        params.project_id.as_deref(),
+    );
+    let (leases, locks_note) = match held {
+        Ok(l) => (l, None),
+        Err(msg) => (Vec::new(), Some(msg)),
+    };
 
     let (rooms, batons) = {
         let conn = state.db.conn();
@@ -140,11 +135,5 @@ pub async fn api_coordination(
             ),
         )
     };
-    let alerts: Vec<_> = state
-        .db
-        .recent_alerts(10)
-        .into_iter()
-        .map(|(ts, path, message)| json!({ "ts": ts, "path": path, "message": message }))
-        .collect();
-    Json(json!({ "leases": leases, "rooms": rooms, "batons": batons, "alerts": alerts }))
+    Json(json!({ "leases": leases, "locks_note": locks_note, "rooms": rooms, "batons": batons, "alerts": Vec::<String>::new() }))
 }

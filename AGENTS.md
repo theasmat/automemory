@@ -18,3 +18,19 @@ Local-first Rust daemon (SQLite WAL, MCP server, CLI, Nuxt dashboard) that gives
 - Before changing a design, read [docs/decisions.md](docs/decisions.md) and the matching page in `docs/architecture/`.
 - Schema changes need a migration and a `LATEST_SCHEMA_VERSION` bump. `schema.sql` runs in full on upgrade, so it must not index or reference a column that only a migration adds.
 - Keep docs in place and counts (MCP tools, tests) in sync with the code. Shipped work goes in `CHANGELOG.md`, open work in `docs/roadmap.md`. Do not add new top-level doc files.
+
+<!-- tracewise:start -->
+## Tracewise Rules
+Always record reasons for file modifications:
+- Declare intent before editing: `tracewise intent add --why "<why>" <files...>`
+- Run commands with a reason: `tracewise run --why "<why>" -- <command>`
+- Review pending changes: `tracewise pending`
+- Attach a reason to your pending changes: `tracewise note --last "<why>"` (or `tracewise note <change id> "<why>"`)
+<!-- tracewise:end -->
+
+<!-- automemory:begin (generated; change it with `automemory note` / `automemory decision`) -->
+## Project memory (AutoMemory)
+Shared by every agent on this project. Start from this instead of re-exploring; for more call `memory.list` with `view: context` (MCP). Record non-trivial choices with `decision.record`. File locks are automatic.
+
+_Nothing verified yet._
+<!-- automemory:end -->

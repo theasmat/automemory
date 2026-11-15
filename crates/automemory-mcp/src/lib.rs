@@ -56,10 +56,10 @@ mod tests {
         assert!(names.contains(&"trace.save"));
         assert!(names.contains(&"failure.save"));
         // Folded tools are not advertised any more...
-        for retired in ["memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills", "chat.search", "library.search", "baton.pass", "baton.pickup", "graph.index", "graph.query", "graph.neighbors", "graph.impact", "review.submit", "review.next", "review.post", "doc.list", "doc.get"] {
+        for retired in ["memory.ask", "memory.context", "memory.topics", "memory.digest", "memory.constitution", "memory.skills", "chat.search", "library.search", "baton.pass", "baton.pickup", "graph.index", "graph.query", "graph.neighbors", "graph.impact", "lock.acquire", "lock.release", "review.submit", "review.next", "review.post", "doc.list", "doc.get"] {
             assert!(!names.contains(&retired), "{retired} should be folded into another tool");
         }
-        assert_eq!(names.len(), 49, "advertised tools (docs/decisions.md)");
+        assert_eq!(names.len(), 47, "advertised tools (docs/decisions.md)");
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod tests {
         assert!(save_resp.result.is_some());
 
         // Recall memory: default save lands at Tier 4 (agent claim, 0.9),
-        // so default recall withholds it per the PRD trust table.
+        // so default recall shows it only in a capped, labelled slot (the strict policy withholds it).
         let recall_req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(json!(11)),
@@ -171,7 +171,9 @@ mod tests {
         };
         let recall_resp = server.handle_request(recall_req).unwrap();
         let content_text = &recall_resp.result.unwrap()["content"][0]["text"];
-        assert!(!content_text.as_str().unwrap().contains("DB pool size 25"));
+        // Another agent's unchecked note is shown by default, in a capped slot and labelled; `trust_policy = "strict"` withholds it.
+        assert!(content_text.as_str().unwrap().contains("DB pool size 25"));
+        assert!(content_text.as_str().unwrap().contains("unverified"));
 
         // Explicit opt-in returns Tier 4.
         let open_req = JsonRpcRequest {
@@ -224,7 +226,20 @@ mod tests {
         };
         let verified_resp = server.handle_request(recall_verified).unwrap();
         let verified_text = &verified_resp.result.unwrap()["content"][0]["text"];
-        assert!(verified_text.as_str().unwrap().contains("DB pool verified"));
+        // An agent's own confidence (even 0.97) is not evidence: its note stays a Tier 4 claim, shown labelled and never as a fact.
+        let vt = verified_text.as_str().unwrap();
+        assert!(vt.contains("DB pool verified") && vt.contains("\"trust_tier\": 4") && vt.contains("unverified"), "{vt}");
+        let with_claims = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(15)),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "memory.recall",
+                "arguments": { "query": "PostgreSQL verified", "include_untrusted": true }
+            })),
+        };
+        let text = server.handle_request(with_claims).unwrap().result.unwrap()["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("DB pool verified") && text.contains("\"trust_tier\": 4"), "{text}");
     }
 
     #[test]
@@ -253,7 +268,7 @@ mod tests {
 
         let store: &dyn MemoryStore = &*db;
         let retriever = FtsRetriever::new(store);
-        let verifier = DecayVerifier::default();
+        let verifier = DecayVerifier;
         let text_of = |policy: &dyn automemory_core::ports::TrustPolicy| {
             let result = recall_via(&retriever, &verifier, policy, "agent claim", None, 5, true);
             result.content[0].text.clone()
@@ -276,6 +291,27 @@ mod tests {
         assert!(sent.contains("finish the auth refactor") && sent.contains("next_action"), "{sent}");
         let resumed = run_on(&server, "memory.resume", json!({ "session_id": "sess-b" }));
         assert!(resumed.contains("sess-a") || resumed.contains("finish the auth refactor"), "{resumed}");
+    }
+
+    #[test]
+    fn task_next_and_submit_work_without_a_session_id() {
+        let db = Arc::new(Database::open_in_memory().unwrap());
+        db.create_task("lead", None, "build numbering", "spec", &[]).unwrap();
+        let server = McpServer::with_identity(db.clone(), Some("claude".into()));
+        let call = |name: &str, arguments: serde_json::Value| {
+            let r = server
+                .handle_request(JsonRpcRequest { jsonrpc: "2.0".into(), id: Some(json!(1)), method: "tools/call".into(), params: Some(json!({ "name": name, "arguments": arguments })) })
+                .unwrap()
+                .result
+                .unwrap();
+            (r["is_error"] == true, r["content"][0]["text"].as_str().unwrap().to_string())
+        };
+        // No session id: allowed, and the id is the same from claim to submit.
+        let (err, text) = call("task.next", json!({}));
+        assert!(!err, "{text}");
+        let id = serde_json::from_str::<serde_json::Value>(&text).unwrap()["task"]["id"].as_str().unwrap().to_string();
+        let (err, text) = call("task.submit", json!({ "id": id, "result": "done" }));
+        assert!(!err, "{text}");
     }
 
     #[test]
@@ -308,7 +344,7 @@ mod tests {
 
         let claimed = call(31, "task.next", json!({ "session_id": "worker-1" }));
         assert!(claimed.contains("migrate auth"));
-        assert!(claimed.contains("lock.acquire"));
+        assert!(claimed.contains("task.submit"));
 
         let refused_text = server
             .handle_request(JsonRpcRequest {
@@ -451,7 +487,7 @@ mod tests {
                 .to_string()
         };
 
-        // recall withholds Tier 4 by default and returns it on opt-in.
+        // recall shows Tier 4 in its capped slot, labelled; Tier 5 needs the opt-in.
         let saved = call(
             60,
             "memory.save",
@@ -461,7 +497,7 @@ mod tests {
         );
         assert!(saved.contains("saved"));
         let asked = call(61, "memory.recall", json!({ "query": "JWT" }));
-        assert!(!asked.contains("auth fact"));
+        assert!(asked.contains("auth fact") && asked.contains("unverified"), "the agent claim shows, labelled: {asked}");
         let asked_open = call(
             66,
             "memory.recall",

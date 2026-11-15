@@ -71,28 +71,6 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         }
     }
 
-    // 3b. Watch project folders for changes under an idle holder's lease (agents without hooks)
-    {
-        let mut roots = Vec::new();
-        for p in db.list_projects().unwrap_or_default() {
-            for pp in db.get_project_paths(&p.id).unwrap_or_default() {
-                let dir = PathBuf::from(&pp.local_path);
-                if dir.is_dir() {
-                    roots.push((Some(p.id.clone()), dir));
-                }
-            }
-        }
-        if !roots.is_empty() {
-            let tx = broadcast_tx.clone();
-            let settings = automemory_core::config::GlobalConfig::load()
-                .map(|g| g.locks)
-                .unwrap_or_default();
-            let _ = automemory_core::lockwatch::start(db.clone(), settings, roots, move |msg| {
-                let _ = tx.send(json!({ "type": "lock_alert", "message": msg, "timestamp": Utc::now().to_rfc3339() }).to_string());
-            });
-        }
-    }
-
     // 4. Start periodic consolidation worker (every 60 minutes)
     let consolidator = Arc::new(ConsolidationWorker::new(db.clone()));
     tokio::spawn(async move {
@@ -100,6 +78,31 @@ pub async fn execute(port: u16, db_path: Option<String>) -> Result<()> {
         loop {
             ticker.tick().await;
             let _ = consolidator.consolidate(None);
+        }
+    });
+
+    // 4b. Daily backup and weekly restore drill (a backup nobody has restored is a guess)
+    let backup_db = db.clone();
+    let backup_home = Config::default_config().home_dir;
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            ticker.tick().await;
+            for line in automemory_core::backup::scheduled(&backup_db, &backup_home) {
+                eprintln!("[backup] {line}");
+            }
+        }
+    });
+
+    // 4c. Nightly tidy: files repeated notes, notes about deleted files and unused notes in the Inbox (never changes a note itself)
+    let tidy_db = db.clone();
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            ticker.tick().await;
+            if let Some(line) = automemory_core::tidy::nightly(&tidy_db) {
+                eprintln!("[tidy] {line}");
+            }
         }
     });
 
@@ -275,4 +278,31 @@ mod guard_tests {
         );
         assert_eq!(status("evil.example:4545", None).await, 403);
     }
+
+    /// VERIFY-3: the real `/mcp` gateway sits behind the same guard (a web page or a rebinding DNS name cannot reach it).
+    /// What remains open by design: any local process without an Origin can call it, with no agent identity.
+    #[tokio::test]
+    async fn the_mcp_gateway_is_behind_the_origin_and_host_guard() {
+        let server = Arc::new(McpServer::new(Arc::new(automemory_core::db::Database::open_in_memory().unwrap())));
+        let app = Router::new()
+            .merge(mcp_router(server))
+            .layer(axum::middleware::from_fn_with_state(4545u16, local_origin_guard));
+        let call = |host: &str, origin: Option<&str>| {
+            let mut b = Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("host", host)
+                .header("content-type", "application/json");
+            if let Some(o) = origin {
+                b = b.header("origin", o);
+            }
+            let body = Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
+            let app = app.clone();
+            async move { app.oneshot(b.body(body).unwrap()).await.unwrap().status().as_u16() }
+        };
+        assert_eq!(call("127.0.0.1:4545", None).await, 200, "a local client without an Origin passes");
+        assert_eq!(call("127.0.0.1:4545", Some("https://evil.example")).await, 403, "a web page is blocked");
+        assert_eq!(call("evil.example:4545", None).await, 403, "a rebinding DNS name is blocked");
+    }
 }
+

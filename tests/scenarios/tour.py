@@ -37,7 +37,7 @@ def main():
         rep.check("Step 3/8 · Record an Architectural Decision" in r.stdout, "tour step 3 ran")
         rep.check("Step 4/8 · Instruction Files" in r.stdout, "tour step 4 ran")
         rep.check("Step 5/8 · Two Agents, One File" in r.stdout, "tour step 5 ran")
-        rep.check("Collision prevented:" in r.stdout, "tour step 5 blocked colliding edit with real reason")
+        rep.check("Tracewise" in r.stdout.split("Step 5/8")[1].split("Step 6/8")[0], "tour step 5 points to Tracewise for locks")
         rep.check("Step 6/8 · Session Continuity & Hand-Off" in r.stdout, "tour step 6 ran")
         rep.check("Step 7/8 · Review Proposals & Safety Modes" in r.stdout, "tour step 7 ran")
         rep.check("Step 8/8 · Your Turn!" in r.stdout, "tour step 8 ran")

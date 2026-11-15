@@ -47,15 +47,14 @@ Microkernel: ledger, store, event bus, plugin host. Everything else sits behind 
 | Port | Job | Default |
 |---|---|---|
 | AgentAdapter | Install hooks/MCP config; map native → canonical events | Claude Code, Codex, Antigravity (v1); 17 more connectors exist, unsupported until promoted |
-| HookHandler | One pipeline stage: allow / warn / block / annotate | Lease check, guardrail, nudge, ledger logger |
-| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `NoCodeIntel` (answers "unknown") when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
+| HookHandler | One pipeline stage: allow / warn / block / annotate | Guardrail, nudge, ledger logger (file locks: Tracewise, nested) |
+| CodeIntel | `symbol_exists`, `symbol_hash`, `callers` (PostCommit uses `symbol_hash`: a memory saved with `symbols` and `files_modified` records its symbols' hashes when the engine is present, and is marked `changed` only if one of them changed; otherwise any edit to a linked file marks it) | **codebase-memory-mcp** via `codeintel::CbmCodeIntel` (`cli --json`; located by `AUTOMEMORY_CBM_BIN`, `PATH`, `~/.local/bin`; min version 0.11, checked by `doctor`). `NoCodeIntel` (answers "unknown") when the engine is absent or a call fails. Symbol hash = sha256 of the symbol's own source. AutoMemory builds no AST graph |
 | MemoryStore | Persist memories, decisions, ledger | SQLite WAL |
 | Retriever | Rank candidates | FTS5 BM25 × decay × confidence; local n-gram vector projection |
 | EmbeddingProvider | Text → vectors | `[embeddings]` provider: n-gram (default), Ollama, OpenAI-compatible HTTP, or any command (`exec`); vectors stored per model in `memory_vectors`. Saved as profiles (`[embeddings.profiles.<name>]`, active one in `[embeddings] active`); cloud API keys live in the OS keychain through `secrets.rs` (the `keyring` crate; encrypted-file fallback), never in config, database, logs or sync. Used only when `[retrieval] mode = "hybrid"`; hooks are always keyword-only; remote endpoints need `allow_network` and get redacted text; any provider failure falls back to keyword |
 | Verifier | Check a claim against reality | Symbol / file-hash verifier |
 | TrustPolicy | Source → tier; what is returned as fact | Built-in tiers |
 | GuardrailRule | Block catastrophic actions | Shell tokenizer + rule set |
-| LockStrategy | How leases are granted | File/glob, advisory |
 | Distiller | Candidates at session end | Deterministic trajectory distiller |
 | SyncBackend | Move ops between devices | Git vault (Cloudflare later) |
 | Runner | Launch an agent headless | None in v1 |
@@ -71,11 +70,11 @@ Agents emit native events → adapter normalizes → pipeline runs ordered handl
 | CLI `--event` | Canonical | Behaviour |
 |---|---|---|
 | `boot` | SessionStart | Silent by default; with `boot_injection` prints token-capped constitution + recent decisions |
-| `pre-tool` | PreToolUse | Gate: lease check → guardrail → custom exec |
+| `pre-tool` | PreToolUse | Gate: guardrail → custom exec (Tracewise's lock answer merged in) |
 | `post-tool`, `post-tool-fail` | PostToolUse | Append outcome (exit code, stderr) to ledger; failures feed the failure catalog |
-| `task-done` / `stop` | Stop | Distill and save a `Session checkpoint` memory if the session edited files (leases stay); `stop` blocks if a review is owed |
-| `session-end` | SessionEnd | Release the session's leases and drop its snapshot |
-| `pre-commit` | PreCommit | Gate over staged files; lease collision denies in Strict |
+| `task-done` / `stop` | Stop | Distill and save a `Session checkpoint` memory if the session edited files (locks, when Tracewise is there, are released by it); `stop` blocks if a review is owed |
+| `session-end` | SessionEnd | Hand-off and sync (Tracewise releases the session's locks) |
+| `pre-commit` | PreCommit | Gate over staged files; Tracewise's answer is merged in. `connect` installs a git pre-commit block that shows the warning in the commit output and blocks only when the hook answers deny (Strict mode); it fails open |
 | `post-commit` | PostCommit | Flip linked memories to `changed`; distill |
 | `user-prompt-submit` | UserPromptSubmit | One-line nudge only if work is assigned |
 | `subagent-*`, `pre/post-compact`, `notify` | — | Ledger only, for attribution/replay |
@@ -98,7 +97,7 @@ Hook management: `automemory hooks enable|disable|move|add|test`, shadow mode (l
 
 One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Migrations gated by `PRAGMA user_version`, run atomically under `BEGIN IMMEDIATE`; a failed step aborts and rolls back instead of bumping the version. Lease acquisition is also one `BEGIN IMMEDIATE` transaction, because every hook is its own process. Single `Arc<Mutex<Connection>>`, WAL, `busy_timeout` 5 s.
 
-**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_links`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`. (Schema v20 drops the old `graph_entities` and `graph_edges`.)
+**Tables:** `projects`, `project_paths`, `sessions`, `tasks`, `tool_events` (append-only ledger), `memories`, `memory_versions`, `memory_vectors`, `success_traces`, `failure_records`, `preferences`, `tracked_documents`, `document_revisions`, `review_proposals`, `audit_log`, `custom_guardrail_rules`, `procedural_skills`, `leases`, `decisions`, `batons`, `reviews`, `rooms`, `room_posts`, `sync_devices`. (Schema v20 drops the old `graph_entities` and `graph_edges`; v21 adds `sync_devices`; v22 drops `memory_links`, which nothing read or wrote.)
 
 **Memory:** `scope` (global|project), `type` (fact, decision, lesson, pattern, warning, observation, preference, skill), `status` (active, candidate, pinned, stale, changed, superseded, archived, invalid, review), `source_kind`, `confidence`, `importance`, `freshness`, tags/entities/metadata. Dedup: scope-aware in-place upsert with a version row.
 
@@ -109,10 +108,10 @@ One SQLite file (`~/.automemory/automemory.db`), rows keyed by `project_id`. Mig
 | 1 Pinned | Human pin | Fact; constitution |
 | 2 Verified | Test/exit-code fact, symbol check passed | Fact with evidence |
 | 3 User statement | Said by user | Fact with source |
-| 4 Agent claim | Agent wrote it, unverified | Candidate; withheld from default recall |
-| 5 Untrusted origin | Web, fetched files, other agents' posts | Quarantined until verified |
+| 4 Agent claim | Agent wrote it, unverified | Shown in a capped slot (a third of the result limit, at least one), labelled "unverified, written by <agent>"; withheld under `trust_policy = "strict"` |
+| 5 Untrusted origin | Web, fetched files, other agents' posts | Quarantined until verified; only with `include_untrusted`, inside the same cap |
 
-Synced: memories, decisions, constitution. Never synced: leases, FTS index, vectors.
+Synced: memories, decisions, constitution. Never synced: FTS index, vectors.
 
 ## 6. Retrieval and context
 
@@ -148,7 +147,7 @@ Recursive shell tokenizer (unwraps `sh -c`, `bash -c`, `--eval`, pipelines) plus
 |---|---|
 | Read | `memory.recall/about/get/search/list/stats` (`search {scope: notes\|chat\|library\|all}`, `list {view: memories\|constitution\|context\|topics\|skills\|digest}`), `trace.list/get`, `failure.list/get`, `project.list/get`, `library.list/get`, `preference.get`, `sync.status`, `decision.get` |
 | Write | `memory.save/update/archive/restore/propose/redact`, `decision.record`, `trace.save`, `failure.save/resolve`, `preference.set/lock`, `project.register`, `library.put` (own files only), `library.propose` (Inbox item) |
-| Coordination | `lock.acquire/release/status`, `task.create/next/submit`, `room.join/pending/post/status`, `continuity.brief` (`get\|add\|handoff\|confirm\|correct\|resolve\|remove`), `memory.resume`, `chat.get` |
+| Coordination | `lock.status`, `task.create/next/submit`, `room.join/pending/post/status`, `continuity.brief` (`get\|add\|handoff\|confirm\|correct\|resolve\|remove`), `memory.resume`, `chat.get` |
 | Governance | `memory.proposals.list/summary/decide/decide_all` |
 
 Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace.invalidate`, `project.configure`, `doc.track/untrack`, `sync.push/pull` (CLI only).
@@ -163,7 +162,7 @@ Not built: `memory.upsert/feedback/consolidate/provenance/export/import`, `trace
 
 - **Conflict-safe op-log:** each daemon sync pass (`sync::deltas::sync_cycle`) applies other devices' content-addressed delta files, then writes this device's changes. Convergence is by fingerprint, not clock; a record edited on two devices is kept locally and filed as a `sync_conflict` review proposal; versions already seen are ignored, so old delta files cannot look like new edits. The readable snapshot export still runs after it.
 - **v1:** one private git remote carries everything (`sync remote`, `sync auto`, `sync bootstrap`): encrypted delta files in `deltas/` (memories, traces, failures, skills, decisions, hand-offs, the brief, library files). The older text vault (`sync export/import/restore`), the cloud client (`sync init/status/push/pull/watch`) and its `/api/cloud/*` test routes were removed; disaster recovery is `backup` and `backup restore`.
-- **Encryption:** client-side AES-256-GCM, key via PBKDF2 (600k) from a BIP-39 mnemonic (`sync pair`, `--join`); key in OS keychain. IDs are blind HMACs.
+- **Encryption:** client-side AES-256-GCM, key from a BIP-39 mnemonic (`sync pair`, `--join`): a 24-word phrase is the key itself, a 12-word phrase is expanded with HMAC-SHA256; PBKDF2 is for the human password and passphrase-style keys; key in OS keychain. IDs are blind HMACs.
 - **Later:** Cloudflare managed mode (worker, D1/R2, Vectorize). Sync scope stays memories + decisions only. The worker verifies Stripe/LemonSqueezy webhook signatures, accepts the unsigned test payload only when `ENABLE_DEV_AUTH_BYPASS=true`, and compares the admin secret in constant time; set `STRIPE_WEBHOOK_SECRET` / `LEMONSQUEEZY_WEBHOOK_SECRET` before deploying.
 
 | Threat | Defense |

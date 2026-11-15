@@ -7,7 +7,7 @@ use automemory_core::hooks::{
 use automemory_core::models::AutopilotMode;
 use automemory_core::ports::{HandlerEnv, HookHandler};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Prints the merged pipeline handlers (builtin defaults + hooks.toml layers).
 pub fn list() -> Result<()> {
@@ -79,9 +79,8 @@ pub fn test(event_name: &str, input: &str) -> Result<()> {
         project_id: None,
         mode: AutopilotMode::Vibe,
     };
-    let lock_check = automemory_core::hooks::LockCheckHandler;
     let guardrail = automemory_core::hooks::GuardrailHandler;
-    let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
+    let handlers: Vec<&dyn HookHandler> = vec![&guardrail];
     let results = run_pipeline(&cfg.handler, &ctx, &env, &handlers);
     let merged = merge_decision(&results);
     for r in &results {
@@ -226,8 +225,50 @@ pub fn record_payload(agent: &str, event: &str, input: &str) {
     }
     let redacted = automemory_core::redaction::redact_text(input);
     let payload = serde_json::from_str::<Value>(&redacted).unwrap_or(Value::String(redacted));
+    append_record(&file, event, &payload);
+}
+
+/// One record is one `write`: agents run several hooks at once (Codex fires pre- and post-tool hooks together), and
+/// `writeln!` on a bare file writes the line in pieces, so two processes interleaved and corrupted each other's line.
+fn append_record(file: &Path, event: &str, payload: &Value) {
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
-        let _ = writeln!(f, "{}", json!({ "event": event, "payload": payload }));
+    let mut line = json!({ "event": event, "payload": payload }).to_string();
+    line.push('\n');
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(file) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+#[cfg(test)]
+mod record_tests {
+    use super::*;
+
+    #[test]
+    fn hooks_running_at_the_same_time_never_corrupt_each_others_lines() {
+        let dir = std::env::temp_dir().join(format!("am-record-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("codex.jsonl");
+        let big = "x".repeat(3000);
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let (file, big) = (file.clone(), big.clone());
+                std::thread::spawn(move || {
+                    for i in 0..60 {
+                        append_record(&file, "pre-tool", &json!({ "thread": t, "i": i, "blob": big }));
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let text = std::fs::read_to_string(&file).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 8 * 60);
+        for l in lines {
+            serde_json::from_str::<Value>(l).expect("every line is a whole record");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -35,7 +35,7 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 4. Antigravity shows no `reason` text on an allowed tool call, so in Vibe mode a collision is made visible through the next-step message ("Files other agents are editing right now…"), not on the call itself. Only Strict mode blocks. Use `sed -i ''` on macOS (BSD sed) in test prompts.
 5. A hook error in Antigravity mentioning "unknown field" means AutoMemory printed a field its schema rejects: report the text.
 
-## D. Two agents, one repo (human version of `tests/scenarios/collision.py`)
+## D. Two agents, one repo (human version of `tests/scenarios/companion.py`; needs Tracewise installed)
 
 1. Terminal 1: Claude Code. Terminal 2: Codex. Same repo.
 2. Tell Claude Code to make a long series of edits to `src/x` (a long task). Do not mention locks: the first edit takes the lease by itself.

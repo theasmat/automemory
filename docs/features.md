@@ -66,7 +66,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Verification and trust
 | Feature | Status | Notes |
 |---|---|---|
-| Trust tiers 1–5, provenance, revoke | ✅ | Tier 4–5 withheld from default recall |
+| Trust tiers 1–5, provenance, revoke | ✅ | Tiers 1–3 are returned as facts. Another agent's unchecked note (tier 4) shares a few slots (a third of the limit, at least one), labelled "unverified, written by <agent>"; tier 5 needs `include_untrusted`; `trust_policy = "strict"` withholds tiers 4 and 5 |
 | Symbol/file-hash verify on recall | ✅ | File hashes built in; symbols from codebase-memory-mcp |
 | PostCommit flips linked memories to `changed` | ✅ | |
 | Revert/rewrite staleness | ✅ | A revert is a commit: PostCommit flips memories linked to its files to `changed` |
@@ -75,10 +75,12 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Coordination
 | Feature | Status | Notes |
 |---|---|---|
-| File/glob leases, TTL, heartbeat, override | ✅ | Advisory in Vibe, hard in Strict |
-| Automatic locking (hook leases, shell prediction, `git status` reconciliation, prompt visibility, idle-holder watcher, coverage report) | ✅ | Agents never call `lock.acquire`; see ARCHITECTURE §7. Hook-less agents get alerts only |
-| Worktree-shared memory/decisions/leases | 🔧 | Uncommitted work in `sync/` |
-| Baton handoff | ✅ | |
+| File locks | ➜ Tracewise | Moved out in P3: AutoMemory has no locks of its own; with the Tracewise companion its answers are merged into the hook ([locking](architecture/locking.md)) |
+| Automatic locking and worktree-shared leases | ➜ Tracewise | See above; the lock code, tables and tools were removed (schema 23) |
+| Baton handoff | ✅ | Files are listed relative to the project |
+| Nightly tidy (`automemory tidy`) | ✅ | Repeats, notes about deleted files and unused notes go to the Inbox; the pass only proposes. The daemon runs it about once a day |
+| Ruled-out options are watched | ✅ | A decision that touches an item the brief rules out is recorded with a warning and an Inbox item (`rule_conflict`) for a person; advisory, by shared words, so it can be wrong |
+| Long task across agents and compactions | ✅ | The brief, decisions and what was ruled out reach the next agent at its first prompt, and again after a compaction or after about 25 prompts or 3 hours; another agent's lessons are recallable, labelled (`tests/scenarios/long_task.py`) |
 | Task queue | ✅ | Cross-review (`review.*`) was removed; a planning room covers a second opinion |
 | Planning Room: state machine + MCP tools, human verdict (`automemory room`, dashboard Planning rooms): approve records the decision (critique as dissent) and one task per step; reject; another round | ✅ | Live trial T11 passed with Claude Code and Antigravity (3 fixes); the A/B eval is still open |
 | Blackboard / checkpoint | ✅ | `lock.status` is the blackboard; `memory.digest auto_save` and the automatic `Session checkpoint` on Stop cover checkpoints |
@@ -95,7 +97,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 ### Interfaces
 | Feature | Status | Notes |
 |---|---|---|
-| MCP server (49 tools), CLI | ✅ | Each agent's server signs what it writes with its own name (`mcp --agent`, set by `connect`); `doctor` flags a wrong or unnamed entry; a running server replaces itself after `update` (Unix) |
+| MCP server (47 tools), CLI | ✅ | Each agent's server signs what it writes with its own name (`mcp --agent`, set by `connect`); `doctor` flags a wrong or unnamed entry; a running server replaces itself after `update` (Unix) |
 | Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
 | Guided onboarding (CLI tour + dashboard coachmarks) | ✅ | `automemory tour`, `next`, `learn`, welcome card, 6-stop tour, sample data mode |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
@@ -112,13 +114,15 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 |---|---|---|
 | Optional LLM helper (`automemory llm`, Tools page): conflicts, duplicates, candidate notes from sessions | ✅ | Off by default; local model needs no password, cloud needs consent + key in keychain + daily token cap; output is Inbox proposals only. Tidy up also flags notes naming deleted files |
 | Value report (`automemory stats`, Home card): collisions prevented, risky commands stopped, notes recalled, hand-offs | ✅ | Built only from existing audit, lease, memory and baton rows |
+| `automemory reset`: forget all data, behind the human password | ✅ | Refuses with no password set; keeps settings, password, device id, agent registrations and backups (`--include-backups` removes those); not available to agents |
 | Backups (`automemory backup`, restore with a safety copy, doctor check) and hook payload recording (`hooks record`) | ✅ | Restore is terminal-only (replaces the database) |
 | Team trust overlay: a teammate's pin is a request, not a pin | ✅ | Needs a shared vault key; see `sync/deltas.rs` |
 | Native Cohere, Voyage and Gemini embeddings; several LLM profiles | ✅ | Mock-server tests only, not run against the live services |
 | Continuity brief (C1): goal, ruled-out options with reasons, open questions, next steps left by one agent and handed to the next with provenance; `automemory continuity`; syncs between computers | ✅ | Claude Code and Antigravity chats can be imported (opt-in), and Codex rollout files, Command Code transcripts and Cursor chats too (experimental: built from public descriptions, not yet checked against real chats), searched and opened by agents; the dashboard Continuity page (opt-in toggles, import, brief editor, preview, Hand off now) is built; the deterministic drafter (`continuity draft`, runs after every import; goal, constraints, ruled-out options, decisions, next steps, open questions as unconfirmed drafts) is built, the dashboard also shows a stale-brief hint, history sync and an AI-helper button; optional `llm run brief` suggests drafts (never trusted); chat refresh runs by itself at Stop, SessionEnd and Claude PreCompact for agents you turned on; `continuity sync-history` moves chat between your computers only on request (encrypted, password to send) (docs/specs/continuity.md) |
 | Project library: PRDs, plans and notes for agents kept outside git, synced through the vault, found by every agent (L1–L6) | 🟡 | L1 built: `automemory library add/new/ls/show/search/rm/history` (password to change), `library.list/get/search`, tiers (title, outline, whole file), secrets refused, session-start index. Also (L2): a read-only copy under `.automemory/library/` with INDEX.md for agents without MCP, kept out of `git status` (local exclude, `.gitignore` never touched), `library link <glob>` / `[library] files` keeps files in place whether git tracks, ignores or never saw them, edits in the folder come back as revisions, `doctor` checks it. Also (L3): files sync between your computers through the encrypted vault (automatic with `sync auto`; `--personal` files stay put; removals travel; a file changed on both computers keeps yours and parks theirs in `.automemory/library/_incoming/`; kept-in-place files arrive in place). Also (L4): the dashboard Library page (file tree, summary/outline/whole-file tiers, new/edit/remove with the password, history and restore, git-status banner, Sync folder, files kept in place) and library files on the Documents page. Also (L5): agents save their own notes with `library.put` (never over your files, no secrets) and suggest edits to yours with `library.propose` (Inbox item with a diff; only you apply it, one at a time); `library:<path>` can be cited in brief items and as room evidence; `library add --move` tells you whether git tracked the file. Not yet: attachments and model-written abstracts (L6). Plan: docs/specs/library.md |
 | Dashboard control (Safe / Protected / Terminal-only tiers, jobs tray, Tools, agent set-up, decisions, lock settings, activity) | ✅ | Every write route has a tier (audit test); Protected asks the password every time |
-| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 305 Rust tests + 45 script suites ([tests/README.md](../tests/README.md)) |
+| Benchmarks (`cargo bench`) | ✅ | Hook ~1.26 ms, recall ~0.56 ms, distill (40 events) ~0.11 ms, binary 10.3 MB, 343 Rust tests + the script suites ([tests/README.md](../tests/README.md)) |
+| Recall eval (`automemory eval recall [file]`): recall@5, nDCG@10 and MRR per query kind on a labelled set of notes and queries | ✅ starter | `tests/eval/recall/shop.json` is synthetic (40 notes, 56 queries; baseline recall@5 0.946, paraphrase 0.750; 0.982 and 0.917 with synonyms). Replayed real sessions and a coding-task harness are next ([roadmap](roadmap.md), memory quality plan) |
 | Eval harness | 🔧 | `tests/eval/run_eval.py` (prepare / score / report) is ready; needs ≥20 real tasks and the runs (Phase 2 gate). `automemory eval` is only a self-check suite |
 
 ## 4. Success metrics

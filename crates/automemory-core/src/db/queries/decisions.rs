@@ -136,6 +136,27 @@ impl Database {
         Ok(decision)
     }
 
+    /// Remembers the hashes of the symbols a decision is about, on the memory that carries the decision to recall. PostCommit then
+    /// marks that memory `changed` when one of the symbols changes, wherever it lives (no file link is needed).
+    pub fn set_decision_symbol_hashes(&self, decision_id: &str, hashes: &serde_json::Map<String, serde_json::Value>) -> Result<bool> {
+        if hashes.is_empty() {
+            return Ok(false);
+        }
+        let found: Option<(String, String)> = self
+            .conn()
+            .query_row(
+                "SELECT id, metadata FROM memories WHERE json_extract(metadata, '$.decision_id') = ?1 LIMIT 1",
+                params![decision_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .ok();
+        let Some((id, raw)) = found else { return Ok(false) };
+        let mut meta: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({}));
+        meta["symbol_hashes"] = serde_json::Value::Object(hashes.clone());
+        self.conn().execute("UPDATE memories SET metadata = ?1 WHERE id = ?2", params![meta.to_string(), id])?;
+        Ok(true)
+    }
+
     /// Fetches the active decision for a topic along with full historical decisions and dissent.
     pub fn get_decision(
         &self,

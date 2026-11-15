@@ -1,0 +1,803 @@
+{
+ "about": "SYNTHETIC recall set modelled on coding-agent notes (a fictional shop backend). Replace or extend with notes and queries replayed from your own sessions (docs/roadmap.md, item 1).",
+ "notes": [
+  {
+   "id": "n01",
+   "type": "decision",
+   "summary": "Use sqlx with Postgres; no ORM",
+   "content": "We chose sqlx over diesel: compile-time checked queries, async, and the team already knows SQL. Migrations live in db/migrations and run through sqlx migrate.",
+   "tags": [
+    "db",
+    "sqlx"
+   ]
+  },
+  {
+   "id": "n02",
+   "type": "decision",
+   "summary": "Money is stored as integer cents",
+   "content": "All prices and totals are i64 cents (price_cents). Never use floats for money. Currency is a separate ISO-4217 column.",
+   "tags": [
+    "money",
+    "pricing"
+   ]
+  },
+  {
+   "id": "n03",
+   "type": "lesson",
+   "summary": "Refund webhook retries cause double refunds",
+   "content": "Stripe retries the refund webhook; handler process_refund() must be idempotent using the event id stored in refund_events. A missing check refunded twice in March.",
+   "tags": [
+    "stripe",
+    "refund",
+    "webhook"
+   ]
+  },
+  {
+   "id": "n04",
+   "type": "warning",
+   "summary": "Do not run cargo test without the test database",
+   "content": "Tests need TEST_DATABASE_URL pointing at shop_test. Running against dev wipes the carts table.",
+   "tags": [
+    "tests",
+    "database"
+   ]
+  },
+  {
+   "id": "n05",
+   "type": "fact",
+   "summary": "CI runs clippy with -D warnings",
+   "content": "The GitHub Actions job lint runs cargo clippy --all-targets -- -D warnings, then cargo fmt --check.",
+   "tags": [
+    "ci",
+    "clippy"
+   ]
+  },
+  {
+   "id": "n06",
+   "type": "decision",
+   "summary": "Feature flags live in config/flags.toml",
+   "content": "Flags are read at startup, not per request. A flag change needs a restart. Naming: snake_case, prefixed by area, e.g. checkout_express_pay.",
+   "tags": [
+    "flags",
+    "config"
+   ]
+  },
+  {
+   "id": "n07",
+   "type": "lesson",
+   "summary": "CartService::apply_coupon mutated the cart twice",
+   "content": "Bug: apply_coupon was called from both the controller and the pricing hook, doubling discounts. Fixed by moving the call into PricingEngine::recalculate only.",
+   "tags": [
+    "cart",
+    "coupon",
+    "pricing"
+   ]
+  },
+  {
+   "id": "n08",
+   "type": "constraint",
+   "summary": "API responses must stay under 200 KB",
+   "content": "The mobile app crashes on larger JSON. Paginate list endpoints at 50 items and never inline images.",
+   "tags": [
+    "api",
+    "mobile"
+   ]
+  },
+  {
+   "id": "n09",
+   "type": "fact",
+   "summary": "Staging deploys from the release/* branches",
+   "content": "Merging to main does not deploy. Cut release/2026-11 and push; the deploy workflow picks it up and posts to #deploys.",
+   "tags": [
+    "deploy",
+    "staging"
+   ]
+  },
+  {
+   "id": "n10",
+   "type": "gotcha",
+   "summary": "Timestamps are UTC in the database",
+   "content": "created_at columns are timestamptz stored in UTC. The frontend converts to the shop's timezone using shop.tz. Do not call Local::now() in services.",
+   "tags": [
+    "time",
+    "timezone"
+   ]
+  },
+  {
+   "id": "n11",
+   "type": "decision",
+   "summary": "Auth uses short-lived JWT plus refresh token cookie",
+   "content": "Access token 15 minutes, refresh token 30 days in an HttpOnly cookie. Revocation list in Redis key auth:revoked.",
+   "tags": [
+    "auth",
+    "jwt",
+    "redis"
+   ]
+  },
+  {
+   "id": "n12",
+   "type": "lesson",
+   "summary": "N+1 query in OrderList caused slow dashboard",
+   "content": "OrderRepository::list loaded line items one by one. Fixed with a single JOIN and group by order_id; dashboard went from 4 s to 300 ms.",
+   "tags": [
+    "performance",
+    "orders"
+   ]
+  },
+  {
+   "id": "n13",
+   "type": "fact",
+   "summary": "Search uses Meilisearch, reindex with make reindex",
+   "content": "Product search is Meilisearch on port 7700. After bulk import run make reindex; the index name is products_v3.",
+   "tags": [
+    "search",
+    "meilisearch"
+   ]
+  },
+  {
+   "id": "n14",
+   "type": "warning",
+   "summary": "Never edit generated files in src/gen",
+   "content": "src/gen/api_types.ts is generated from openapi.yaml by npm run codegen. Manual edits are overwritten.",
+   "tags": [
+    "codegen",
+    "openapi"
+   ]
+  },
+  {
+   "id": "n15",
+   "type": "decision",
+   "summary": "Errors use thiserror in libraries, anyhow in binaries",
+   "content": "Library crates define typed errors with thiserror. Binary crates convert with anyhow::Context for readable messages.",
+   "tags": [
+    "errors",
+    "rust"
+   ]
+  },
+  {
+   "id": "n16",
+   "type": "lesson",
+   "summary": "Redis connection pool exhausted under load test",
+   "content": "Pool size 10 was too small for 200 concurrent checkouts. Set REDIS_POOL_MAX=64 and added a timeout of 500 ms.",
+   "tags": [
+    "redis",
+    "load"
+   ]
+  },
+  {
+   "id": "n17",
+   "type": "fact",
+   "summary": "Email templates are in templates/mail and use MJML",
+   "content": "Run npm run mail:build to compile MJML to HTML. Order confirmation is order_confirmed.mjml.",
+   "tags": [
+    "email",
+    "mjml"
+   ]
+  },
+  {
+   "id": "n18",
+   "type": "constraint",
+   "summary": "Product images are served from the CDN only",
+   "content": "Never link to /uploads directly. Use cdn_url(path) so cache headers and resizing apply.",
+   "tags": [
+    "cdn",
+    "images"
+   ]
+  },
+  {
+   "id": "n19",
+   "type": "decision",
+   "summary": "Background jobs use the jobs table, not a broker",
+   "content": "A worker polls the jobs table with SKIP LOCKED. We rejected RabbitMQ to keep operations small.",
+   "tags": [
+    "jobs",
+    "queue"
+   ]
+  },
+  {
+   "id": "n20",
+   "type": "gotcha",
+   "summary": "Locale files must be sorted",
+   "content": "The i18n lint fails when keys in locales/en.json are not alphabetical. Run npm run i18n:sort before committing.",
+   "tags": [
+    "i18n",
+    "lint"
+   ]
+  },
+  {
+   "id": "n21",
+   "type": "lesson",
+   "summary": "Migration 0042 locked the orders table for 9 minutes",
+   "content": "Adding a NOT NULL column with a default rewrote the table. Use ADD COLUMN nullable, backfill in batches, then set NOT NULL.",
+   "tags": [
+    "migration",
+    "postgres"
+   ]
+  },
+  {
+   "id": "n22",
+   "type": "fact",
+   "summary": "Rate limit is 100 requests per minute per API key",
+   "content": "Implemented in the tower layer RateLimitLayer; limit keyed by x-api-key, falls back to IP.",
+   "tags": [
+    "ratelimit",
+    "api"
+   ]
+  },
+  {
+   "id": "n23",
+   "type": "decision",
+   "summary": "Tax is computed by the TaxCalculator trait",
+   "content": "Tax rules differ per country; each has a struct implementing TaxCalculator. EU VAT uses the destination country and the customer's VAT id.",
+   "tags": [
+    "tax",
+    "vat"
+   ]
+  },
+  {
+   "id": "n24",
+   "type": "warning",
+   "summary": "Do not log request bodies",
+   "content": "Bodies can contain card tokens and addresses. Use the redact_headers middleware and log only the route and status.",
+   "tags": [
+    "logging",
+    "privacy"
+   ]
+  },
+  {
+   "id": "n25",
+   "type": "fact",
+   "summary": "Order states: pending, paid, shipped, cancelled",
+   "content": "State changes go through OrderStateMachine::transition. Direct UPDATE of status is rejected by a database trigger.",
+   "tags": [
+    "orders",
+    "state"
+   ]
+  },
+  {
+   "id": "n26",
+   "type": "lesson",
+   "summary": "Flaky test checkout_e2e fails on port 3000",
+   "content": "The test starts a server on a fixed port. Use port 0 and read the bound address; it stopped the flake.",
+   "tags": [
+    "tests",
+    "flaky"
+   ]
+  },
+  {
+   "id": "n27",
+   "type": "decision",
+   "summary": "Frontend state with Pinia stores per domain",
+   "content": "One store per domain (cart, session, catalog). No global mega-store. Stores never call each other directly; use events.",
+   "tags": [
+    "frontend",
+    "pinia"
+   ]
+  },
+  {
+   "id": "n28",
+   "type": "fact",
+   "summary": "Shipping rates come from the CarrierGateway adapter",
+   "content": "Adapters for DHL and UPS implement CarrierGateway::quote. Rates are cached for 10 minutes by postcode and weight.",
+   "tags": [
+    "shipping",
+    "carrier"
+   ]
+  },
+  {
+   "id": "n29",
+   "type": "gotcha",
+   "summary": "The dev seed script resets all passwords",
+   "content": "scripts/seed_dev.sh sets every user password to devpass. Never run it against staging.",
+   "tags": [
+    "seed",
+    "staging"
+   ]
+  },
+  {
+   "id": "n30",
+   "type": "constraint",
+   "summary": "Supported browsers: last two Safari and Chrome versions",
+   "content": "IE and old Edge are out of scope. No polyfills for optional chaining.",
+   "tags": [
+    "browsers",
+    "frontend"
+   ]
+  },
+  {
+   "id": "n31",
+   "type": "decision",
+   "summary": "Currency conversion uses daily ECB rates",
+   "content": "Rates are fetched at 02:00 UTC into the fx_rates table and never converted live at checkout.",
+   "tags": [
+    "currency",
+    "fx"
+   ]
+  },
+  {
+   "id": "n32",
+   "type": "lesson",
+   "summary": "Memory leak from unclosed websocket subscriptions",
+   "content": "Components must call unsubscribe in onUnmounted. The orders page leaked 40 MB per hour.",
+   "tags": [
+    "websocket",
+    "memory"
+   ]
+  },
+  {
+   "id": "n33",
+   "type": "fact",
+   "summary": "Production database backups run nightly at 03:00",
+   "content": "pg_dump to s3://shop-backups/nightly, kept 30 days. Restore drill is the first Monday of the month.",
+   "tags": [
+    "backup",
+    "postgres"
+   ]
+  },
+  {
+   "id": "n34",
+   "type": "decision",
+   "summary": "Code review needs one approval and green CI",
+   "content": "Branch protection: one approving review, all checks green, linear history by squash merge.",
+   "tags": [
+    "review",
+    "git"
+   ]
+  },
+  {
+   "id": "n35",
+   "type": "gotcha",
+   "summary": "Date filters are inclusive on the start, exclusive on the end",
+   "content": "Report queries use created_at >= from AND created_at < to. Off-by-one here duplicated a day in the March report.",
+   "tags": [
+    "reports",
+    "dates"
+   ]
+  },
+  {
+   "id": "n36",
+   "type": "fact",
+   "summary": "The admin panel lives under /ops and needs the ops role",
+   "content": "Routes in src/admin/ are mounted at /ops. Role check is in the AdminGuard extractor.",
+   "tags": [
+    "admin",
+    "auth"
+   ]
+  },
+  {
+   "id": "n37",
+   "type": "lesson",
+   "summary": "Large CSV export timed out the request",
+   "content": "Exports over 10k rows must be a background job that emails a link; streaming in the request hit the 30 s gateway timeout.",
+   "tags": [
+    "export",
+    "csv",
+    "jobs"
+   ]
+  },
+  {
+   "id": "n38",
+   "type": "constraint",
+   "summary": "Docker images must be built for linux/arm64 and amd64",
+   "content": "The release workflow uses buildx with both platforms; a single-arch push breaks the Graviton nodes.",
+   "tags": [
+    "docker",
+    "release"
+   ]
+  },
+  {
+   "id": "n39",
+   "type": "decision",
+   "summary": "Naming: services end in Service, repos in Repository",
+   "content": "CartService, OrderRepository. Controllers are thin and only map HTTP to service calls.",
+   "tags": [
+    "naming",
+    "architecture"
+   ]
+  },
+  {
+   "id": "n40",
+   "type": "fact",
+   "summary": "Sentry DSN is read from SENTRY_DSN, empty disables it",
+   "content": "Release is tagged with the git sha by build.rs. Source maps upload happens in the deploy job.",
+   "tags": [
+    "sentry",
+    "monitoring"
+   ]
+  }
+ ],
+ "queries": [
+  {
+   "query": "How do we avoid charging a customer twice when the payment provider repeats a callback?",
+   "expect": [
+    "n03"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "why can't we use floating point for prices",
+   "expect": [
+    "n02"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "what database access library did we pick",
+   "expect": [
+    "n01"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how long does a login session last",
+   "expect": [
+    "n11"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "where do I find who can see the back office pages",
+   "expect": [
+    "n36"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "what happens if the CSV download is huge",
+   "expect": [
+    "n37"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "is it ok to put customer request payloads in the logs",
+   "expect": [
+    "n24"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how are discounts calculated only once",
+   "expect": [
+    "n07"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "which message broker do we use",
+   "expect": [
+    "n19"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how many approvals does a pull request need",
+   "expect": [
+    "n34"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "why did the table get locked during the schema change",
+   "expect": [
+    "n21"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how are product photos delivered to browsers",
+   "expect": [
+    "n18"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "PricingEngine::recalculate",
+   "expect": [
+    "n07"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "process_refund idempotent",
+   "expect": [
+    "n03"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "TEST_DATABASE_URL",
+   "expect": [
+    "n04"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "REDIS_POOL_MAX",
+   "expect": [
+    "n16"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "src/gen/api_types.ts",
+   "expect": [
+    "n14"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "checkout_express_pay flag",
+   "expect": [
+    "n06"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "OrderStateMachine::transition",
+   "expect": [
+    "n25"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "CarrierGateway::quote",
+   "expect": [
+    "n28"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "x-api-key",
+   "expect": [
+    "n22"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "npm run i18n:sort",
+   "expect": [
+    "n20"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "make reindex",
+   "expect": [
+    "n13"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "fx_rates",
+   "expect": [
+    "n31"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "flags are read at startup",
+   "expect": [
+    "n06"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "refunded twice",
+   "expect": [
+    "n03"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "tests that flake on a fixed port",
+   "expect": [
+    "n26"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "jobs polling the table",
+   "expect": [
+    "n19"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "migrations that rewrite the whole table",
+   "expect": [
+    "n21"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "leaking subscriptions in components",
+   "expect": [
+    "n32"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "exports timing out",
+   "expect": [
+    "n37"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "images linked from uploads",
+   "expect": [
+    "n18"
+   ],
+   "kind": "morphology"
+  },
+  {
+   "query": "sqlx migrate",
+   "expect": [
+    "n01"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "Meilisearch products index",
+   "expect": [
+    "n13"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "JWT refresh token cookie",
+   "expect": [
+    "n11"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "N+1 query dashboard",
+   "expect": [
+    "n12"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "clippy warnings CI",
+   "expect": [
+    "n05"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "MJML email templates",
+   "expect": [
+    "n17"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "Sentry DSN",
+   "expect": [
+    "n40"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "ECB exchange rates",
+   "expect": [
+    "n31"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "nightly backups S3",
+   "expect": [
+    "n33"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "buildx arm64 amd64",
+   "expect": [
+    "n38"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "what limit applies per minute",
+   "expect": [
+    "n22"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "the nine minute table lock",
+   "expect": [
+    "n21"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "what runs at 03:00",
+   "expect": [
+    "n33"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "what runs at 02:00 UTC",
+   "expect": [
+    "n31"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "the March double refund",
+   "expect": [
+    "n03"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "the March report duplicated a day",
+   "expect": [
+    "n35"
+   ],
+   "kind": "temporal"
+  },
+  {
+   "query": "why does the service fall over when the connection pool runs dry",
+   "expect": [
+    "n16"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "who has to approve a merge",
+   "expect": [
+    "n34"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "how do we build the confirmation messages sent to buyers",
+   "expect": [
+    "n17"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "what stops a payment event from being processed twice",
+   "expect": [
+    "n03"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "how often do we copy the data to cold storage",
+   "expect": [
+    "n33"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "why is the orders screen so slow",
+   "expect": [
+    "n12"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "where are the shipping price quotes cached",
+   "expect": [
+    "n28"
+   ],
+   "kind": "heldout"
+  },
+  {
+   "query": "what should I do before adding a required column to a big table",
+   "expect": [
+    "n21"
+   ],
+   "kind": "heldout"
+  }
+ ]
+}

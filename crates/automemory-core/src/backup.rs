@@ -69,6 +69,11 @@ pub fn restore(db_path: &Path, backup: &Path, home: &Path) -> Result<PathBuf> {
     }
     let tmp = db_path.with_extension("restoring");
     std::fs::copy(backup, &tmp)?;
+    // the copy, not only the source, must be healthy before it replaces anything
+    if let Err(e) = check(&tmp) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.context("the copy made for the restore is damaged; nothing was replaced"));
+    }
     for ext in ["db-wal", "db-shm", "sqlite-wal", "sqlite-shm"] {
         let _ = std::fs::remove_file(db_path.with_extension(ext));
     }
@@ -76,6 +81,78 @@ pub fn restore(db_path: &Path, backup: &Path, home: &Path) -> Result<PathBuf> {
     let _ = std::fs::remove_file(PathBuf::from(format!("{}-shm", db_path.display())));
     std::fs::rename(&tmp, db_path)?;
     Ok(saved)
+}
+
+/// What a restore drill found in the newest backup.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DrillReport {
+    pub file: PathBuf,
+    pub notes: i64,
+    pub decisions: i64,
+    pub events: i64,
+    pub schema_version: i64,
+}
+
+fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
+    conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0)
+}
+
+/// A restore drill: copy the newest backup to a scratch file, open it the way a restore would (integrity check, then a normal
+/// open that applies any migration), and count what is in it. Nothing live is touched. Records the time in `drill.json`.
+pub fn drill(home: &Path) -> Result<DrillReport> {
+    let Some((file, ..)) = list(home).into_iter().find(|(f, ..)| f.file_name().is_some_and(|n| n.to_string_lossy().starts_with("automemory-"))) else {
+        bail!("no backup to test yet: run `automemory backup` first");
+    };
+    check(&file)?;
+    let scratch = home.join(format!("drill-{}.db", std::process::id()));
+    let result = (|| -> Result<DrillReport> {
+        std::fs::copy(&file, &scratch)?;
+        let db = Database::open(&scratch).context("the backup does not open as a database of this version")?;
+        let conn = db.conn();
+        let report = DrillReport {
+            file: file.clone(),
+            notes: count(&conn, "SELECT COUNT(*) FROM memories WHERE status IN ('active','pinned')"),
+            decisions: count(&conn, "SELECT COUNT(*) FROM decisions"),
+            events: count(&conn, "SELECT COUNT(*) FROM tool_events"),
+            schema_version: count(&conn, "PRAGMA user_version"),
+        };
+        Ok(report)
+    })();
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(PathBuf::from(format!("{}{ext}", scratch.display())));
+    }
+    let report = result?;
+    std::fs::create_dir_all(dir(home))?;
+    std::fs::write(dir(home).join("drill.json"), serde_json::json!({ "at": Utc::now().to_rfc3339(), "file": report.file, "notes": report.notes }).to_string())?;
+    Ok(report)
+}
+
+/// Days since the last successful drill, or None when there never was one.
+pub fn days_since_drill(home: &Path) -> Option<i64> {
+    let text = std::fs::read_to_string(dir(home).join("drill.json")).ok()?;
+    let at = serde_json::from_str::<serde_json::Value>(&text).ok()?["at"].as_str()?.parse::<DateTime<Utc>>().ok()?;
+    Some((Utc::now() - at).num_days())
+}
+
+/// For the daemon: saves a backup when the newest is over 20 hours old, and runs a drill when the last one is over 7 days old.
+/// Returns what it did, for the log.
+pub fn scheduled(db: &Database, home: &Path) -> Vec<String> {
+    let mut did = Vec::new();
+    let newest_age = list(home).into_iter().find(|(f, ..)| f.file_name().is_some_and(|n| n.to_string_lossy().starts_with("automemory-")))
+        .map(|(_, _, when)| (Utc::now() - when).num_hours());
+    if newest_age.is_none_or(|h| h >= 20) {
+        match create(db, home) {
+            Ok(f) => did.push(format!("backup saved: {}", f.display())),
+            Err(e) => did.push(format!("backup failed: {e}")),
+        }
+    }
+    if days_since_drill(home).is_none_or(|d| d >= 7) {
+        match drill(home) {
+            Ok(r) => did.push(format!("restore drill passed: {} notes, {} decisions, {} events", r.notes, r.decisions, r.events)),
+            Err(e) => did.push(format!("restore drill FAILED: {e}")),
+        }
+    }
+    did
 }
 
 #[cfg(test)]
@@ -116,6 +193,24 @@ mod tests {
         assert_eq!(check(&path).unwrap(), 1, "back to the backup");
         assert_eq!(check(&saved).unwrap(), 2, "the replaced database was kept");
         assert!(list(&home).len() >= 2);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_drill_reads_the_newest_backup_and_records_when() {
+        let home = std::env::temp_dir().join(format!("am-drill-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        assert!(drill(&home).is_err(), "no backup yet");
+        let db = Database::open(home.join("automemory.db")).unwrap();
+        note(&db, "one");
+        note(&db, "two");
+        assert_eq!(days_since_drill(&home), None);
+        let did = scheduled(&db, &home);
+        assert!(did.iter().any(|d| d.starts_with("backup saved")) && did.iter().any(|d| d.starts_with("restore drill passed: 2 notes")), "{did:?}");
+        assert_eq!(days_since_drill(&home), Some(0));
+        assert!(scheduled(&db, &home).is_empty(), "nothing due right after");
+        assert!(!home.join(format!("drill-{}.db", std::process::id())).exists(), "the scratch copy is removed");
         let _ = std::fs::remove_dir_all(&home);
     }
 }

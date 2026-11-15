@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod baton;
+pub mod companion;
 pub mod connect;
 pub mod continuity;
 pub mod decision;

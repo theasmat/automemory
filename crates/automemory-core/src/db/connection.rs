@@ -89,7 +89,7 @@ fn schema_version(conn: &Connection) -> i32 {
 }
 
 /// Newest schema version; bump with each new `if version < N` step below.
-const LATEST_SCHEMA_VERSION: i32 = 21;
+const LATEST_SCHEMA_VERSION: i32 = 23;
 
 /// Runs pending migrations atomically. Hooks are separate processes that may all
 /// open the database on first use after an upgrade, so the work happens under
@@ -579,6 +579,18 @@ fn apply_migrations(conn: &Connection) -> rusqlite::Result<()> {
         )?;
         step(conn, "PRAGMA user_version = 21", [])?;
     }
+    if version < 22 {
+        // `memory_links` was created but nothing ever read or wrote it.
+        step(conn, "DROP TABLE IF EXISTS memory_links", [])?;
+        step(conn, "PRAGMA user_version = 22", [])?;
+    }
+    if version < 23 {
+        // File locks and write tracking moved to Tracewise (docs/specs/tracewise-companion.md). Leases were short-lived; the other three were derived data.
+        for t in ["leases", "workspace_snapshots", "lock_coverage", "lock_alerts"] {
+            step(conn, &format!("DROP TABLE IF EXISTS {t}"), [])?;
+        }
+        step(conn, "PRAGMA user_version = 23", [])?;
+    }
     Ok(())
 }
 
@@ -606,6 +618,30 @@ mod tests {
         step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap();
         step(&conn, "ALTER TABLE t ADD COLUMN b TEXT", []).unwrap(); // already applied
         assert!(step(&conn, "ALTER TABLE missing ADD COLUMN c TEXT", []).is_err());
+    }
+
+    #[test]
+    fn upgrading_a_database_with_leases_drops_the_lock_tables_and_keeps_the_rest() {
+        let db = Database::open_in_memory().unwrap();
+        {
+            let c = db.conn();
+            c.execute_batch(
+                "CREATE TABLE leases (id TEXT PRIMARY KEY, scope TEXT); INSERT INTO leases VALUES ('l1', 'src/a.rs');
+                 CREATE TABLE lock_alerts (id INTEGER PRIMARY KEY); CREATE TABLE lock_coverage (id INTEGER PRIMARY KEY);
+                 CREATE TABLE workspace_snapshots (session_id TEXT PRIMARY KEY);
+                 PRAGMA user_version = 22;",
+            )
+            .unwrap();
+            run_migrations(&c).unwrap();
+            for t in ["leases", "lock_alerts", "lock_coverage", "workspace_snapshots"] {
+                let n: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = ?1", [t], |r| r.get(0)).unwrap();
+                assert_eq!(n, 0, "{t} should be gone");
+            }
+            assert_eq!(schema_version(&c), LATEST_SCHEMA_VERSION);
+        }
+        // what stays: the hook replay guard and session notes
+        db.push_note("s1", "hello");
+        assert_eq!(db.drain_notes("s1"), vec!["hello".to_string()]);
     }
 
     #[test]

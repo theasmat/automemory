@@ -456,9 +456,7 @@ mod tests {
         std::fs::write(root.join(".notes/api.md"), "# API quirks\n\nHidden and ignored.\n").unwrap();
         std::fs::write(root.join("README.md"), "# Readme\n\nTracked-looking file, not listed.\n").unwrap();
         std::fs::write(root.join("node_modules/x/a.md"), "# dep\n").unwrap();
-        let mut cfg = LibrarySettings::default();
-        cfg.files = vec!["PRD-private.md".into(), ".notes/**".into(), "../outside.md".into(), "/etc/*.md".into(), "**/*.md".into()];
-        cfg.exclude_from_git = false;
+        let cfg = LibrarySettings { files: vec!["PRD-private.md".into(), ".notes/**".into(), "../outside.md".into(), "/etc/*.md".into(), "**/*.md".into()], exclude_from_git: false, ..Default::default() };
         let r = sync_project(&db, "p", "shop", &root, &cfg).unwrap();
         let paths: Vec<_> = db.library_list(Some("p"), None).unwrap().into_iter().map(|f| (f.path, f.linked)).collect();
         assert!(paths.contains(&("PRD-private.md".into(), true)) && paths.contains(&(".notes/api.md".into(), true)), "{paths:?}");
@@ -564,9 +562,7 @@ mod sync_tests {
         let k = "git:github.com/me/shop";
         let (a, root_a, vault) = machine(k);
         let (b, root_b, _) = machine(k);
-        let mut cfg = LibrarySettings::default();
-        cfg.files = vec!["PRD-private.md".into()];
-        cfg.exclude_from_git = false;
+        let cfg = LibrarySettings { files: vec!["PRD-private.md".into()], exclude_from_git: false, ..Default::default() };
         std::fs::write(root_a.join("PRD-private.md"), "# Private\n\nFrom A.\n").unwrap();
         sync_project(&a, "p", "shop", &root_a, &cfg).unwrap();
         sync_cycle_keyed(&a, &vault, Some(&key)).unwrap();
