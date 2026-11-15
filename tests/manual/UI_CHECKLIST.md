@@ -79,9 +79,10 @@ This checklist verifies the dashboard across responsive breakpoints, theme modes
   - Stop `automemory serve`.
   - Top bar status dot switches to warning pulse ("Connecting...").
   - Content remains readable; offline notice displays `automemory serve` command to copy.
-- [ ] **Agent Collision & Locks**:
-  - Open `/agents` while an agent holds a lock.
-  - Lock duration, holder name, and goal display with human relative timestamps ("4 min ago").
-  - Blocked agents appear with amber warnings.
+- [ ] **Agent Collision & Locks** (needs the Tracewise companion; see LIVE_CHECKLIST section 0):
+  - Open `/agents` while an agent holds a lock (taken by Tracewise on its first edit).
+  - Holder name, file and time left display; the empty state and the "How file locks work" text name Tracewise.
+  - Without Tracewise installed the list is empty and says nothing is locked (no error).
+  - Note: the compiled dashboard bundle still carries the old wording until the Nuxt app is rebuilt.
 - [ ] **Protected Actions**:
-  - Modifying guardrail rules, releasing another agent's lock, or changing safety mode triggers the masked `PasswordModal` instead of an unmasked browser prompt.
+  - Modifying guardrail rules, releasing a lock (asks Tracewise), or changing safety mode triggers the masked `PasswordModal` instead of an unmasked browser prompt.

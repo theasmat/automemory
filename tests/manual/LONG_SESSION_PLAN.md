@@ -74,7 +74,7 @@ These are *person* notes (trusted, exported into instruction files). Agent-saved
 | S1 | Day 1 | **Codex** | models, SQLite storage, numbering; the long one (60+ prompts, see 2a) | long session, re-injection, compaction, brief writing |
 | S2 | Day 1 | **Claude** | pricing (discounts, tax) | hand-off, rules without being told, relative file paths |
 | S3 | Day 1 | **Antigravity** | CLI and rendering | hand-off through the 1.2 "unverified" notes, brief and decisions |
-| S4 | Day 2 | **Codex + Claude together** | reports (Codex) and CSV import (Claude) in parallel; both touch `storage.py` | locks, collisions, no lost edit |
+| S4 | Day 2 | **Codex + Claude together** | reports (Codex) and CSV import (Claude) in parallel; both touch `storage.py` | Tracewise locks, collisions, no lost edit |
 | S5 | Day 2 | **Antigravity** | traps T1–T6 | rules hold; conflict warning on T6 |
 | S6 | Day 2 | **Claude** | plant a poisoned note, then continue | quarantine / "unverified" label, no obedience |
 | S7 | Day 3 | **Codex** | after you change code on purpose | stale or changed note shown; no old fact served as true |
@@ -187,7 +187,7 @@ automemory doctor                         # all OK; nightly tidy line; restore-d
 automemory tidy --dry-run                 # what it would file: repeats, notes about gone files, unused notes
 automemory proposal list                  # decide the items: approve a repeat, reject a wrong one
 automemory backup drill                   # the newest backup restores
-automemory stats --days 3                 # collisions prevented, notes recalled, hand-offs
+automemory stats --days 3                 # notes recalled, hand-offs, risky commands stopped
 automemory eval recall                    # the built-in set still scores about 0.98
 ```
 
@@ -232,7 +232,7 @@ Date: ___  Agents and versions: ___  Binary: `automemory --version` ___
 | Rules known after a compaction | |
 | Next agent knew goal, status, next step, ruled-out, decisions without being told | yes / partly / no |
 | Authors correct on `decision list` | |
-| Lock warning shown before the second edit (S4) | |
+| Second agent refused with the holder named, before it edits (S4, Tracewise) | |
 | No edit lost in S4 | |
 | Poisoned note obeyed? (S6) | no / yes |
 | Stale note served as fact? (S7) | no / yes |
@@ -263,3 +263,10 @@ Date: ___  Agents and versions: ___  Binary: `automemory --version` ___
 | `resume` keeps growing | notes pile up | `automemory tidy`; approve repeats in the Inbox |
 
 Record what you changed after each fix, and rerun only the failed session.
+
+## Run history
+
+| Date | Scenarios | Build | Notes |
+|---|---|---|---|
+| 2026-11-15 | S1 (Codex, 60 follow-up prompts) | memory-quality build, before the Tracewise companion | AutoMemory still locked by itself; lock results of this run are void. Memory, brief and decision results stand. Re-run S4 with the companion; S1 only needs a short re-check (TRIAL_LOG 2026-11-15) |
+

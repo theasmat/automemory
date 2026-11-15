@@ -1,5 +1,7 @@
 # AutoMemory live trial log
 
+> **2026-11-15 note.** Entries below about locks, leases, `automemory locks`, `lock.acquire` and "coverage" describe AutoMemory's own locking, which was **removed** (schema 23; file locks now come from the Tracewise companion, see `docs/specs/tracewise-companion.md`). They stay as history; the replacement checks are LIVE_CHECKLIST sections 0, D and F and S4 in LONG_SESSION_PLAN.
+
 Trial project: `/Users/as/Developer/test/automemory` (the "ecom" shop, plain Python, one commit `Ecom starter`).
 Rule for this trial: **no global hooks**. AutoMemory is registered only inside the trial folder
 (`automemory connect claude`, `automemory connect agy`, no `-g`).
@@ -607,3 +609,12 @@ python3 tests/manual/t13_check.py --project /Users/as/Developer/test/automemory 
 ```
 Pass when it prints `PASS: T13`. Warnings are findings to record (an agent bypassing `library.propose`, or reading without a tool call), not failures.
 Paste the output and each agent's reply, plus anything that confused the agent (for example it ignored the INDEX line, or tried to edit a read-only copy).
+
+### 2026-11-15 Long Codex session, 60 follow-up prompts (Ledgerly): run on the build BEFORE the companion work
+Build under test: the memory-quality build (project-scoped reads, author labels, lock grace, nightly tidy, agent naming), installed before the Tracewise companion existed. AutoMemory still did its own locking then; Tracewise was not involved.
+Status: results not yet recorded here. Paste the session's findings (the 60-prompt checks in LONG_SESSION_PROMPTS.md, `automemory resume`, `decision list`, `memory list`, `proposal list`, `stats`) and they become this entry.
+
+What this run still proves after the update (unchanged code paths): memory recall and notes quality, the brief and hand-offs, decisions and their authors, the Inbox, the pack being handed over again around prompts 25 and 50, project scoping, `resume` size.
+What it does **not** prove any more: anything about locks or collisions (AutoMemory's own were removed), `locks --coverage` figures (now Tracewise's capture coverage, a different number), the 10-minute lease expiry, "lock grace after a turn" (Tracewise releases at Stop).
+Compare after the update (same project, fresh Codex session, same first 10 prompts): `automemory resume | wc -c` stays in the same range; the pack still names the goal, next step and ruled-out items; the notes and decisions counts did not change across the schema 23 migration; hook latency per call (doctor) did not rise by more than a few ms.
+
