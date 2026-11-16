@@ -48,12 +48,12 @@ agent ──hook──▶ automemory hook ──(same stdin, nested)──▶ tr
 ### Detecting the companion
 `[companion] tracewise = "auto" | "on" | "off"` in `config.toml` (default `auto`). Auto means `tracewise` is on `PATH` or in `~/.tracewise/bin` and `tracewise companion --json` answers `{"api":1,...}`. The answer is cached for a minute so hooks do not probe on every call. An unknown API number means "too new or too old": the companion is off and `doctor` says which side to update.
 
-## 4. Changes in Tracewise (P1: built, branch `companion-p1` in `~/Developer/project/tracewise`, not merged)
+## 4. Changes in Tracewise (P1: built and released in Tracewise 0.4.0, 2026-11-16)
 
 | Change | Contract (as built) |
 |---|---|
 | `tracewise hook <event> --from <agent> --neutral` | Reads the agent's raw payload on stdin, does the same work as the agent-schema hook (takes and renews locks, records, builds notices) and prints **one line** `{"api":1,"event":"pre-edit\|post-edit\|pre-command\|post-command\|stop\|session-end\|prompt\|none","decision":"allow\|ask\|deny","reason":null\|"...","context":["..."]}`. Exit code 0 always; a bad payload, an unknown agent or an event Tracewise does not handle is `allow` with event `none`. Agents: claude, codex, cursor, gemini, antigravity, and adapter files. Without the flag the output is exactly as before |
-| `tracewise companion [--json]` | `{"api":1,"name":"tracewise","version":"0.3.0","features":["neutral-hook","locks","lock-list-json","notices"]}`; works outside a repository |
+| `tracewise companion [--json]` | `{"api":1,"name":"tracewise","version":"0.4.0","features":["neutral-hook","locks","lock-list-json","notices"]}`; works outside a repository |
 | `tracewise lock list --json` | The record's own fields (`path`, `holder`, `since`, `expires`, `intent`) plus `agent`, `session` and `expires_in_s` |
 
 Two items in the first draft of this plan turned out to need no new command:

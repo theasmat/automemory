@@ -136,7 +136,7 @@ Check:
 - its first message mentions the ruled-out items if there are any
 
 ### S4 — two agents at the same time (Day 2) — needs the Tracewise companion
-**Before you start** (once): install a Tracewise build that has `--neutral` (the 0.3.0 release does not; build `main` in `~/Developer/project/tracewise` and run its `setup`), then `automemory companion` must say `ready`, `[profile] coordination = true` in the project's `.tracewiseconfig`, `tracewise init` in the project, and `automemory connect all` (it removes Tracewise's own hooks, so each event is handled once). Without Tracewise nothing is locked: run S4 once that way as the control and note that both agents edit freely.
+**Before you start** (once): install Tracewise 0.4.0 or newer (`automemory companion install`; releases before 0.4.0 have no `--neutral` hook), then `automemory companion` must say `ready`, `[profile] coordination = true` in the project's `.tracewiseconfig`, `tracewise init` in the project, and `automemory connect all` (it removes Tracewise's own hooks, so each event is handled once). Without Tracewise nothing is locked: run S4 once that way as the control and note that both agents edit freely.
 
 Open Codex and Claude in the same folder at once.
 - Codex: **"Write the monthly report module; you will need to extend `storage.py`."**

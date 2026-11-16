@@ -11,7 +11,7 @@ Use a scratch repository, not a project you care about. Back up `~/.claude/setti
 
 Since Nov 2026 AutoMemory has no locks of its own: file locks and "who changed this file" come from Tracewise, called from inside AutoMemory's hook. Without Tracewise nothing is locked (memory is unaffected).
 
-1. Build and install Tracewise from `main` (`~/Developer/project/tracewise`: `cargo build --release && ./target/release/tracewise setup`). The 0.3.0 release has no `--neutral` hook and is reported as too old.
+1. Install Tracewise 0.4.0 or newer: `automemory companion install` (checksummed, asks first), or from source `cd ~/Developer/project/tracewise && cargo build --release && ./target/release/tracewise setup`. Releases before 0.4.0 have no `--neutral` hook and are reported as too old.
 2. Install the AutoMemory build under test (`cargo install --path crates/automemory-cli --force`). The first run migrates the database to schema 23 (drops the lock tables only).
 3. In the scratch repo: `tracewise init`, then add `[profile]` / `coordination = true` to `.tracewiseconfig` (`tracewise config get profile.name` should print `core + coordination`), then `automemory connect all`.
 4. `automemory companion` must print `state: ready ... companion api 1`, a probe time of a few ms and `hooks: one registration per agent`. A warning about Tracewise's own hooks means `connect` did not remove them: run `tracewise agent uninstall <agent>`.
