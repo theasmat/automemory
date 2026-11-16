@@ -109,7 +109,25 @@ def main():
         has = _c.execute("select count(*) from sqlite_master where name = 'leases'").fetchone()[0]
         _c.close()
         rep.check(has == 0, "and AutoMemory has no lease table of its own", str(has))
+        # Antigravity as the second agent: one reply, only the fields its schema accepts
+        g = sb.hook("agy", "pre-tool", {"conversationId": "sG", "workspacePaths": [str(sb.project)], "toolCall": {"name": "write_to_file", "args": {"TargetFile": "a.txt"}}})
+        try:
+            gj = json.loads(g[1])
+        except ValueError:
+            gj = None
+        rep.check(gj is not None and gj.get("decision") == "deny" and set(gj) <= {"decision", "reason"} and "codex" in gj.get("reason", ""),
+                  "Antigravity gets one clean refusal naming the holder", g[1][:240])
+        # a shell command from the second session that would rewrite the held file is stopped before it runs
+        pre = sb.hook("claude", "pre-tool", {"session_id": "sB", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "echo two >> a.txt"}, "cwd": str(sb.project)})
+        rep.check(denied(pre) and "a.txt" in pre[1], "a shell command that would write a held file is refused before it runs", pre[1][:240])
         sb.hook("codex", "stop", {"session_id": "sA", "hook_event_name": "Stop", "cwd": str(sb.project)})
+        # an agent that vanishes without a Stop loses its lock when it runs out
+        sb.env["TRACEWISE_LOCK_TTL_SECS"] = "2"
+        pre_edit(sb, "sK", "k.txt", "codex")
+        rep.check(denied(pre_edit(sb, "sB", "k.txt", "claude")), "a killed agent's lock still holds at first")
+        time.sleep(3.2)
+        rep.check(not denied(pre_edit(sb, "sB", "k.txt", "claude")), "and expires on its own (no Stop needed)")
+        sb.env.pop("TRACEWISE_LOCK_TTL_SECS")
         c = pre_edit(sb, "sB", "a.txt", "claude")
         rep.check(not denied(c), "once the first session's turn ends, Tracewise has released the file", c[1][:160])
     finally:

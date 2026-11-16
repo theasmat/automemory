@@ -264,7 +264,7 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
     }
     // ── Ordered Gate Pipeline (lock check → guardrail → custom exec) ──────────
     // Strictest decision wins, so a catastrophic command is denied even when a
-    // lease check merely asks. Hot-reloaded: hooks.toml is re-read every call.
+    // Tracewise's answer asks. Hot-reloaded: hooks.toml is re-read every call.
     if matches!(
         canonical,
         Some(CanonicalEvent::PreToolUse | CanonicalEvent::PreCommit)
@@ -768,7 +768,7 @@ fn pending_work_nudge(db: &Database, project_id: Option<&str>, session_id: &str)
     }
 }
 
-/// Staged (to-be-committed) files for PreCommit lease-overlap checks.
+/// Staged (to-be-committed) files for PreCommit checks.
 fn staged_files(root_path: &str) -> Vec<String> {
     git_files(root_path, &["diff", "--cached", "--name-only"])
 }
@@ -1288,7 +1288,7 @@ fn extract_target_paths_and_symbols(
         }
     }
 
-    // Ensure both absolute and relative path forms are checked for lease collisions
+    // Ensure both absolute and relative path forms are checked for risky paths
     let mut normalized_extras = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
         let cwd_str = cwd.to_string_lossy();
@@ -1399,7 +1399,7 @@ mod native_hook_tests {
     }
 
     #[test]
-    fn apply_patch_paths_are_extracted_for_lease_checks() {
+    fn apply_patch_paths_are_extracted_for_path_checks() {
         let patch = "*** Begin Patch\n*** Add File: src/new.rs\n+x\n*** Update File: src/old.rs\n*** Delete File: gone.rs\n*** End Patch";
         assert_eq!(patch_paths(patch), ["src/new.rs", "src/old.rs", "gone.rs"]);
         let (paths, _) = extract_target_paths_and_symbols("edit", &json!({ "input": patch }));

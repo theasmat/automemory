@@ -277,7 +277,7 @@ pub(crate) fn connect_agy(
         println!("  🔌 MCP:    .agents/mcp_config.json");
         println!("  🧠 Skill:  .agents/skills/automemory/SKILL.md");
         println!("  📜 Rules:  .agents/rules/automemory.md (AGENTS.md, GEMINI.md if absent)");
-        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
+        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit runs the guardrails)");
     }
     Ok(())
 }
@@ -523,7 +523,7 @@ pub(crate) fn connect_claude(
         merge_native_hooks(&settings, exe_path, "claude", CLAUDE_HOOKS)?;
         println!("  🪝 Registered hooks in: {}", settings.display());
         println!("  📝 Guidelines configured in CLAUDE.md");
-        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
+        println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit runs the guardrails)");
     }
 
     Ok(())
@@ -581,7 +581,7 @@ pub(crate) fn connect_cursor(
         target_path.display()
     );
     println!("  📝 Created/updated .cursorrules guidelines");
-    println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit warns about files other agents hold)");
+    println!("  ⚓ Git hooks: active (post-commit marks notes changed; pre-commit runs the guardrails)");
     Ok(())
 }
 
