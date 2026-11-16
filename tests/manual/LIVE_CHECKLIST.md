@@ -59,7 +59,7 @@ Since Nov 2026 AutoMemory has no locks of its own: file locks and "who changed t
 ## E. Dashboard in a browser
 
 1. `automemory serve`, open http://127.0.0.1:4545.
-2. Walk every page; **Agents & Locks** should show the lock from D2 within 5 seconds (it reads Tracewise; without Tracewise it says so). The Locks box in Settings only says settings moved to Tracewise (the compiled dashboard may still show the old box until it is rebuilt).
+2. Walk every page; **Agents & Locks** should show the lock from D2 within 5 seconds (it reads Tracewise; without Tracewise it says so). The Locks box in Settings only says settings moved to Tracewise.
 3. `automemory rule passwd`, then approve a proposal in the UI: a password prompt appears once, a wrong password is rejected, the right one works.
 4. In a normal browser tab on any other site, run `fetch('http://127.0.0.1:4545/api/proposals/decide_all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"approved":true}'})` in the console. Expected: blocked (403 / CORS error).
 

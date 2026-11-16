@@ -83,6 +83,5 @@ This checklist verifies the dashboard across responsive breakpoints, theme modes
   - Open `/agents` while an agent holds a lock (taken by Tracewise on its first edit).
   - Holder name, file and time left display; the empty state and the "How file locks work" text name Tracewise.
   - Without Tracewise installed the list is empty and says nothing is locked (no error).
-  - Note: the compiled dashboard bundle still carries the old wording until the Nuxt app is rebuilt.
 - [ ] **Protected Actions**:
   - Modifying guardrail rules, releasing a lock (asks Tracewise), or changing safety mode triggers the masked `PasswordModal` instead of an unmasked browser prompt.
