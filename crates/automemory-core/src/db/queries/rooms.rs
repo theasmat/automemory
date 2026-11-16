@@ -227,8 +227,28 @@ impl Database {
                 critiqued.push(author_session);
                 let prop_str = proposer.as_deref().unwrap_or("");
                 let next_critic = next_unseen_critic(&room.members, author_session, prop_str, &critiqued);
+                // An invited agent that has not joined yet is still owed its critique: leave the turn open for it
+                // (the human can Skip turn if it never comes). Only when the sessions can be matched to agent names.
+                let waiting_on = {
+                    let agent_of = |s: &str| self.session_agent_id(s).map(|a| canon_agent(&a));
+                    let proposer_agent = agent_of(prop_str);
+                    let done: Vec<String> = critiqued.iter().filter_map(|s| agent_of(s)).collect();
+                    if proposer_agent.is_none() && done.is_empty() {
+                        Vec::new()
+                    } else {
+                        self.room_meta(room_id)
+                            .unwrap_or_default()
+                            .invited
+                            .iter()
+                            .map(|a| canon_agent(a))
+                            .filter(|a| Some(a) != proposer_agent.as_ref() && !done.contains(a))
+                            .collect::<Vec<_>>()
+                    }
+                };
                 if let Some(c) = next_critic {
                     (RoomState::Critique, Some(c))
+                } else if !waiting_on.is_empty() {
+                    (RoomState::Critique, None)
                 } else {
                     let rev_holder = if !prop_str.is_empty() {
                         Some(prop_str.to_string())
@@ -446,6 +466,17 @@ pub struct RoomOutcome {
 use crate::text::clip;
 
 /// Steps of a plan: bullet or numbered lines, at most 10.
+/// The agent a step names as its doer: "claude-code builds …", "codex adds …", "agy builds …". A step that starts with
+/// anything else has no owner, and the first agent to ask claims it.
+pub fn step_owner(title: &str) -> Option<String> {
+    let first = title.split_whitespace().next()?.trim_matches(|c: char| !c.is_alphanumeric() && c != '-').to_lowercase();
+    ["claude", "codex", "cursor"]
+        .iter()
+        .find(|a| first.starts_with(**a))
+        .map(|a| a.to_string())
+        .or_else(|| ["agy", "antigravity", "jetski"].iter().any(|a| first.starts_with(*a)).then(|| "agy".to_string()))
+}
+
 pub fn extract_steps(body: &str) -> Vec<String> {
     body.lines()
         .filter_map(|l| {
@@ -785,6 +816,7 @@ impl Database {
             .iter()
             .map(|t| PlanStep {
                 title: t.clone(),
+                owner: step_owner(t),
                 ..Default::default()
             })
             .collect();
@@ -1082,6 +1114,21 @@ fn next_member(members: &[String], author: &str) -> String {
 }
 
 /// Next member after `author` who is not `proposer` and has not yet critiqued in the current round.
+/// One name per agent however it is spelled: `claude-code` and `Claude Code` are `claude`; `antigravity` and `jetski` are `agy`.
+fn canon_agent(name: &str) -> String {
+    let n = name.trim().to_lowercase().replace(['_', ' '], "-");
+    let has = |w: &[&str]| w.iter().any(|x| n.contains(x));
+    if has(&["claude"]) {
+        "claude".into()
+    } else if has(&["antigravity", "jetski", "agy"]) {
+        "agy".into()
+    } else if has(&["codex"]) {
+        "codex".into()
+    } else {
+        n
+    }
+}
+
 fn next_unseen_critic(
     members: &[String],
     author: &str,
@@ -1232,6 +1279,12 @@ mod tests {
         let steps = extract_steps("Plan\n1. Add the token table\n2) Write the login route\n- Add tests\nnot a step\n  * Update docs\n-\n");
         assert_eq!(steps, vec!["Add the token table", "Write the login route", "Add tests", "Update docs"]);
         assert_eq!(extract_steps(&"- x\n".repeat(30)).len(), 10);
+        assert_eq!(step_owner("claude-code builds invoicer/pricing.py"), Some("claude".into()));
+        assert_eq!(step_owner("codex adds sample orders"), Some("codex".into()));
+        assert_eq!(step_owner("agy builds render"), Some("agy".into()));
+        assert_eq!(step_owner("Antigravity writes the docs"), Some("agy".into()));
+        assert_eq!(step_owner("Add the token table"), None);
+        assert_eq!(step_owner(""), None);
     }
 
     #[test]
@@ -1492,26 +1545,14 @@ mod tests {
         db.sync_kv_set("session_agent:agy-sess", "agy");
         let agy_claimed = db.claim_next_task(None, "agy-sess").unwrap().unwrap();
         assert_eq!(agy_claimed.title, "Add cookie middleware");
-        let leases = db.list_active_leases(None).unwrap();
-        assert!(leases.iter().any(|l| l.scope == "src/http/auth.rs" && l.session_id == "agy-sess"));
 
-        // Submitting releases the task's file leases and records check_status when check_cmd exists.
+        // Submitting records check_status when check_cmd exists (file locks are Tracewise's, not the task queue's).
         db.sync_kv_set("session_agent:cl-sess", "claude");
         let cl_claimed = db.claim_next_task(None, "cl-sess").unwrap().unwrap();
         assert_eq!(cl_claimed.title, "Add session table");
-        assert!(db
-            .list_active_leases(None)
-            .unwrap()
-            .iter()
-            .any(|l| l.scope == "src/db/sessions.rs" && l.session_id == "cl-sess"));
         db.submit_task(&cl_claimed.id, "cl-sess", Some("all tests passed")).unwrap();
         let after = db.get_task(&cl_claimed.id).unwrap().unwrap();
         assert_eq!(after.check_status.as_deref(), Some("passed"));
-        assert!(!db
-            .list_active_leases(None)
-            .unwrap()
-            .iter()
-            .any(|l| l.scope == "src/db/sessions.rs" && l.session_id == "cl-sess"));
     }
 
     #[test]
@@ -1560,6 +1601,35 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(active_decisions.len(), 1);
         assert_eq!(active_decisions[0].decision, "Plan v2");
+    }
+
+    #[test]
+    fn an_invited_agent_that_has_not_joined_yet_still_gets_its_critique() {
+        let db = Database::open_in_memory().unwrap();
+        let ev = seed_memory(&db);
+        let meta = RoomMeta {
+            question: "How do we shard?".into(),
+            invited: vec!["claude".into(), "codex".into(), "agy".into()],
+            evidence: vec![ev.clone()],
+            ..Default::default()
+        };
+        let room = db.create_room_by_human(None, "sharding", meta).unwrap();
+        // Only two of the three invited agents have joined when the first critique lands (what happened in the live run).
+        db.join_room(&room.id, "claude-1").unwrap();
+        db.join_room(&room.id, "codex-1").unwrap();
+        let evid = std::slice::from_ref(&ev);
+        db.post_to_room(&room.id, "claude-1", PostKind::Propose, "Hash by user id - padded so it passes the minimum length", evid).unwrap();
+        db.post_to_room(&room.id, "codex-1", PostKind::Critique, "Hot tenants will skew shards - padded so it passes", evid).unwrap();
+        let r = db.get_room(&room.id).unwrap().unwrap();
+        assert_eq!((r.state, r.turn_holder.as_deref()), (RoomState::Critique, None), "the room waits for agy instead of moving to Revise");
+
+        // agy arrives, critiques, and only then does the proposer revise.
+        db.join_room(&room.id, "agy-1").unwrap();
+        db.post_to_room(&room.id, "agy-1", PostKind::Critique, "Rebalancing needs a bucket key - padded so it passes", evid).unwrap();
+        let r = db.get_room(&room.id).unwrap().unwrap();
+        assert_eq!((r.state, r.turn_holder.as_deref()), (RoomState::Revise, Some("claude-1")));
+        assert_eq!(db.agent_label("claude-1"), "claude-1", "a session id that already starts with the agent name stays as it is");
+        assert_eq!(db.agent_label("b3d66002-308f-49e7-bf5e-3d363d9e00c0"), "b3d66002-308f-49e7-bf5e-3d363d9e00c0", "unknown session: shown as is");
     }
 
     #[test]

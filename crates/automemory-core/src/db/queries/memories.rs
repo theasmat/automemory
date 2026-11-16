@@ -29,12 +29,36 @@ fn redacted(mem: &Memory) -> Memory {
     m
 }
 
+/// A rough stem so "rounded" finds "rounding" and "libraries" finds "library"; the search is a prefix match on the result.
+/// Short words are left alone.
+fn stem(w: &str) -> String {
+    let n = w.chars().count();
+    let cut = |suffix: &str| w.strip_suffix(suffix).map(str::to_string);
+    if n > 4 {
+        if let Some(base) = cut("ies") {
+            return format!("{base}y");
+        }
+        for suffix in ["ing", "ed", "es"] {
+            if let Some(base) = cut(suffix).filter(|b| b.chars().count() >= 3) {
+                return base;
+            }
+        }
+    }
+    if n > 3 {
+        if let Some(base) = cut("s").filter(|b| !b.ends_with('s')) {
+            return base;
+        }
+    }
+    w.to_string()
+}
+
 /// Words that make a question a question and say nothing about the answer. The last five are what `expand_hyde_query`
 /// appends to how/what/where/why questions.
 const QUESTION_FILLER: &[&str] = &[
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "do", "does", "did", "we", "i", "you", "it", "our", "my",
     "of", "to", "in", "on", "at", "for", "and", "or", "with", "from", "by", "as", "if", "this", "that", "there", "can",
-    "should", "would", "could", "how", "what", "which", "where", "when", "why", "who", "me", "us",
+    "should", "would", "could", "how", "what", "which", "where", "when", "why", "who", "me", "us", "get", "got", "any",
+    "may", "will",
     "architecture", "setup", "configuration", "pattern", "implementation",
 ];
 
@@ -314,11 +338,33 @@ impl Database {
         Ok(topics)
     }
 
+    /// Active and pinned notes that match, best first. (Pinned invariants are returned too: they are the notes a person cares most about.)
     pub fn search_memories_fts(
         &self,
         query: &str,
         project_id: Option<&str>,
         limit: usize,
+    ) -> Result<Vec<(Memory, f64)>> {
+        self.fts_search(query, project_id, limit, false)
+    }
+
+    /// What `memory.recall` returns: the same, plus notes a commit has made `changed` or the clock has made `stale`, ranked below
+    /// the live ones. They carry their status, so an agent sees "this may be out of date" instead of the note silently disappearing.
+    pub fn search_memories_labelled(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(Memory, f64)>> {
+        self.fts_search(query, project_id, limit, true)
+    }
+
+    fn fts_search(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+        limit: usize,
+        include_labelled: bool,
     ) -> Result<Vec<(Memory, f64)>> {
         let conn = self.conn();
         // Sanitize FTS query for special syntax chars, hyphens, and punctuation
@@ -332,7 +378,7 @@ impl Database {
                 }
             })
             .collect();
-        let terms: Vec<String> = sanitized.split_whitespace().map(|w| w.to_lowercase()).collect();
+        let terms: Vec<String> = sanitized.split_whitespace().map(|w| stem(&w.to_lowercase())).collect();
         let words: Vec<String> = terms.iter().map(|w| format!("{}*", w)).collect();
         if words.is_empty() {
             let list = self.list_memories(project_id, Some(MemoryStatus::Active), None, limit)?;
@@ -357,6 +403,21 @@ impl Database {
         if meaningful.len() > 1 || (meaningful.len() == 1 && words.len() > 1) {
             attempts.push(meaningful.join(" OR "));
         }
+        // The same words plus their developer-vocabulary synonyms ("database" also looks for "postgres"); a superset of the
+        // plain OR query, so it replaces it: a note that matches several synonyms ranks above one that matches a single filler-ish word.
+        let mut expanded = meaningful.clone();
+        for t in terms.iter().filter(|t| t.chars().count() > 1 && !QUESTION_FILLER.contains(&t.as_str())) {
+            for r in crate::retrieval::synonyms::related(t) {
+                let q = format!("{r}*");
+                if !expanded.contains(&q) {
+                    expanded.push(q);
+                }
+            }
+        }
+        if expanded.len() > meaningful.len() {
+            attempts.pop_if(|_| meaningful.len() > 1 || words.len() > 1);
+            attempts.push(expanded.join(" OR "));
+        }
 
         let mut sql = r#"
             SELECT m.id, m.scope, m.project_id, m.memory_type, m.content, m.summary,
@@ -365,11 +426,14 @@ impl Database {
                    bm25(memories_fts) as rank
             FROM memories_fts fts
             JOIN memories m ON fts.id = m.id
-            WHERE memories_fts MATCH ?1 AND m.status = 'active'
+            WHERE memories_fts MATCH ?1 AND m.status IN ('active', 'pinned' /*LABELLED*/)
               AND (m.project_id IS NULL OR m.project_id != 'demo')
               AND (m.metadata IS NULL OR (json_extract(m.metadata, '$.demo') IS NOT 1 AND json_extract(m.metadata, '$.demo') IS NOT true))
         "#
         .to_string();
+        if include_labelled {
+            sql = sql.replace("/*LABELLED*/", ", 'changed', 'stale'");
+        }
 
         if let Some(pid) = project_id {
             sql.push_str(&format!(
@@ -378,7 +442,8 @@ impl Database {
             ));
         }
 
-        sql.push_str(" ORDER BY rank ASC LIMIT ?2");
+        // bm25 is lower-is-better; a changed or stale note is pushed behind the live ones.
+        sql.push_str(" ORDER BY rank + CASE WHEN m.status IN ('changed', 'stale') THEN 3.0 ELSE 0.0 END ASC LIMIT ?2");
 
         let mut stmt = conn.prepare(&sql)?;
         for fts_query in attempts {
@@ -417,6 +482,7 @@ impl Database {
     }
 
     /// Active memories with what hygiene needs: age, last recall and confidence.
+    #[allow(clippy::type_complexity)]
     pub fn hygiene_rows(&self, project_id: Option<&str>) -> Result<Vec<(String, String, String, f64, String, Option<String>, String)>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
@@ -454,6 +520,19 @@ impl Database {
         project_id: Option<&str>,
         files: &[String],
     ) -> Result<Vec<String>> {
+        self.flag_memories_changed_by_files_with(project_id, files, &|_| None)
+    }
+
+    /// Like [`flag_memories_changed_by_files`], refined by symbol hashes: a memory that recorded the hash of the symbols it is about
+    /// (`metadata.symbol_hashes`, stored when a CodeIntel engine was present) stays active when every one of those symbols still
+    /// has the same hash, because an edit elsewhere in the file did not touch what the note says. `current_hash` answers `None`
+    /// when it cannot tell, and then the memory is flagged, as before.
+    pub fn flag_memories_changed_by_files_with(
+        &self,
+        project_id: Option<&str>,
+        files: &[String],
+        current_hash: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Vec<String>> {
         if files.is_empty() {
             return Ok(Vec::new());
         }
@@ -463,7 +542,11 @@ impl Database {
             .unwrap_or_default()
         {
             let linked = metadata_files(&m).iter().any(|f| files.contains(f));
-            if linked && self.mark_memory_changed(&m.id).unwrap_or(false) {
+            let hashes = metadata_symbol_hashes(&m);
+            let symbols_unchanged = !hashes.is_empty() && hashes.iter().all(|(sym, stored)| current_hash(sym).as_deref() == Some(stored.as_str()));
+            // A symbol that now hashes differently changes the note even when its file was not recorded with it (decisions have none).
+            let symbol_moved = hashes.iter().any(|(sym, stored)| current_hash(sym).is_some_and(|h| h != *stored));
+            if (symbol_moved || (linked && !symbols_unchanged)) && self.mark_memory_changed(&m.id).unwrap_or(false) {
                 flipped.push(m.id);
             }
         }
@@ -658,6 +741,7 @@ impl Database {
     }
 
     /// `(embedded, active)` memory counts for `model`, and the other models present.
+    #[allow(clippy::type_complexity)]
     pub fn vector_coverage(&self, model: &str) -> Result<(usize, usize, Vec<(String, usize)>)> {
         let conn = self.conn();
         let active: i64 = conn.query_row("SELECT COUNT(*) FROM memories WHERE status = 'active'", [], |r| r.get(0))?;
@@ -740,6 +824,15 @@ impl Database {
 
 /// File paths a memory recorded itself against (`memory.save` stores them
 /// under `metadata.files_modified`).
+/// `{symbol: hash}` recorded with the memory (see `flag_memories_changed_by_files_with`).
+fn metadata_symbol_hashes(m: &Memory) -> Vec<(String, String)> {
+    m.metadata
+        .get("symbol_hashes")
+        .and_then(|v| v.as_object())
+        .map(|o| o.iter().filter_map(|(k, v)| v.as_str().map(|h| (k.clone(), h.to_string()))).collect())
+        .unwrap_or_default()
+}
+
 fn metadata_files(m: &Memory) -> Vec<String> {
     m.metadata
         .get("files_modified")
@@ -802,6 +895,14 @@ mod tests {
         assert_eq!(top("how to reset test data")[0], "reset");
         assert!(top("which database do we use").contains(&"reset".to_string()), "matches the word it has");
         assert!(top("which database do we use").contains(&"pg".to_string()), "and the note that says what we use");
+        // Word forms: "rounded" finds "rounding", "libraries" finds "library".
+        let db2 = Database::open_in_memory().unwrap();
+        db2.save_memory_direct(&note("r", "Money rounding: round once, at the end, after tax")).unwrap();
+        db2.save_memory_direct(&note("l", "Constraint: standard library only. Do not add dependencies.")).unwrap();
+        let top2 = |q: &str| db2.search_memories_fts(q, None, 5).unwrap().into_iter().map(|(m, _)| m.id).collect::<Vec<_>>();
+        assert_eq!(top2("how should the total be rounded")[0], "r");
+        assert_eq!(top2("which libraries may I use")[0], "l");
+
         // A question with the padding the context builder adds to how/what/where/why questions.
         assert_eq!(top("how do I deploy a release architecture setup configuration pattern implementation")[0], "deploy");
 
@@ -1056,5 +1157,49 @@ mod tests {
         assert_eq!(status(&by_file), MemoryStatus::Changed);
         assert_eq!(status(&unrelated), MemoryStatus::Active);
         assert_eq!(status(&pinned), MemoryStatus::Pinned);
+    }
+
+    #[test]
+    fn a_memory_with_symbol_hashes_is_flagged_only_when_its_symbol_changed() {
+        let db = Database::open_in_memory().unwrap();
+        let mk = |id: &str, extra: serde_json::Value| {
+            let mut meta = serde_json::json!({ "files_modified": ["src/a.rs"] });
+            meta.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let mut m = note(id, "about a::parse");
+            m.metadata = meta;
+            db.save_memory_direct(&m).unwrap();
+        };
+        for id in ["hashed-1", "hashed-2", "hashed-3"] {
+            mk(id, serde_json::json!({ "symbol_hashes": { "a::parse": "h1" } }));
+        }
+        mk("plain", serde_json::json!({}));
+        let files = vec!["src/a.rs".to_string()];
+
+        // The engine says a::parse still hashes to h1: only the memory with no hashes is flagged (file-level, as before).
+        let flipped = db.flag_memories_changed_by_files_with(None, &files, &|_| Some("h1".into())).unwrap();
+        assert_eq!(flipped, vec!["plain".to_string()]);
+        // The symbol changed: now the hashed ones go too. An engine that cannot tell (None) flags them as well.
+        let flipped = db.flag_memories_changed_by_files_with(None, &files, &|_| Some("h2".into())).unwrap();
+        assert_eq!(flipped.len(), 3, "{flipped:?}");
+        let db2 = Database::open_in_memory().unwrap();
+        let mut m = note("x", "about a::parse");
+        m.metadata = serde_json::json!({ "files_modified": ["src/a.rs"], "symbol_hashes": { "a::parse": "h1" } });
+        db2.save_memory_direct(&m).unwrap();
+        assert_eq!(db2.flag_memories_changed_by_files_with(None, &files, &|_| None).unwrap(), vec!["x".to_string()]);
+
+        // A decision's memory has symbol hashes but no file: it is flagged when a symbol moved, left alone when it did not or cannot be told.
+        let db3 = Database::open_in_memory().unwrap();
+        let d = db3
+            .record_decision(crate::models::DecisionRecordArgs {
+                project_id: None, topic: "parsing", decision: "parse is pure", reason: "easy to test", alternatives: &[], dissent: None,
+                agent: "human", symbols: &["a::parse".to_string()], evidence: &[],
+            })
+            .unwrap();
+        let hashes: serde_json::Map<String, serde_json::Value> = [("a::parse".to_string(), serde_json::json!("h1"))].into_iter().collect();
+        assert!(db3.set_decision_symbol_hashes(&d.id, &hashes).unwrap());
+        let other = vec!["src/unrelated.rs".to_string()];
+        assert!(db3.flag_memories_changed_by_files_with(None, &other, &|_| Some("h1".into())).unwrap().is_empty(), "same hash");
+        assert!(db3.flag_memories_changed_by_files_with(None, &other, &|_| None).unwrap().is_empty(), "cannot tell: left alone");
+        assert_eq!(db3.flag_memories_changed_by_files_with(None, &other, &|_| Some("h2".into())).unwrap().len(), 1, "the symbol changed");
     }
 }

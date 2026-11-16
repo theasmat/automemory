@@ -55,12 +55,10 @@ def main():
 
         act("3. Both agents reach for the same file")
         edit(sb, "claude", "cc-1", "src/cart.rs")
-        say("Claude Code starts editing src/cart.rs (it takes the lock by itself)")
+        say("Claude Code starts editing src/cart.rs (locks are Tracewise's; see companion.py)")
         _, raw, _ = edit(sb, "agy", "ag-1", "src/cart.rs")
         say(f"Antigravity tries the same file and is told: {raw[:110]}")
-        rep.check("claude" in raw and "leased" in raw or "locked" in raw, "Antigravity is warned who holds the file", raw[:200])
-        _, raw, _ = edit(sb, "agy", "ag-1", "src/pay.rs")
-        rep.check("Lock warning" not in raw, "a different file stays quiet", raw[:200])
+        rep.check("leased" not in raw and "locked" not in raw, "without Tracewise AutoMemory does not lock: the edit goes through", raw[:200])
 
         act("4. Claude Code hands the work over")
         sb.mcp("continuity.brief", action="add", project_id="shop", agent="claude-code", session_id="cc-1",
@@ -73,11 +71,9 @@ def main():
         for line in [l for l in brief.split("\\n") if "coupon" in l or "Postgres" in l][:3]:
             say("  " + line.strip().rstrip('"}'))
         rep.check("coupon" in brief and "Postgres" in brief, "the next step and the ruled-out idea reach Antigravity", brief[:900])
-        _, raw, _ = edit(sb, "agy", "ag-2", "src/cart.rs")
-        rep.check("leased" not in raw and "locked" not in raw, "Claude Code's lock was released at session end", raw[:200])
 
         act("5. What the dashboard shows")
-        stats = sb.run("memory", "list").stdout
+        stats = sb.run("memory", "list", "--project", "shop").stdout
         say(stats.strip()[:300])
         rep.check("SQLite" in stats and "Payments" in stats, "both agents' notes are in one list", stats[:200])
         say("Run `automemory serve` on your own machine to see the same thing on the Notes and Agents pages.")

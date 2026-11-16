@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Starts `automemory serve` in a sandbox and exercises the dashboard API.
 
-Checks: the UI is served, read endpoints answer, live leases appear on /api/coordination,
+Checks: the UI is served, read endpoints answer, the locks note appears on /api/coordination,
 foreign Origin and rebinding Host headers get 403, and with a human password set the
 proposal-decision endpoints require it.
 """
@@ -55,12 +55,10 @@ def main():
         code, body = http(port, "/api/stats")
         rep.check(code == 200 and "active_memories" in body, "GET /api/stats", f"{code} {body[:80]}")
 
-        sb.mcp("lock.acquire", scope="src/live.rs", goal="dashboard test", agent="claude-code",
-               session_id="dash1")
         code, body = http(port, "/api/coordination")
         data = json.loads(body) if code == 200 else {}
-        rep.check(any(l.get("scope") == "src/live.rs" for l in data.get("leases", [])),
-                  "/api/coordination lists the live lease", f"{code} {body[:160]}")
+        rep.check(data.get("leases") == [] and "Tracewise" in str(data.get("locks_note")),
+                  "/api/coordination says locks come from Tracewise when it is not installed", f"{code} {body[:160]}")
         rep.check({"leases", "rooms", "batons"} <= set(data), "/api/coordination has rooms and batons")
 
         code, _ = http(port, "/api/proposals/decide_all", "POST",

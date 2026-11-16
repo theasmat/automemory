@@ -1,5 +1,5 @@
-use crate::models::{Memory, MemoryStatus};
-use crate::retrieval::MemoryDecayScorer;
+use crate::models::{Memory, MemoryStatus, MemoryType};
+use crate::retrieval::{MemoryDecayConfig, MemoryDecayScorer};
 
 /// Verification status returned on recall (PRD §8 Verify).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -31,13 +31,18 @@ pub trait Verifier {
     fn verify(&self, memory: &Memory) -> VerifyStatus;
 }
 
+/// First-guess half-lives by kind, replacing one 14-day half-life for everything (a 0.72 note went `stale` after about a month
+/// whatever it said). To be confirmed on real notes: the research found decay as a score multiplier hurt, and staleness should come from
+/// verification against the code first, age second.
+const LONG_HALF_LIFE_DAYS: f64 = 90.0;
+const FACT_HALF_LIFE_DAYS: f64 = 30.0;
+
 /// Default verifier: commit linkage + decay + trust-tier check.
 /// `Changed` comes from the PostCommit marker (linkage changed); per-symbol
-/// content hashes would refine it further (see CodeIntel::symbol_hash).
+/// content hashes refine it at PostCommit (`flag_memories_changed_by_files_with`): a memory that recorded its symbols' hashes is only
+/// marked `changed` when one of them changed.
 #[derive(Default)]
-pub struct DecayVerifier {
-    scorer: MemoryDecayScorer,
-}
+pub struct DecayVerifier;
 
 impl Verifier for DecayVerifier {
     fn verify(&self, memory: &Memory) -> VerifyStatus {
@@ -50,7 +55,14 @@ impl Verifier for DecayVerifier {
         if memory.status == MemoryStatus::Changed {
             return VerifyStatus::Changed;
         }
-        let eval = self.scorer.evaluate(
+        // Age alone does not make a decision or a person's own note stale; only a commit that changed its code does (status Changed).
+        let half_life = match memory.memory_type {
+            _ if memory.is_person_authored() => return VerifyStatus::Verified,
+            MemoryType::Decision | MemoryType::Preference => return VerifyStatus::Verified,
+            MemoryType::Lesson | MemoryType::Warning | MemoryType::Pattern | MemoryType::Skill => LONG_HALF_LIFE_DAYS,
+            MemoryType::Fact | MemoryType::Observation => FACT_HALF_LIFE_DAYS,
+        };
+        let eval = MemoryDecayScorer::new(MemoryDecayConfig { half_life_days: half_life, ..MemoryDecayConfig::default() }).evaluate(
             memory.importance,
             memory.confidence,
             memory.updated_at,
@@ -98,7 +110,7 @@ mod tests {
 
     #[test]
     fn fresh_memory_verifies() {
-        let v = DecayVerifier::default();
+        let v = DecayVerifier;
         assert_eq!(
             v.verify(&mem(MemoryStatus::Active, Utc::now())),
             VerifyStatus::Verified
@@ -107,14 +119,14 @@ mod tests {
 
     #[test]
     fn stale_memory_flags() {
-        let v = DecayVerifier::default();
+        let v = DecayVerifier;
         let old = mem(MemoryStatus::Active, Utc::now() - Duration::days(120));
         assert_eq!(v.verify(&old), VerifyStatus::Stale);
     }
 
     #[test]
     fn quarantined_is_unverifiable_and_pinned_is_verified() {
-        let v = DecayVerifier::default();
+        let v = DecayVerifier;
         assert_eq!(
             v.verify(&mem(MemoryStatus::Candidate, Utc::now())),
             VerifyStatus::Unverifiable
@@ -127,10 +139,30 @@ mod tests {
 
     #[test]
     fn commit_marked_memory_reports_changed() {
-        let v = DecayVerifier::default();
+        let v = DecayVerifier;
         assert_eq!(
             v.verify(&mem(MemoryStatus::Changed, Utc::now())),
             VerifyStatus::Changed
         );
+    }
+
+    fn days_until_stale(kind: MemoryType) -> Option<i64> {
+        let v = DecayVerifier;
+        (0..2000).find(|d| {
+            let mut m = mem(MemoryStatus::Active, Utc::now() - Duration::days(*d));
+            m.memory_type = kind;
+            v.verify(&m) == VerifyStatus::Stale
+        })
+    }
+
+    /// Before: every unverified note was flagged `stale` after about 31 days, whatever it said. Now it depends on the kind.
+    #[test]
+    fn age_flags_depend_on_the_kind_of_note() {
+        assert_eq!(days_until_stale(MemoryType::Decision), None, "a decision is never stale by age");
+        assert_eq!(days_until_stale(MemoryType::Preference), None);
+        let fact = days_until_stale(MemoryType::Fact).unwrap();
+        let lesson = days_until_stale(MemoryType::Lesson).unwrap();
+        assert!((60..=80).contains(&fact), "fact {fact}");
+        assert!((190..=230).contains(&lesson), "lesson {lesson}");
     }
 }

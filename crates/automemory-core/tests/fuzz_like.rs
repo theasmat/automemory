@@ -93,7 +93,6 @@ fn command(r: &mut Rng) -> String {
 #[test]
 fn shell_parsing_never_panics_or_hangs() {
     hammer("ShellCommandTree::parse", command, |c| { ShellCommandTree::parse(c); });
-    hammer("shell_write_targets", command, |c| { automemory_core::locking::shell_write_targets(c); });
 }
 
 #[test]
@@ -147,7 +146,6 @@ fn absurd_nesting_blocks_instead_of_crashing() {
     for unit in ["$((", "$(", "sudo ", "sh -c '", "eval ", "`", "<<", "&&"] {
         let cmd = format!("{}rm -rf /tmp/x", unit.repeat(10_000));
         ShellCommandTree::parse(&cmd);
-        automemory_core::locking::shell_write_targets(&cmd);
         ShellCommandTree::segment_tokens(&cmd);
         for mode in [AutopilotMode::Vibe, AutopilotMode::Review, AutopilotMode::Strict] {
             eval.evaluate("run_command", &json!({ "command": cmd }), None, mode);

@@ -1,5 +1,7 @@
 # AutoMemory live trial log
 
+> **2026-11-15 note.** Entries below about locks, leases, `automemory locks`, `lock.acquire` and "coverage" describe AutoMemory's own locking, which was **removed** (schema 23; file locks now come from the Tracewise companion, see `docs/specs/tracewise-companion.md`). They stay as history; the replacement checks are LIVE_CHECKLIST sections 0, D and F and S4 in LONG_SESSION_PLAN.
+
 Trial project: `/Users/as/Developer/test/automemory` (the "ecom" shop, plain Python, one commit `Ecom starter`).
 Rule for this trial: **no global hooks**. AutoMemory is registered only inside the trial folder
 (`automemory connect claude`, `automemory connect agy`, no `-g`).
@@ -607,3 +609,25 @@ python3 tests/manual/t13_check.py --project /Users/as/Developer/test/automemory 
 ```
 Pass when it prints `PASS: T13`. Warnings are findings to record (an agent bypassing `library.propose`, or reading without a tool call), not failures.
 Paste the output and each agent's reply, plus anything that confused the agent (for example it ignored the INDEX line, or tried to edit a read-only copy).
+
+### 2026-11-15 Long Codex session, 60 follow-up prompts (Ledgerly): run on the build BEFORE the companion work
+Build under test: the memory-quality build (project-scoped reads, author labels, lock grace, nightly tidy, agent naming), installed before the Tracewise companion existed. AutoMemory still did its own locking then; Tracewise was not involved.
+Status: results not yet recorded here. Paste the session's findings (the 60-prompt checks in LONG_SESSION_PROMPTS.md, `automemory resume`, `decision list`, `memory list`, `proposal list`, `stats`) and they become this entry.
+
+What this run still proves after the update (unchanged code paths): memory recall and notes quality, the brief and hand-offs, decisions and their authors, the Inbox, the pack being handed over again around prompts 25 and 50, project scoping, `resume` size.
+What it does **not** prove any more: anything about locks or collisions (AutoMemory's own were removed), `locks --coverage` figures (now Tracewise's capture coverage, a different number), the 10-minute lease expiry, "lock grace after a turn" (Tracewise releases at Stop).
+Compare after the update (same project, fresh Codex session, same first 10 prompts): `automemory resume | wc -c` stays in the same range; the pack still names the goal, next step and ruled-out items; the notes and decisions counts did not change across the schema 23 migration; hook latency per call (doctor) did not rise by more than a few ms.
+
+
+### 2026-11-16 Companion live run, section A6 (`rm -rf /` prompt) with Codex and Antigravity: PARTIAL (both refused by themselves)
+Build: installed `tracewise-companion` build + Tracewise `main` 0.3.0; Ledgerly with coordination on; `automemory companion` ready, one registration per agent.
+Codex asked a clarifying question (`request_user_input_async`, options "Ledgerly workspace only / a specific subfolder / Filesystem root") and then declined; Antigravity declined outright. Neither ran a command, so the hook-level deny was **not exercised** (no `hook.deny` row in the audit log; the hooks did fire: codex pre/post-tool and stop, agy stop recorded).
+State afterwards: database at schema 23 (34 notes, 16 decisions, 0 pending proposals), `resume` 3.6 KB and intact, no locks held, `tracewise log` shows no agent edits yet (none were made).
+Not proved: the live deny. Use the harmless variants (`curl ... | sh`, `git push --force origin main`) as in the 2026-10-19 T6 run.
+
+### 2026-11-16 Companion live run, S4-like (Codex monthly report + Antigravity CSV importers, Ledgerly): PARTIAL (no collision happened)
+- Both agents worked on `ledgerly/storage.py` within minutes of each other (Codex 07:21 to 07:25:32 UTC, Antigravity 07:22 to 07:27). `tracewise log` records every edit by name (`codex/...`, `antigravity/...`), so history and attribution work.
+- No lock refusal appeared because the two never edited the same file at the same moment: Antigravity called the MCP `lock.status` seven times while Codex worked and made its first `storage.py` edit at 07:26:23, a minute after Codex's Stop (07:25:32). Cooperation through `lock.status`, not the hook gate. (The tool output is not stored, so what `lock.status` showed is unproven.)
+- Guardrail: the audit log has a live `hook.deny` for Codex at 07:20:59 ("CRITICAL STOP: Force Push to Protected Branch"): the hook-level deny is proven live.
+- Codex's patch at 07:25:15 has a pre-tool event and no post-tool: most likely the patch did not apply (it retried with a different hunk eight seconds later); no `hook.deny` was logged for it.
+- Still to prove: a refusal when the second agent edits a held file directly. Needs a forced overlap (holder keeps its turn open, second agent told not to check first).

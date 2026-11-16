@@ -2,7 +2,7 @@ use crate::db::Database;
 use crate::extraction::{DistillationReport, TrajectoryDistiller};
 use crate::guardrails::rules::GuardrailRule;
 use crate::hooks::{CanonicalEvent, FailureMode, HandlerOutput, PipelineCtx};
-use crate::models::{LeaseAcquireArgs, LeaseAcquireResult, Memory, PostKind, RoomState, TrustTier};
+use crate::models::{Memory, PostKind, RoomState, TrustTier};
 use crate::retrieval::VectorEngine;
 use crate::sync::GitSync;
 use anyhow::{anyhow, Result};
@@ -149,6 +149,15 @@ pub trait MemoryStore: Send + Sync {
         project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<(Memory, f64)>>;
+    /// Like `search_memories_fts`, plus `changed` and `stale` notes (ranked lower, labelled by their status). Used by recall.
+    fn search_memories_labelled(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(Memory, f64)>> {
+        self.search_memories_fts(query, project_id, limit)
+    }
     fn list_active_memories(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<Memory>>;
 }
 
@@ -166,6 +175,14 @@ impl MemoryStore for Database {
         limit: usize,
     ) -> Result<Vec<(Memory, f64)>> {
         Database::search_memories_fts(self, query, project_id, limit)
+    }
+    fn search_memories_labelled(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<(Memory, f64)>> {
+        Database::search_memories_labelled(self, query, project_id, limit)
     }
     fn list_active_memories(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<Memory>> {
         self.list_memories(
@@ -190,6 +207,23 @@ pub trait Retriever: Send + Sync {
     ) -> Result<Vec<(Memory, f64)>>;
 }
 
+/// What `memory.recall` uses: keyword recall, plus the vector leg when `[retrieval] mode = "hybrid"` (the engine reads the setting).
+pub struct HybridRetriever {
+    db: std::sync::Arc<Database>,
+}
+
+impl HybridRetriever {
+    pub fn new(db: std::sync::Arc<Database>) -> Self {
+        Self { db }
+    }
+}
+
+impl Retriever for HybridRetriever {
+    fn retrieve(&self, query: &str, project_id: Option<&str>, limit: usize) -> Result<Vec<(Memory, f64)>> {
+        crate::retrieval::RetrievalEngine::new(&self.db).recall_memories(query, project_id, limit)
+    }
+}
+
 pub struct FtsRetriever<'a> {
     store: &'a dyn MemoryStore,
 }
@@ -207,7 +241,7 @@ impl Retriever for FtsRetriever<'_> {
         project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<(Memory, f64)>> {
-        self.store.search_memories_fts(query, project_id, limit)
+        self.store.search_memories_labelled(query, project_id, limit)
     }
 }
 
@@ -280,30 +314,6 @@ impl RuleMatcher for GuardrailRule {
         Regex::new(&self.pattern)
             .map(|re| re.is_match(text))
             .unwrap_or(false)
-    }
-}
-
-pub const LOCK_STRATEGY_API_VERSION: &str = "1";
-
-/// Lease-granting seam (PRD §7.1 LockStrategy). The default is advisory
-/// file/glob/symbol leases; enforced or worktree strategies replace it.
-pub trait LockStrategy: Send + Sync {
-    fn acquire(&self, args: LeaseAcquireArgs<'_>) -> Result<LeaseAcquireResult>;
-}
-
-pub struct AdvisoryLocks<'a> {
-    db: &'a Database,
-}
-
-impl<'a> AdvisoryLocks<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        Self { db }
-    }
-}
-
-impl LockStrategy for AdvisoryLocks<'_> {
-    fn acquire(&self, args: LeaseAcquireArgs<'_>) -> Result<LeaseAcquireResult> {
-        self.db.acquire_lease(args)
     }
 }
 
@@ -456,7 +466,7 @@ pub fn notifier_for(name: &str) -> Result<Box<dyn Notifier>> {
 /// Resolves a configured verifier name. Unknown names error.
 pub fn verifier_for(name: &str) -> Result<Box<dyn crate::verify::Verifier>> {
     match name {
-        "decay" => Ok(Box::new(crate::verify::DecayVerifier::default())),
+        "decay" => Ok(Box::new(crate::verify::DecayVerifier)),
         other => Err(anyhow!("unknown verifier: {other}")),
     }
 }
@@ -558,12 +568,6 @@ pub const PORTS: &[PortInfo] = &[
         api_version: GUARDRAIL_RULE_API_VERSION,
         status: PortStatus::Native,
         default_impl: "rule structs + AST evaluator",
-    },
-    PortInfo {
-        id: "LockStrategy",
-        api_version: LOCK_STRATEGY_API_VERSION,
-        status: PortStatus::Native,
-        default_impl: "file/glob/symbol leases",
     },
     PortInfo {
         id: "Distiller",
@@ -699,12 +703,12 @@ mod tests {
     }
 
     #[test]
-    fn port_inventory_covers_all_fifteen() {
-        assert_eq!(PORTS.len(), 15);
+    fn port_inventory_covers_all_fourteen() {
+        assert_eq!(PORTS.len(), 14);
         let mut ids: Vec<&str> = PORTS.iter().map(|p| p.id).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 15);
+        assert_eq!(ids.len(), 14);
         assert!(PORTS
             .iter()
             .any(|p| p.id == "HookHandler" && p.status == PortStatus::Native));
@@ -877,32 +881,6 @@ mod tests {
         assert!(!builtin.matches_text("SELECT 1"));
         let custom = DenyAll;
         assert!(custom.matches_text("anything at all"));
-    }
-
-    #[test]
-    fn advisory_locks_delegate_acquire_renew_conflict() {
-        use crate::models::{LeaseAcquireArgs, LeaseAcquireResult, LeaseScopeType};
-        let db = Database::open_in_memory().unwrap();
-        let strategy = AdvisoryLocks::new(&db);
-        fn args(session: &str) -> LeaseAcquireArgs<'_> {
-            LeaseAcquireArgs {
-                project_id: None,
-                agent: "agent",
-                session_id: session,
-                scope: "src/a.ts",
-                scope_type: LeaseScopeType::File,
-                goal: "edit",
-                ttl_seconds: 300,
-            }
-        }
-        assert!(matches!(
-            strategy.acquire(args("s1")).unwrap(),
-            LeaseAcquireResult::Acquired { .. }
-        ));
-        assert!(matches!(
-            strategy.acquire(args("s2")).unwrap(),
-            LeaseAcquireResult::Conflict { .. }
-        ));
     }
 
     #[test]

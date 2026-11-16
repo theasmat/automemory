@@ -2,6 +2,7 @@ pub mod context;
 pub mod decay;
 pub mod fade;
 pub mod scorer;
+pub mod synonyms;
 pub mod vector;
 
 pub use context::{RetrievalEngine, SearchResult};

@@ -22,7 +22,9 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
     let config = Config::default_config();
     let db = Database::open(&config.db_path)?;
 
-    let project_id = args.project_arg.and_then(|p| {
+    // `auto` is the word the hooks' own commands use for "work it out from the folder"; an agent that copies it onto this command
+    // must get the same meaning, not a project literally named "auto" (which split one topic into two active decisions).
+    let project_id = args.project_arg.filter(|p| !p.trim().is_empty() && !p.eq_ignore_ascii_case("auto")).and_then(|p| {
         db.get_project_by_slug(p)
             .ok()
             .flatten()
@@ -36,6 +38,19 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
         super::continuity::project_for(&db, &root)
     });
 
+    // "human" is the default author, and an agent's shell tool runs this command too. Who is really here is worked out from the evidence
+    // (a terminal or the password, else the agent in the process chain or environment, else "shell"); an explicit --agent other than "human" is kept.
+    let agent_owned;
+    let agent = if args.agent == "human" {
+        let who = automemory_core::actor::current(automemory_core::auth::stored_password_hash().as_deref());
+        if !who.is_human() {
+            eprintln!("note: recorded as written by '{}' (no terminal or human password here), not as a person's decision. Run it yourself in a terminal to record it as yours.", who.name);
+        }
+        agent_owned = who.name;
+        agent_owned.as_str()
+    } else {
+        args.agent
+    };
     let recorded = db.record_decision(DecisionRecordArgs {
         project_id: project_id.as_deref(),
         topic: args.topic,
@@ -43,7 +58,7 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
         reason: args.reason,
         alternatives: args.alternatives,
         dissent: args.dissent,
-        agent: args.agent,
+        agent,
         symbols: args.symbols,
         evidence: args.evidence,
     })?;
@@ -66,6 +81,9 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
         println!("  Symbols:      {}", recorded.symbols.join(", "));
     }
     println!("  Status:       Active (synced as Tier 2 Verified Fact)");
+    for w in db.flag_ruled_out_conflicts(&recorded).unwrap_or_default() {
+        println!("  ⚠ {w}");
+    }
 
     Ok(())
 }
@@ -74,8 +92,14 @@ pub fn record_decision(args: DecisionRecordCliArgs<'_>) -> Result<()> {
 pub fn get_decision(topic: &str, project_arg: Option<&str>) -> Result<()> {
     let config = Config::default_config();
     let db = Database::open(&config.db_path)?;
+    // A decision id (dec-...) works as well as a topic: agents copy the id from `decision list`.
+    let by_id = if topic.starts_with("dec-") { db.get_decision_by_id(topic).ok().flatten() } else { None };
+    let (topic, project_arg): (&str, Option<&str>) = match &by_id {
+        Some(d) => (d.topic.as_str(), d.project_id.as_deref()),
+        None => (topic, project_arg),
+    };
 
-    let project_id = project_arg.and_then(|p| {
+    let project_id = project_arg.filter(|p| !p.trim().is_empty() && !p.eq_ignore_ascii_case("auto")).and_then(|p| {
         db.get_project_by_slug(p)
             .ok()
             .flatten()
@@ -138,17 +162,20 @@ pub fn list_decisions(
     project_arg: Option<&str>,
     status_str: Option<&str>,
     limit: usize,
+    all: bool,
 ) -> Result<()> {
     let config = Config::default_config();
     let db = Database::open(&config.db_path)?;
 
-    let project_id = project_arg.and_then(|p| {
+    let project_id = project_arg.filter(|p| !p.trim().is_empty() && !p.eq_ignore_ascii_case("auto")).and_then(|p| {
         db.get_project_by_slug(p)
             .ok()
             .flatten()
             .map(|proj| proj.id)
             .or_else(|| Some(p.to_string()))
     });
+    // Default to the folder's project, like an agent's MCP calls: another project's decisions are not this project's.
+    let project_id = if all { project_id } else { project_id.or_else(|| super::memory::folder_project(&db)) };
 
     let status = match status_str {
         Some(s) => Some(DecisionStatus::from_str(s).map_err(|e| anyhow::anyhow!(e))?),

@@ -93,11 +93,15 @@ pub async fn api_room(State(state): State<AppState>, Path(id): Path<String>) -> 
     let plan = state.db.room_plan(&id).ok();
     let posts = state.db.room_posts(&id).unwrap_or_default();
     let tasks = state.db.list_room_tasks(&id).unwrap_or_default();
-    let active_leases = state
-        .db
-        .list_active_leases(room.project_id.as_deref())
-        .unwrap_or_default();
-    let locked_files: Vec<String> = active_leases.iter().map(|l| l.scope.clone()).collect();
+    let locked_files: Vec<String> = automemory_core::companion::held_locks(
+        &automemory_core::config::GlobalConfig::load().unwrap_or_default().companion,
+        &state.db,
+        room.project_id.as_deref(),
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(|l| l.scope)
+    .collect();
     let labels: serde_json::Map<String, serde_json::Value> = room
         .members
         .iter()

@@ -27,8 +27,8 @@ flight** (current task, plan, baton, branch, uncommitted work), and the **agent 
    stat, current task/plan, failing tests, next step. It syncs as a record kind. On the other PC `resume` says e.g.
    "last on <device>, 14:02, claude: branch feat/x at abc123, 3 files uncommitted (not synced: commit and push, or stash)";
    if the sha is missing locally it suggests `git fetch`. Code itself travels by git, never by AutoMemory.
-5. **Add kinds to the op-log:** baton, session checkpoint, review proposals (so a conflict raised on one PC is visible on
-   both), tracked docs (the git-ignored plan vault already syncs).
+5. **Add kinds to the op-log:** baton (built); session checkpoints travel as memories. Review proposals and tracked docs are not
+   synced: a conflict is filed on the computer that sees it. Built kinds: memory, trace, failure, skill, decision, baton, brief, library.
 6. **New machine in one command.** `automemory sync bootstrap`: pair with the recovery phrase, pull, `connect` the agents
    (idempotent), `doctor`.
 7. **Vectors are not synced** by default (device re-embeds with its own provider); optional later: sync vectors when both devices use the same model id.

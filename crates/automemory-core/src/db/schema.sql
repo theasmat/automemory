@@ -148,14 +148,6 @@ CREATE TABLE IF NOT EXISTS memory_versions (
 
 CREATE INDEX IF NOT EXISTS idx_memory_versions_mem ON memory_versions(memory_id, version_num);
 
-CREATE TABLE IF NOT EXISTS memory_links (
-    source_memory_id TEXT NOT NULL,
-    target_memory_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (source_memory_id, target_memory_id, relation_type)
-);
-
 CREATE TABLE IF NOT EXISTS success_traces (
     id TEXT PRIMARY KEY,
     project_id TEXT,
@@ -300,25 +292,6 @@ CREATE TABLE IF NOT EXISTS procedural_skills (
 
 CREATE INDEX IF NOT EXISTS idx_procedural_skills_proj ON procedural_skills(project_id);
 
--- Multi-Agent Coordination Leases and Resource Locks
-CREATE TABLE IF NOT EXISTS leases (
-    id TEXT PRIMARY KEY,
-    project_id TEXT,
-    agent TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    scope TEXT NOT NULL,
-    scope_type TEXT NOT NULL DEFAULT 'file',
-    goal TEXT NOT NULL,
-    ttl_seconds INTEGER NOT NULL DEFAULT 300,
-    acquired_at TEXT NOT NULL,
-    heartbeat_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_leases_scope ON leases(project_id, scope);
-CREATE INDEX IF NOT EXISTS idx_leases_expires ON leases(expires_at);
-CREATE INDEX IF NOT EXISTS idx_leases_session ON leases(session_id);
-
 -- Architecture Decisions (Binding records with alternatives, reasons, and dissent)
 CREATE TABLE IF NOT EXISTS decisions (
     id TEXT PRIMARY KEY,
@@ -401,35 +374,6 @@ CREATE TABLE IF NOT EXISTS room_posts (
 
 CREATE INDEX IF NOT EXISTS idx_rooms_turn ON rooms(project_id, state, turn_holder);
 CREATE INDEX IF NOT EXISTS idx_room_posts_room ON room_posts(room_id, created_at);
-
--- Automatic locking: pre-command workspace snapshots, per-write coverage, watcher alerts
-CREATE TABLE IF NOT EXISTS workspace_snapshots (
-    session_id TEXT PRIMARY KEY,
-    project_id TEXT,
-    taken_at TEXT NOT NULL,
-    in_flight INTEGER NOT NULL DEFAULT 1,
-    data TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS lock_coverage (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts TEXT NOT NULL,
-    project_id TEXT,
-    session_id TEXT NOT NULL,
-    path TEXT NOT NULL,
-    source TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_lock_coverage_ts ON lock_coverage(ts);
-
-CREATE TABLE IF NOT EXISTS lock_alerts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts TEXT NOT NULL,
-    project_id TEXT,
-    path TEXT NOT NULL,
-    holder_agent TEXT NOT NULL,
-    holder_session TEXT NOT NULL,
-    message TEXT NOT NULL
-);
 
 -- Notes for a session's agent that its hooks cannot print immediately (Antigravity's
 -- PostToolUse output may only be {}); delivered on its next PreInvocation.

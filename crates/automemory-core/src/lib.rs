@@ -13,13 +13,19 @@ pub mod db;
 pub mod docs;
 pub mod embeddings;
 pub mod eval;
+pub mod actor;
+pub mod companion;
+pub mod portable;
+pub mod reset;
+pub mod tidy;
+pub mod write_policy;
+pub mod recall_eval;
 pub mod extraction;
 pub mod guardrails;
 pub mod hooks;
 pub mod keychain;
 pub mod llm;
-pub mod lockwatch;
-pub mod locking;
+pub mod hook_state;
 pub mod models;
 pub mod onboarding;
 pub mod overlap;
@@ -50,19 +56,19 @@ pub use guardrails::{
 pub use hooks::{
     merge_decision, run_pipeline, CanonicalEvent, FailureMode,
     GateDecision, GuardrailHandler, HandlerOutput, HandlerResult, HandlerSpec, HooksConfig,
-    LockCheckHandler, PipelineCtx,
+    PipelineCtx,
 };
 pub use models::*;
 pub use ports::{
     backend_for, check_api_version, notifier_for, trust_policy_for, verifier_for,
-    AdvisoryLocks, AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller, EmbeddingProvider,
+    AgentAdapter, BuiltinTrustPolicy, CodeIntel, Distiller, EmbeddingProvider,
     FtsRetriever, GitTransport, NoCodeIntel, HandlerEnv, HookHandler, LocalEmbeddings,
-    LockStrategy, MemoryStore, NoRunner, Notifier, PcrProtocol, PluginCapabilities, PluginHooks,
+    MemoryStore, NoRunner, Notifier, PcrProtocol, PluginCapabilities, PluginHooks,
     PluginManifest, Port, PortInfo, PortStatus, Retriever, RoomProtocol, RuleMatcher, Runner,
     SilentNotifier, StderrNotifier, StrictTrustPolicy, SyncBackend, TrustPolicy,
     AGENT_ADAPTER_API_VERSION, CODE_INTEL_API_VERSION, DISTILLER_API_VERSION,
     EMBEDDING_API_VERSION, GUARDRAIL_RULE_API_VERSION,
-    HOOK_HANDLER_API_VERSION, LOCK_STRATEGY_API_VERSION, MEMORY_STORE_API_VERSION,
+    HOOK_HANDLER_API_VERSION, MEMORY_STORE_API_VERSION,
     NOTIFIER_API_VERSION, PORTS, RETRIEVER_API_VERSION, ROOM_PROTOCOL_API_VERSION,
     RUNNER_API_VERSION, SYNC_BACKEND_API_VERSION, TRUST_POLICY_API_VERSION,
 };

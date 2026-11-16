@@ -4,7 +4,7 @@
 use automemory_core::db::Database;
 use automemory_core::extraction::TrajectoryDistiller;
 use automemory_core::hooks::{
-    CanonicalEvent, GuardrailHandler, HooksConfig, LockCheckHandler, PipelineCtx, merge_decision,
+    CanonicalEvent, GuardrailHandler, HooksConfig, PipelineCtx, merge_decision,
     run_pipeline,
 };
 use automemory_core::models::*;
@@ -60,9 +60,8 @@ fn bench_hook_pretool_allow(c: &mut Criterion) {
         project_id: Some("bench"),
         mode: AutopilotMode::Vibe,
     };
-    let lock_check = LockCheckHandler;
     let guardrail = GuardrailHandler;
-    let handlers: Vec<&dyn HookHandler> = vec![&lock_check, &guardrail];
+    let handlers: Vec<&dyn HookHandler> = vec![&guardrail];
     c.bench_function("hook_pretool_allow", |b| {
         b.iter(|| {
             let results = run_pipeline(&cfg.handler, &ctx, &env, &handlers);

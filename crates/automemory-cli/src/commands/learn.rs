@@ -237,46 +237,12 @@ fn run_tour_step(
             prompt_or_auto(
                 is_auto,
                 "(simulated) Agent A edits src/main.rs -> Agent B tries src/main.rs",
-                "Step 5/8 · Two Agents, One File (Collision Protection)\nWhen multiple agents work on the same codebase, AutoMemory prevents collisions.",
+                "Step 5/8 · Two Agents, One File (Locks via Tracewise)\nWhen multiple agents work on the same codebase, the optional Tracewise companion prevents collisions.",
             );
-            // 1. Connect claude in sandbox
-            let _ = run_cmd(exe, home, project, &["connect", "claude"], None);
-            let _ = run_cmd(exe, home, project, &["mode", "set", "strict"], None);
-
-            // 2. Agent A leases src/main.rs
-            let a_payload = serde_json::json!({
-                "session_id": "agent-A",
-                "tool_name": "Edit",
-                "tool_input": { "file_path": "src/main.rs" }
-            });
-            let _ = run_cmd(
-                exe,
-                home,
-                project,
-                &["hook", "--agent", "claude", "--event", "pre-tool", "--project", "auto"],
-                Some(&a_payload.to_string()),
-            );
-            println!("Agent A acquired lease on src/main.rs");
-
-            // 3. Agent B attempts to edit src/main.rs
-            let b_payload = serde_json::json!({
-                "session_id": "agent-B",
-                "tool_name": "Edit",
-                "tool_input": { "file_path": "src/main.rs" }
-            });
-            let (_, b_out, _) = run_cmd(
-                exe,
-                home,
-                project,
-                &["hook", "--agent", "claude", "--event", "pre-tool", "--project", "auto"],
-                Some(&b_payload.to_string()),
-            );
-
-            println!("Agent B edit attempt output:\n{b_out}");
-            if !b_out.contains("deny") && !b_out.contains("Collision") && !b_out.contains("held") {
-                bail!("Step 5 failed: Collision was not detected. Try: `automemory locks`");
-            }
-            println!("✓ done: Collision prevented! Agent B was stopped before overwriting Agent A's changes.\n");
+            println!("File locks come from Tracewise (https://github.com/cmdworks/tracewise), an optional companion.");
+            println!("With it installed, the first agent to edit a file holds it; a second agent is told who holds it and is refused until the turn ends.");
+            println!("Check it with `automemory doctor` and `automemory locks`. Without it, memory works the same and nothing is locked.");
+            println!("✓ done: locks are Tracewise's; AutoMemory does not lock on its own.\n");
         }
         6 => {
             prompt_or_auto(

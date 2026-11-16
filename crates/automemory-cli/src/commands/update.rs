@@ -47,7 +47,7 @@ pub fn expected_hash(line: &str, archive: &str) -> Option<String> {
     (name.trim_start_matches('*') == archive && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())).then(|| hash.to_lowercase())
 }
 
-fn get(client: &reqwest::blocking::Client, url: &str) -> Result<reqwest::blocking::Response> {
+pub(crate) fn get(client: &reqwest::blocking::Client, url: &str) -> Result<reqwest::blocking::Response> {
     let r = client.get(url).header("User-Agent", "automemory-update").send().with_context(|| format!("cannot reach {url}"))?;
     if !r.status().is_success() {
         bail!("{url} answered {}", r.status());

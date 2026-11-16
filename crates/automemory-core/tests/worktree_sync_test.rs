@@ -136,7 +136,7 @@ fn test_worktree_canonical_root_resolution() {
 }
 
 #[test]
-fn test_worktree_project_matching_and_lease_collision() {
+fn test_worktree_project_matching() {
     let temp_dir = TempTestDir::new("wt_match");
     let (main_repo, wt1, wt2) = setup_test_git_repo(temp_dir.path());
 
@@ -171,55 +171,6 @@ fn test_worktree_project_matching_and_lease_collision() {
         .expect("query wt2 failed");
     assert!(found_from_wt2.is_some());
     assert_eq!(found_from_wt2.unwrap().id, project_id);
-
-    // 2. Cross-worktree lease acquisition & collision detection
-    let acquire_res = db
-        .acquire_lease(LeaseAcquireArgs {
-            project_id: Some(project_id),
-            agent: "antigravity-wt1",
-            session_id: "sess-wt1-auth",
-            scope: "src/auth/jwt.rs",
-            scope_type: LeaseScopeType::File,
-            goal: "Refactoring JWT token verification in wt_auth",
-            ttl_seconds: 300,
-        })
-        .expect("acquire lease failed");
-
-    match acquire_res {
-        LeaseAcquireResult::Acquired { lease } => {
-            assert_eq!(lease.scope, "src/auth/jwt.rs");
-            assert_eq!(lease.agent, "antigravity-wt1");
-        }
-        _ => panic!("Expected lease to be acquired cleanly"),
-    }
-
-    // 3. Agent in Worktree 2 attempts to modify src/auth/jwt.rs
-    let collision = db
-        .check_collision(
-            Some(project_id),
-            "sess-wt2-pay",
-            &["src/auth/jwt.rs".to_string()],
-            &[],
-        )
-        .expect("check collision failed");
-
-    assert!(collision.is_some(), "Collision must be detected across worktrees!");
-    let conflict = collision.unwrap();
-    assert_eq!(conflict.scope, "src/auth/jwt.rs");
-    assert_eq!(conflict.holder_agent, "antigravity-wt1");
-    assert_eq!(conflict.holder_session_id, "sess-wt1-auth");
-    assert!(conflict.remaining_seconds > 0);
-
-    // 4. Modifying an unleased file in Worktree 2 has no collision
-    let no_collision = db
-        .check_collision(
-            Some(project_id),
-            "sess-wt2-pay",
-            &["src/billing/stripe.rs".to_string()],
-            &[],
-        )
-        .expect("check collision on unleased file failed");
-    assert!(no_collision.is_none());
 }
 
 #[test]

@@ -37,6 +37,25 @@ impl Database {
         Ok(())
     }
 
+    /// The project this agent's hooks last reported work in, if that was within `hours`. A client that starts its MCP server outside the
+    /// workspace (Antigravity does) cannot be placed by folder; the hooks, which always know the folder, tell where the agent is working.
+    pub fn recent_project_of_agent(&self, agent: &str, hours: i64) -> Result<Option<Project>> {
+        let since = (Utc::now() - chrono::Duration::hours(hours)).to_rfc3339();
+        let id: Option<String> = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT project_id FROM tool_events WHERE agent_adapter = ?1 AND project_id IS NOT NULL AND timestamp >= ?2 ORDER BY timestamp DESC LIMIT 1",
+                params![agent, since],
+                |r| r.get(0),
+            )
+            .ok()
+        };
+        match id {
+            Some(id) => self.get_project_by_id(&id),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_project_by_id(&self, id: &str) -> Result<Option<Project>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(

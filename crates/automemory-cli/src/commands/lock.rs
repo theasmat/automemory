@@ -1,110 +1,57 @@
 use anyhow::Result;
-use automemory_core::config::Config;
+use automemory_core::config::{Config, GlobalConfig};
 use automemory_core::db::Database;
-use chrono::Utc;
 
-/// Lists all active multi-agent leases across files and symbols.
+fn open() -> Result<Database> {
+    Database::open(&Config::default_config().db_path)
+}
+
+fn project_id_of(db: &Database, project_arg: Option<&str>) -> Option<String> {
+    project_arg.map(|p| db.get_project_by_slug(p).ok().flatten().map(|proj| proj.id).unwrap_or_else(|| p.to_string()))
+}
+
+/// Lists the files agents hold. The locks are Tracewise's (docs/specs/tracewise-companion.md); without it there are none.
 pub fn list_locks(project_arg: Option<&str>) -> Result<()> {
-    let config = Config::default_config();
-    let db = Database::open(&config.db_path)?;
-
-    let project_id = project_arg.and_then(|p| {
-        db.get_project_by_slug(p)
-            .ok()
-            .flatten()
-            .map(|proj| proj.id)
-            .or_else(|| Some(p.to_string()))
-    });
-
-    let leases = db.list_active_leases(project_id.as_deref())?;
-
-    if leases.is_empty() {
-        println!("ℹ️  No active multi-agent locks or leases found.");
-        println!("   All codebase files and symbols are free for concurrent editing.");
-        return Ok(());
+    let db = open()?;
+    let settings = GlobalConfig::load().unwrap_or_default().companion;
+    let pid = project_id_of(&db, project_arg);
+    match automemory_core::companion::held_locks(&settings, &db, pid.as_deref()) {
+        Err(msg) => println!("ℹ️  {msg}"),
+        Ok(l) if l.is_empty() => println!("ℹ️  No file is locked right now (locks come from Tracewise)."),
+        Ok(l) => {
+            println!("🔒 Files held right now ({}), from Tracewise:", l.len());
+            println!("{:<44} {:<12} {:<12} {:<8} Why", "File", "Agent", "Session", "Left");
+            for x in l {
+                let sess: String = x.session_id.chars().take(10).collect();
+                println!("{:<44} {:<12} {:<12} {:<8} {}", x.scope, x.agent, sess, format!("{}s", x.remaining_seconds), x.goal);
+            }
+            println!("💡 `automemory unlock <file>` asks Tracewise to release one.");
+        }
     }
-
-    let now = Utc::now();
-    println!("🔒 Active Multi-Agent Leases ({} active):", leases.len());
-    println!("{:-<105}", "");
-    println!(
-        "{:<32} {:<8} {:<15} {:<12} {:<10} Goal",
-        "Scope", "Type", "Agent", "Session", "TTL Left"
-    );
-    println!("{:-<105}", "");
-
-    for l in leases {
-        let remaining = format!("{}s", l.remaining_seconds(now));
-        let session_display = if l.session_id.len() > 10 {
-            format!("{}..", &l.session_id[..8])
-        } else {
-            l.session_id.clone()
-        };
-        let scope_display = if l.scope.len() > 30 {
-            format!("{}..", &l.scope[..28])
-        } else {
-            l.scope.clone()
-        };
-
-        println!(
-            "{:<32} {:<8} {:<15} {:<12} {:<10} {}",
-            scope_display,
-            l.scope_type.to_string(),
-            l.agent,
-            session_display,
-            remaining,
-            l.goal
-        );
-    }
-    println!("{:-<105}", "");
-    println!("💡 Use 'automemory unlock <scope>' to release a lease manually.");
-
     Ok(())
 }
 
-/// Kill switch: releases every active lease regardless of holder.
-pub fn stop_all(project_arg: Option<&str>) -> Result<()> {
-    let config = Config::default_config();
-    let db = Database::open(&config.db_path)?;
-
-    let project_id = project_arg.and_then(|p| {
-        db.get_project_by_slug(p)
-            .ok()
-            .flatten()
-            .map(|proj| proj.id)
-            .or_else(|| Some(p.to_string()))
-    });
-
-    let count = db.release_all_leases(project_id.as_deref())?;
-    println!("■ Stopped: released {count} active lease(s). Multi-agent work is halted.");
+/// Asks Tracewise to release one file (or every lock with `all`). Run by a person, so it may release another actor's lock.
+fn release(args: &[&str], project_arg: Option<&str>) -> Result<()> {
+    let db = open()?;
+    let settings = GlobalConfig::load().unwrap_or_default().companion;
+    let pid = project_id_of(&db, project_arg);
+    for dir in automemory_core::companion::project_dirs(&db, pid.as_deref()) {
+        match automemory_core::companion::json_in(&settings, &db, &dir, args) {
+            Ok(v) => println!("✓ {}: {v}", dir.display()),
+            Err(msg) => println!("ℹ️  {msg}"),
+        }
+    }
     Ok(())
 }
 
-/// Releases or overrides an active resource lease.
 pub fn unlock(scope: &str, project_arg: Option<&str>, _force: bool) -> Result<()> {
-    let config = Config::default_config();
-    let db = Database::open(&config.db_path)?;
+    release(&["lock", "release", scope, "--json"], project_arg)
+}
 
-    let project_id = project_arg.and_then(|p| {
-        db.get_project_by_slug(p)
-            .ok()
-            .flatten()
-            .map(|proj| proj.id)
-            .or_else(|| Some(p.to_string()))
-    });
-
-    let count = db.unlock_scope(project_id.as_deref(), scope)?;
-
-    if count > 0 {
-        println!(
-            "✓ Successfully released {} lease(s) for scope '{}'.",
-            count, scope
-        );
-    } else {
-        println!("ℹ️  No active lease found matching scope '{}'.", scope);
-    }
-
-    Ok(())
+/// Kill switch: releases every lock Tracewise holds for the project.
+pub fn stop_all(project_arg: Option<&str>) -> Result<()> {
+    release(&["lock", "release", "--all", "--json"], project_arg)
 }
 
 /// `automemory overlap`: exit code 1 when another branch edits the same files.
@@ -133,37 +80,17 @@ pub fn overlap(base: &str, branch: Option<&str>) -> Result<()> {
     std::process::exit(1);
 }
 
-/// `automemory locks --coverage`: how many file changes a lease covered, and when.
-pub fn coverage(days: i64) -> Result<()> {
-    let config = Config::default_config();
-    let db = Database::open(&config.db_path)?;
-    let rows = db.coverage_since(days)?;
-    let (before, after, unknown) = automemory_core::locking::coverage_summary(&rows);
-    let total = before + after + unknown;
-    println!("Lock coverage, last {days} days: {total} file changes");
-    if total == 0 {
-        println!("  nothing recorded yet (agents need the AutoMemory hooks installed)");
-        return Ok(());
+/// `automemory locks --coverage`: how much of the file capture is in place, from `tracewise doctor --json`.
+pub fn coverage(_days: i64) -> Result<()> {
+    let db = open()?;
+    let settings = GlobalConfig::load().unwrap_or_default().companion;
+    let dir = std::env::current_dir()?;
+    match automemory_core::companion::json_in(&settings, &db, &dir, &["doctor", "--json"]) {
+        Ok(v) => {
+            println!("Capture coverage (Tracewise): {}", v["coverage"]);
+            println!("Who made the changes:          {}", v["attribution"]);
+        }
+        Err(msg) => println!("ℹ️  {msg}"),
     }
-    let pct = |n: i64| 100.0 * n as f64 / total as f64;
-    println!("  leased before the write (edit tools, predicted shell writes): {before} ({:.0}%)", pct(before));
-    println!("  found after the command and reported/leased:                  {after} ({:.0}%)", pct(after));
-    println!("  could not be attributed (another command ran at the same time): {unknown} ({:.0}%)", pct(unknown));
-    println!("  covered or reported: {:.0}%", pct(before + after));
     Ok(())
-}
-
-/// One line for `doctor`.
-pub fn coverage_line(db: &Database, days: i64) -> String {
-    let rows = db.coverage_since(days).unwrap_or_default();
-    let (b, a, u) = automemory_core::locking::coverage_summary(&rows);
-    let total = b + a + u;
-    if total == 0 {
-        return "no file changes recorded yet".to_string();
-    }
-    format!(
-        "{:.0}% of {total} file changes in {days}d covered or reported ({:.0}% leased before the write)",
-        100.0 * (b + a) as f64 / total as f64,
-        100.0 * b as f64 / total as f64
-    )
 }

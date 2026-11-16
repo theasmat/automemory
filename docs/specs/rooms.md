@@ -12,6 +12,8 @@ Built (R1–R4):
 - **R4 (Multi-Critic Rotation, Skip Turn & End Room)**: Rooms with 3+ invited agents rotate through every critic (`critique_index` / `Critic X of Y`) before advancing to `revise`. Stalled turns display a 15-minute warning and can be bypassed with `POST /api/rooms/:id/skip` (`automemory room skip`), or an undecided room can be closed cleanly with `POST /api/rooms/:id/end` (`automemory room end`).
 - **Tests**: `rooms.rs` unit tests, `tests/scenarios/planning_room.py` (49 end-to-end assertions covering R1–R4), and `tests/ui/smoke.py` (Playwright browser checks). Live trial **T11** is written, not run.
 
+In the critique round, every invited agent critiques once before the proposer revises: the turn stays open for an invited agent that has not joined yet (Skip turn lets the human move on). Steps that start with an agent's name (claude, codex, cursor, agy/antigravity) are assigned to that agent on approval; the dashboard Edit can change the owner. Other steps are claimed first come, first served. `task.next` and `task.submit` take `session_id` as optional.
+
 ## 2. Goals and non-goals
 
 Goals:

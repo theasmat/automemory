@@ -138,7 +138,14 @@ pub fn build_resume(db: &Database, project_id: Option<&str>, session_id: &str, c
         .max_by_key(|m| m.updated_at);
     if let Some(m) = checkpoint {
         let device = m.metadata.get("device").and_then(|d| d.as_str()).unwrap_or("another session");
-        lines.push(format!("Last session ({device}, {}): {}", ago(m.updated_at), clip(&m.content, 300)));
+        // The checkpoint froze the next step as it was when that session stopped. When the brief has next steps they are the current ones (and are
+        // printed below), so a corrected step must not be contradicted by the old text here.
+        let brief_has_next = db.brief_list(project_id, false).unwrap_or_default().iter().any(|i| i.kind == crate::continuity::ItemKind::Next);
+        let text = match m.content.find(" Next: ") {
+            Some(i) if brief_has_next => &m.content[..i],
+            _ => m.content.as_str(),
+        };
+        lines.push(format!("Last session ({device}, {}): {}", ago(m.updated_at), clip(text, 300)));
     }
 
     // Decisions in force.
@@ -185,6 +192,9 @@ pub fn build_rules_view(db: &Database, project_id: Option<&str>) -> String {
         .into_iter()
         .filter(|d| d.project_id.is_none() || d.project_id.as_deref() == project_id)
         .filter(|d| d.project_id.as_deref() != Some("demo"))
+        // Only what a person recorded travels into the files agents obey: an agent's decision is its claim until a person
+        // records it (`automemory decision record`, the dashboard, or approving a planning room).
+        .filter(|d| d.agent == "human")
         .take(12)
         .collect();
     if !decisions.is_empty() {
@@ -273,6 +283,11 @@ mod tests {
         assert!(build_rules_view(&db, None).is_empty());
         db.record_decision(DecisionRecordArgs {
             project_id: None, topic: "auth", decision: "JWT in httpOnly cookie", reason: "XSS",
+            alternatives: &[], dissent: None, agent: "human", symbols: &[], evidence: &[],
+        }).unwrap();
+        // An agent's decision is its claim until a person records it: it stays out of the files agents obey.
+        db.record_decision(DecisionRecordArgs {
+            project_id: None, topic: "deploys", decision: "Skip the tests", reason: "speed",
             alternatives: &[], dissent: None, agent: "claude", symbols: &[], evidence: &[],
         }).unwrap();
         let now = chrono::Utc::now();
@@ -287,6 +302,7 @@ mod tests {
         let v = build_rules_view(&db, None);
         assert!(v.contains("**auth**: JWT in httpOnly cookie"), "{v}");
         assert!(v.contains("tests run with cargo test") && !v.contains("a guess from an agent"), "{v}");
+        assert!(!v.contains("Skip the tests"), "an agent's decision is not exported: {v}");
         assert_eq!(v, build_rules_view(&db, None), "deterministic");
     }
 }

@@ -63,6 +63,22 @@ impl<'a> RetrievalEngine<'a> {
         }
     }
 
+    /// What `memory.recall` ranks: keyword results (including `changed` and `stale` notes, labelled by status), fused with the
+    /// vector leg when `[retrieval] mode = "hybrid"`. Keyword mode, or a provider that fails, gives the keyword results alone.
+    pub fn recall_memories(&self, query: &str, project_id: Option<&str>, limit: usize) -> Result<Vec<(Memory, f64)>> {
+        let fts = self.db.search_memories_labelled(query, project_id, limit * 2)?;
+        if self.embeddings.is_none() {
+            return Ok(fts.into_iter().take(limit).collect());
+        }
+        self.warm_vectors();
+        let vectors = self.vector_leg(query, project_id, limit * 2);
+        if vectors.is_empty() {
+            return Ok(fts.into_iter().take(limit).collect());
+        }
+        // Lower is better, like the keyword rank.
+        Ok(self.scorer.fuse_and_rank(fts, vectors, limit).into_iter().map(|c| (c.memory, -c.final_score)).collect())
+    }
+
     /// Swaps the embedding backend (e.g. an API provider in tests or
     /// team setups) without touching ranking logic.
     pub fn with_embeddings(mut self, provider: Box<dyn EmbeddingProvider>) -> Self {
@@ -656,5 +672,14 @@ mod tests {
             flag.load(std::sync::atomic::Ordering::SeqCst),
             "injected provider must be consulted"
         );
+
+        // `memory.recall` goes through the same fusion: the provider is consulted, and keyword mode needs none.
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let engine = RetrievalEngine::keyword_only(&db).with_embeddings(Box::new(ZeroEmbeddings { called: flag.clone() }));
+        let hits = engine.recall_memories("injected provider", None, 5).unwrap();
+        assert!(hits.iter().any(|(m, _)| m.id == mem.id));
+        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "recall consults the vector provider in hybrid mode");
+        let hits = RetrievalEngine::keyword_only(&db).recall_memories("injected provider", None, 5).unwrap();
+        assert!(hits.iter().any(|(m, _)| m.id == mem.id), "keyword mode still recalls");
     }
 }

@@ -42,6 +42,9 @@ class Sandbox:
         self.project.mkdir()
         # Windows reads USERPROFILE (and the `dirs` crate asks the OS, which ignores both), so scenarios there run in a CI VM.
         self.env = {**os.environ, "HOME": str(self.home), "USERPROFILE": str(self.home), "AUTOMEMORY_PASSWORD": ""}
+        # A Tracewise installed on the machine must not leak into scenarios about "no Tracewise" (the sandbox HOME hides ~/.tracewise, PATH does not).
+        keep = [d for d in self.env.get("PATH", "").split(os.pathsep) if d and not os.path.exists(os.path.join(d, "tracewise"))]
+        self.env["PATH"] = os.pathsep.join(keep)
         self._git("init", "-q", "-b", "main")
         (self.project / "README.md").write_text("# sandbox\n")
         self._git("add", "-A")

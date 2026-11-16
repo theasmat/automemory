@@ -46,10 +46,12 @@ pub fn build_packet(
             failed
         ));
         if !files.is_empty() {
-            lines.push(format!(
-                "files: {}",
-                files.iter().take(8).cloned().collect::<Vec<_>>().join(", ")
-            ));
+            // Relative to the project, so the next agent on another computer sees `shop/refund.py`, not `/Users/me/.../shop/refund.py`.
+            let roots: Vec<String> = project_id
+                .map(|p| db.get_project_paths(p).unwrap_or_default().into_iter().map(|pp| pp.local_path).collect())
+                .unwrap_or_default();
+            let short = |f: &String| roots.iter().find_map(|r| f.strip_prefix(r.trim_end_matches('/')).map(|x| x.trim_start_matches('/').to_string())).unwrap_or_else(|| f.clone());
+            lines.push(format!("files: {}", files.iter().take(8).map(short).collect::<Vec<_>>().join(", ")));
         }
         let mut outcomes: Vec<String> = recent
             .iter()
@@ -61,18 +63,6 @@ pub fn build_packet(
             .collect();
         outcomes.reverse();
         lines.push(format!("last: {}", outcomes.join(" | ")));
-    }
-
-    // Leases still held by this session transfer awareness, not ownership.
-    let held: Vec<String> = db
-        .list_active_leases(project_id)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|l| l.session_id == from_session)
-        .map(|l| format!("{} ({})", l.scope, l.goal))
-        .collect();
-    if !held.is_empty() {
-        lines.push(format!("holding: {}", held.join("; ")));
     }
 
     // Active decisions and unresolved blockers ground the next agent.

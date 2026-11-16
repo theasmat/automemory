@@ -179,6 +179,24 @@ if "${INSTALL_DIR}/${BINARY_NAME}" connect all -g; then
     log_success "Connected 20 AI coding agents globally!"
 fi
 
+# 8. Optional companion: Tracewise gives AutoMemory file locks and history (macOS only; memory works without it)
+if [ "${OS}" = "darwin" ] && [ "${AUTOMEMORY_TRACEWISE:-ask}" != "no" ]; then
+    printf "\n"
+    if "${INSTALL_DIR}/${BINARY_NAME}" companion 2>/dev/null | grep -q "state: ready"; then
+        log_success "Tracewise companion already installed"
+    else
+        ANSWER="${AUTOMEMORY_TRACEWISE:-}"
+        if [ -z "${ANSWER}" ] && [ -r /dev/tty ]; then
+            printf "Also install Tracewise (stops two agents editing one file, records who changed what)? It is optional. [y/N] "
+            read -r ANSWER </dev/tty || ANSWER=""
+        fi
+        case "${ANSWER}" in
+            y|Y|yes|YES) "${INSTALL_DIR}/${BINARY_NAME}" companion install --yes || log_warn "Tracewise was not installed; AutoMemory works without it. Retry: automemory companion install" ;;
+            *) log_info "Skipped Tracewise. Later: automemory companion install" ;;
+        esac
+    fi
+fi
+
 printf "\n"
 printf "${BOLD}${GREEN}========================================================${RESET}\n"
 printf "  ${BOLD}${GREEN}AutoMemory was successfully installed!${RESET}               \n"
@@ -187,5 +205,6 @@ printf "${BOLD}${GREEN}========================================================$
 printf "Quick commands to get started:\n"
 printf "  ${CYAN}automemory serve${RESET}        Launch local web dashboard at http://127.0.0.1:4545\n"
 printf "  ${CYAN}automemory doctor${RESET}       Run system health checks\n"
+printf "  ${CYAN}automemory companion${RESET}    Tracewise (file locks) status; install or turn off\n"
 printf "  ${CYAN}automemory connect all${RESET}  Connect all 20 agents in your current workspace\n"
 printf "  ${CYAN}automemory proposal summary${RESET} View review proposal metrics\n\n"

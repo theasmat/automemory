@@ -156,6 +156,21 @@ pub fn stored_password_hash() -> Option<String> {
     }
 }
 
+/// True when the human password in the environment matches the stored one (the strongest proof that a person is at this command).
+pub fn password_proves_human(stored_hash: Option<&str>) -> bool {
+    match (stored_hash.filter(|h| !h.trim().is_empty() && *h != UNREADABLE_CONFIG), std::env::var(PASSWORD_ENV_VAR)) {
+        (Some(hash), Ok(pw)) => !pw.is_empty() && verify_password(&pw, hash),
+        _ => false,
+    }
+}
+
+/// True when a person is provably at this command: a terminal on stdin, or the human password in the environment. A terminal alone proves
+/// less than it seems (Antigravity runs its shell commands in a pseudo-terminal), so `actor::current` weighs it against the process chain.
+pub fn is_proven_human(stored_hash: Option<&str>) -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() || password_proves_human(stored_hash)
+}
+
 /// Interactive password setup: prompts twice (no echo) and returns the
 /// confirmed secret. Never prints or logs the value.
 pub fn prompt_new_password() -> Result<String> {

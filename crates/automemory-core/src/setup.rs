@@ -44,7 +44,7 @@ pub const LEARN_TOPICS: &[LearnTopic] = &[
         id: "locks",
         title: "Advisory File Locks",
         summary: "Prevent concurrent agents from overwriting the same files",
-        content: "Advisory file and symbol locks prevent concurrent agents from overwriting the same code.\nWhen agent A edits a file, an automatic lease is held; agent B gets an immediate warning or deny.\n\nInspect active locks and recent lock coverage:\n  automemory locks\n  automemory locks --coverage\n\nManually release or override a lock:\n  automemory unlock src/main.rs\n  automemory unlock --force src/main.rs",
+        content: "File locks come from the optional Tracewise companion, not from AutoMemory.\nWith it installed, the first agent to edit a file holds it and a second agent is told who holds it and refused until the turn ends.\n\nSee and change the companion:\n  automemory companion\n  automemory companion install\n\nSee or release locks:\n  automemory locks\n  automemory unlock src/main.rs\n\nWithout Tracewise nothing is locked; memory, decisions and hand-offs work the same.",
     },
     LearnTopic {
         id: "handoff",
@@ -62,7 +62,7 @@ pub const LEARN_TOPICS: &[LearnTopic] = &[
         id: "modes",
         title: "Autopilot Safety Modes",
         summary: "Control autonomous agent authority: vibe, review, or strict",
-        content: "AutoMemory operates in three distinct autopilot guardrail modes:\n  - vibe:   Autonomous development; non-blocking warnings on risk.\n  - review: High-risk mutations (rm -rf, git push -f) generate review proposals.\n  - strict: High-risk operations are denied; strict lease collision blocking.\n\nView or change the current autopilot mode:\n  automemory mode\n  automemory mode set review\n  automemory mode set strict",
+        content: "AutoMemory operates in three distinct autopilot guardrail modes:\n  - vibe:   Autonomous development; non-blocking warnings on risk.\n  - review: High-risk mutations (rm -rf, git push -f) generate review proposals.\n  - strict: High-risk operations are denied.\n\nView or change the current autopilot mode:\n  automemory mode\n  automemory mode set review\n  automemory mode set strict",
     },
     LearnTopic {
         id: "export-rules",

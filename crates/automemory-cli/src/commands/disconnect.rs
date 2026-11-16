@@ -42,7 +42,7 @@ enum Removal {
     OwnedDir(PathBuf),
     /// Delete a file only if it still holds exactly what `connect` wrote.
     OwnedFile(PathBuf, String),
-    /// Remove our block from `.git/hooks/post-commit`.
+    /// Remove our blocks from `.git/hooks/post-commit` and `.git/hooks/pre-commit`.
     GitHook(PathBuf),
     /// Remove our marked block from an agent instruction file (the rest of the file stays).
     RulesBlock(PathBuf, &'static str),
@@ -495,7 +495,7 @@ fn describe(op: &Removal) -> String {
         Removal::OwnedDir(p) => format!("folder {}", p.display()),
         Removal::ExportedSkills(p) => format!("exported skills in {}", p.display()),
         Removal::OwnedFile(p, _) => format!("generated file {}", p.display()),
-        Removal::GitHook(p) => format!("git post-commit block in {}", p.display()),
+        Removal::GitHook(p) => format!("git post-commit and pre-commit blocks in {}", p.display()),
         Removal::RulesBlock(root, path) => format!("AutoMemory block in {}", root.join(path).display()),
         Removal::CodexToml(p) => format!("Codex MCP table in {}", p.display()),
     }
@@ -543,7 +543,9 @@ fn present(op: &Removal) -> bool {
         Removal::RulesBlock(root, path) => fs::read_to_string(root.join(path)).is_ok_and(|t| t.contains("<!-- automemory:begin")),
         Removal::GitHook(root) => {
             let git = automemory_core::sync::GitSync::resolve_git_canonical_root(root).unwrap_or(root.clone());
-            fs::read_to_string(git.join(".git/hooks/post-commit")).is_ok_and(|t| t.contains("AutoMemory") || t.contains("automemory post-commit"))
+            ["post-commit", "pre-commit"].iter().any(|h| {
+                fs::read_to_string(git.join(".git/hooks").join(h)).is_ok_and(|t| t.contains("AutoMemory") || t.contains("automemory post-commit") || t.contains("automemory pre-commit"))
+            })
         }
     }
 }
@@ -561,8 +563,15 @@ pub fn inventory(home: &Path, cwd: &Path) -> Vec<String> {
             }
         }
     }
+    // The workspace's git hooks and agent-file blocks are registrations too (the dry-run lists and counts them).
+    let mut extra = vec![Removal::GitHook(cwd.to_path_buf())];
+    extra.extend(super::rules_export::TARGETS.iter().map(|t| Removal::RulesBlock(super::rules_export::repo_root(cwd), t.path)));
+    for op in extra {
+        if present(&op) {
+            found.push(format!("workspace: {}", describe(&op)));
+        }
+    }
     found.sort();
-    found.dedup();
     found
 }
 

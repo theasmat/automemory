@@ -81,24 +81,7 @@
     <section aria-labelledby="locks-h" class="space-y-3">
       <h2 id="locks-h" class="text-lg font-semibold text-text">File locks</h2>
       <Card>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm text-text-muted mb-1" for="idle">Release a lock after this many minutes without activity</label>
-            <input id="idle" v-model.number="lockMinutes" type="number" min="1" max="1440" class="w-32 bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text" />
-          </div>
-          <div>
-            <label class="block text-sm text-text-muted mb-1" for="ign">Files that never take a lock (one pattern per line)</label>
-            <textarea id="ign" v-model="lockIgnore" rows="4" class="w-full bg-surface-2 border border-transparent rounded-xl px-3.5 py-2 text-sm text-text font-mono" />
-          </div>
-          <label class="flex items-center gap-3 text-sm text-text">
-            <input v-model="lockReconcile" type="checkbox" />
-            <span>After each shell command, check which files it changed and report the ones nobody had locked</span>
-          </label>
-          <div class="flex items-center gap-3">
-            <Button size="sm" variant="primary" lock="/api/settings/locks" :loading="busy === 'locks'" @click="saveLocks">Save</Button>
-            <span class="text-xs text-text-muted">Asks for your password.</span>
-          </div>
-        </div>
+        <p class="text-sm text-text-muted">File locks are provided by the Tracewise companion, and their settings live there (<code>tracewise config</code>). Without Tracewise installed nothing is locked.</p>
       </Card>
     </section>
 
@@ -166,36 +149,12 @@ const themes = [
   { id: 'dark', label: 'Dark' },
 ] as const;
 
-const lockMinutes = ref(10);
-const lockIgnore = ref('');
-const lockReconcile = ref(true);
 const activity = ref<any[]>([]);
 
 onMounted(async () => {
-  const l = await request<any>('/api/settings/locks');
-  if (l.ok && l.data) {
-    lockMinutes.value = Math.round((l.data.idle_ttl_seconds || 600) / 60);
-    lockIgnore.value = (l.data.ignore || []).join('\n');
-    lockReconcile.value = l.data.reconcile !== false;
-  }
   const a = await request<any[]>('/api/activity');
   if (a.ok && Array.isArray(a.data)) activity.value = a.data;
 });
-
-async function saveLocks() {
-  busy.value = 'locks';
-  try {
-    const r = await protectedCall('PUT', '/api/settings/locks', 'change lock settings', {
-      idle_ttl_seconds: Math.round(lockMinutes.value * 60),
-      ignore: lockIgnore.value.split('\n'),
-      reconcile: lockReconcile.value,
-    });
-    if (r.ok) toast.success('Lock settings saved. They apply from the next agent action.');
-    else toast.error(r.error || 'Not saved');
-  } finally {
-    busy.value = '';
-  }
-}
 
 async function startIntro() {
   await router.push('/');

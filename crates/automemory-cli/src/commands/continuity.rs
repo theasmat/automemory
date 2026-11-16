@@ -25,15 +25,21 @@ pub fn note(text: &str, kind: &str) -> Result<()> {
     let project = project_for(&db, &root);
     let now = chrono::Utc::now();
     let summary: String = text.lines().next().unwrap_or(text).chars().take(120).collect();
+    // `automemory note` tells every agent something "in plain words": trusted only when a person wrote it (see memory save).
+    let who = automemory_core::actor::current(automemory_core::auth::stored_password_hash().as_deref());
+    let person = who.is_human();
+    if !person {
+        eprintln!("note: saved as an unverified note written by '{}' (no terminal or human password here), so it is not exported into instruction files.", who.name);
+    }
     let mem = Memory {
         id: uuid::Uuid::now_v7().to_string(),
         scope: if project.is_some() { MemoryScope::Project } else { MemoryScope::Global },
         project_id: project.clone(),
         memory_type: kind.parse().map_err(|_| anyhow::anyhow!("type must be one of: fact, lesson, pattern, warning, preference"))?,
-        content: text.to_string(), summary, confidence: 1.0, importance: 0.8, freshness: 1.0,
-        status: MemoryStatus::Active, source_kind: MemorySourceKind::User, version: Some(1),
+        content: text.to_string(), summary, confidence: if person { 1.0 } else { 0.9 }, importance: 0.8, freshness: 1.0,
+        status: MemoryStatus::Active, source_kind: if person { MemorySourceKind::User } else { MemorySourceKind::Agent }, version: Some(1),
         created_at: now, updated_at: now, last_recalled_at: None, tags: vec![], entities: vec![],
-        metadata: serde_json::json!({}),
+        metadata: if person { serde_json::json!({}) } else { serde_json::json!({ "saved_by": who.name }) },
     };
     db.save_memory(&mem)?;
     super::rules_export::refresh_existing(&db, project.as_deref(), &root);

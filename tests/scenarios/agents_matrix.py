@@ -3,6 +3,7 @@
 with an instruction-file target receive the managed block and lose it again. Hook-level behaviour needs recorded
 payloads (tests/contract/fixtures); an agent without them stays labelled experimental.
 """
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,7 +20,9 @@ def main():
     s = Sandbox("matrix")
     try:
         s.mcp("project.register", slug="app", display_name="app", path=str(s.project))
-        s.run("note", "Always run pnpm, never npm")
+        # Only a person's note travels into instruction files: this script has no terminal, so the person proves themselves with the password.
+        subprocess.run([s.bin, "rule", "passwd", "--from-env"], env={**s.env, "AUTOMEMORY_PASSWORD": "pw one"}, cwd=s.project, capture_output=True, text=True)
+        subprocess.run([s.bin, "note", "Always run pnpm, never npm"], env={**s.env, "AUTOMEMORY_PASSWORD": "pw one"}, cwd=s.project, capture_output=True, text=True)
         for a in AGENTS:
             r = s.run("connect", a)
             rep.check(r.returncode == 0, f"{a}: connect succeeds", (r.stdout + r.stderr)[-200:])

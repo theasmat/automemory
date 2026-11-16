@@ -89,6 +89,10 @@ impl Database {
     pub fn sync_kv_set(&self, key: &str, value: &str) {
         let _ = set_kv(self, key, value);
     }
+
+    pub fn sync_kv_delete(&self, key: &str) {
+        let _ = self.conn().execute("DELETE FROM sync_kv WHERE key = ?1", params![key]);
+    }
 }
 
 fn get_kv(db: &Database, key: &str) -> Result<Option<String>> {
@@ -607,6 +611,7 @@ fn flag_decisions_in_conflict(db: &Database, decision_id: &str) -> Result<()> {
 /// - local fingerprint == last-synced → untouched → fast-forward apply.
 /// - incoming fingerprint == last-synced → remote stale → skip.
 /// - else both moved → conflict proposal, keep local.
+#[allow(clippy::too_many_arguments)]
 fn merge_one(
     db: &Database,
     applied: &HashMap<String, String>,

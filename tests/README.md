@@ -22,8 +22,7 @@ specific binary; otherwise the release build, then the debug build, is used.
 | Rust unit + integration | `cargo test --workspace` | Domain logic: guardrails, leases (incl. a multi-connection race), migrations, retrieval, sync deltas, overlap check, CodeIntel with a fake engine, dashboard origin guard, hook output formats |
 | Agent hook contract | `python3 tests/contract/run.py [agent]` | Recorded Claude Code, Codex and Antigravity payloads produce the right hook output (deny / warn / silent) |
 | Guardrail table | `python3 tests/guardrails/run.py` | What is blocked, what only warns, what must pass (false positives and bypasses live here) |
-| Two-agent collision | `python3 tests/scenarios/collision.py` | A second agent editing a leased file is told (Vibe) or denied (Strict) with no `lock.acquire`; unrelated files stay silent; parallel lease requests |
-| Automatic locking v2 | `python3 tests/scenarios/locking_v2.py` | Leases survive Stop and end at SessionEnd; shell writes are leased before they run; unpredictable script writes are caught afterwards and collisions reported; prompt lists others' files; ignored paths; coverage report |
+| Tracewise companion | `python3 tests/scenarios/companion.py` | The nested hook with a fake `tracewise` (deny, timeout, wrong API, notices, off) and, when built, the real one: second session refused by Tracewise's lock, released at Stop |
 | Session lifecycle | `python3 tests/scenarios/session_lifecycle.py` | Stop leaves a checkpoint memory for sessions that edited files |
 | Registration + hook robustness | `python3 tests/scenarios/registration.py` | `connect` for Antigravity/Claude/Codex then `disconnect all --everywhere` leaves nothing and keeps the user's files; a hook registered twice answers once; hooks never fail (corrupt database, empty or garbage input) |
 | Human password gate | `python3 tests/scenarios/human_gate.py` | With a password set, agents cannot decide proposals or change rules (MCP and CLI) |
@@ -83,7 +82,7 @@ database opening or hook startup.
 
 * **A bypass or a false block in the guardrails:** add a row to `guardrails/run.py` (`BLOCK`, `WARN` or `PASS`) and a Rust case in `crates/automemory-core/src/guardrails/evaluator.rs`. Assemble risky strings at runtime in Rust (`["r","m"].concat()`) so the repo's own guardrail does not refuse to write the test file.
 * **An agent changed its hook format:** record the new payload as a case in `contract/fixtures/<agent>/cases.json` (or a new `<version>.json` beside it), then fix the adapter until the whole file passes.
-* **A new scenario:** copy `scenarios/collision.py`; use `Sandbox` from `lib/harness.py` for an isolated HOME, `sb.hook(...)` to call a hook, and `sb.mcp(tool, **args)` to call an MCP tool.
+* **A new scenario:** copy `scenarios/reset.py`; use `Sandbox` from `lib/harness.py` for an isolated HOME, `sb.hook(...)` to call a hook, and `sb.mcp(tool, **args)` to call an MCP tool.
 * **Schema change:** bump `LATEST_SCHEMA_VERSION` in `db/connection.rs` with a migration; `a_fresh_database_reports_the_latest_schema_version` fails if you forget.
 
 ## Known limits

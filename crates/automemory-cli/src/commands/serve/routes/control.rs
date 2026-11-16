@@ -258,38 +258,37 @@ pub async fn api_agent_disconnect(State(state): State<AppState>, headers: Header
 #[derive(Deserialize)]
 pub struct ScopePayload { pub scope: String, pub project_id: Option<String> }
 
+/// Locks are Tracewise's. The dashboard buttons ask it (as the person at the dashboard) and report what it answered.
+fn tracewise_release(state: &AppState, project_id: Option<&str>, args: &[&str]) -> Response {
+    let settings = GlobalConfig::load().unwrap_or_default().companion;
+    let mut released = 0;
+    for dir in automemory_core::companion::project_dirs(&state.db, project_id) {
+        match automemory_core::companion::json_in(&settings, &state.db, &dir, args) {
+            Ok(v) => released += v["released"].as_i64().unwrap_or(0),
+            Err(e) => return bad(e),
+        }
+    }
+    Json(json!({ "released": released })).into_response()
+}
+
 pub async fn api_lock_release(State(state): State<AppState>, headers: HeaderMap, Json(p): Json<ScopePayload>) -> Response {
     if let Some(r) = protected(&state, &headers, "release a lock") { return r; }
-    match state.db.unlock_scope(p.project_id.as_deref(), &p.scope) { Ok(n) => Json(json!({ "released": n })).into_response(), Err(e) => bad(e.to_string()) }
+    tracewise_release(&state, p.project_id.as_deref(), &["lock", "release", &p.scope, "--json"])
 }
 
 pub async fn api_lock_stop(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(r) = protected(&state, &headers, "release every lock") { return r; }
-    match state.db.release_all_leases(None) { Ok(n) => Json(json!({ "released": n })).into_response(), Err(e) => bad(e.to_string()) }
+    tracewise_release(&state, None, &["lock", "release", "--all", "--json"])
 }
 
 // ── Settings and activity ───────────────────────────────────────────────────────────
+/// Lock settings now live in Tracewise (`tracewise config`); this answers what the page expects and says so.
 pub async fn api_settings_locks_get() -> Response {
-    Json(GlobalConfig::load().unwrap_or_default().locks).into_response()
+    Json(json!({ "managed_by": "tracewise", "ignore": [], "idle_ttl_seconds": 0, "reconcile": false })).into_response()
 }
 
-#[derive(Deserialize)]
-pub struct LockSettingsPayload {
-    pub ignore: Option<Vec<String>>,
-    pub idle_ttl_seconds: Option<i64>,
-    pub reconcile: Option<bool>,
-}
-
-pub async fn api_settings_locks_put(State(state): State<AppState>, headers: HeaderMap, Json(p): Json<LockSettingsPayload>) -> Response {
-    if let Some(r) = protected(&state, &headers, "change lock settings") { return r; }
-    let mut cfg = GlobalConfig::load().unwrap_or_default();
-    if let Some(v) = p.ignore { cfg.locks.ignore = v.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(); }
-    if let Some(t) = p.idle_ttl_seconds {
-        if !(30..=86_400).contains(&t) { return bad("idle time must be between 30 seconds and 24 hours"); }
-        cfg.locks.idle_ttl_seconds = t;
-    }
-    if let Some(r) = p.reconcile { cfg.locks.reconcile = r; }
-    match cfg.save() { Ok(()) => Json(json!({ "success": true })).into_response(), Err(e) => bad(e.to_string()) }
+pub async fn api_settings_locks_put() -> Response {
+    bad("lock settings moved to Tracewise: use `tracewise config set`")
 }
 
 /// Recent blocks and dashboard actions, newest first.

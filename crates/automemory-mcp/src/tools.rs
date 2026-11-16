@@ -3,7 +3,7 @@ use automemory_core::config::GlobalConfig;
 use automemory_core::db::Database;
 use automemory_core::models::*;
 use automemory_core::ports::{
-    trust_policy_for, AdvisoryLocks, BuiltinTrustPolicy, CodeIntel, FtsRetriever, LockStrategy,
+    trust_policy_for, BuiltinTrustPolicy, CodeIntel, HybridRetriever,
     MemoryStore, Retriever, TrustPolicy,
 };
 use automemory_core::redaction::redact_text;
@@ -16,6 +16,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Tool names that no longer exist, and what to call instead. A call by an old name gets this pointer rather than "unknown tool".
+/// Highest confidence an agent can give its own note; 0.95 and above reads as Verified (Tier 2).
+const AGENT_CONFIDENCE_CAP: f64 = 0.94;
+
 const PERSON_OWNED: &str = "A person wrote or pinned this note, so an agent cannot change, archive or restore it. Propose a change with memory.propose and a person decides.";
 
 const REMOVED: &[(&str, &str)] = &[
@@ -43,7 +46,7 @@ const REMOVED: &[(&str, &str)] = &[
 /// Tools that record who did something. Their `agent` argument is replaced by this server's own name (see `ToolRegistry::stamp`).
 /// Not the search tools: there `agent` filters chats by the agent that held them.
 const STAMPED: &[&str] = &[
-    "lock.acquire", "decision.record", "baton.pass", "continuity.brief", "room.join", "room.post", "library.put", "library.propose",
+    "decision.record", "baton.pass", "continuity.brief", "room.join", "room.post", "library.put", "library.propose",
     "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "task.next", "task.submit",
 ];
 
@@ -74,6 +77,64 @@ pub struct ToolRegistry {
     client: std::sync::Mutex<Option<String>>,
     /// Unique per running server: two servers are two connections, whatever session ids their callers claim.
     connection: String,
+    /// Tests: behave as a server started outside any workspace (in "/" or the home folder).
+    assume_outside_workspace: bool,
+}
+
+/// Progressive disclosure: the same rows without the note bodies, so an agent can scan many cheaply and `memory.get` the few it needs.
+/// Each row keeps its id, type, tier, status and summary and says how long the body is.
+pub(crate) fn to_index(mut result: ToolCallResult) -> ToolCallResult {
+    if result.is_error == Some(true) {
+        return result;
+    }
+    if let Some(item) = result.content.first_mut() {
+        if let Ok(mut rows) = serde_json::from_str::<Vec<Value>>(&item.text) {
+            for row in &mut rows {
+                if let Some(obj) = row.as_object_mut() {
+                    let chars = obj.remove("content").and_then(|c| c.as_str().map(|s| s.chars().count())).unwrap_or(0);
+                    obj.insert("content_chars".into(), json!(chars));
+                    obj.remove("tags");
+                }
+            }
+            item.text = serde_json::to_string_pretty(&rows).unwrap_or_default();
+        }
+    }
+    result
+}
+
+/// How many of `limit` result slots notes below the trusted tiers (agent claims, untrusted origin) may take when they are asked for.
+/// Measured in the literature: additive provenance weights did nothing against poisoned memory, hard occupancy caps did.
+pub(crate) fn low_tier_slots(limit: usize) -> usize {
+    (limit / 3).max(1)
+}
+
+/// The top `limit` of `ranked` (best first): trusted notes (tier 1 to 3) as ranked, plus at most `low_tier_slots` notes below them.
+/// Agent claims (tier 4, what another agent learned and nobody has checked) always compete for those slots, labelled as unverified, so
+/// agents on one long task can read each other's findings; untrusted origins (tier 5, quarantined) only when `include_untrusted` is set.
+/// A capped note is skipped, so a trusted one further down takes its place.
+pub(crate) fn cap_low_tiers(
+    ranked: Vec<(Memory, f64)>,
+    policy: &dyn TrustPolicy,
+    limit: usize,
+    include_untrusted: bool,
+) -> Vec<(Memory, f64)> {
+    let mut low = 0;
+    let cap = low_tier_slots(limit);
+    ranked
+        .into_iter()
+        .filter(|(m, _)| {
+            let tier = policy.tier(m);
+            if tier <= TrustTier::UserStatement {
+                return true;
+            }
+            if (tier == TrustTier::AgentClaim || include_untrusted) && low < cap {
+                low += 1;
+                return true;
+            }
+            false
+        })
+        .take(limit)
+        .collect()
 }
 
 /// Shared recall path: ranks through the Retriever port over the MemoryStore
@@ -95,10 +156,8 @@ pub(crate) fn recall_via(
     };
     match retriever.retrieve(query, project_id, fetch) {
         Ok(results) => {
-            let formatted: Vec<_> = results
+            let formatted: Vec<_> = cap_low_tiers(results, policy, limit, include_untrusted)
                 .into_iter()
-                .filter(|(m, _)| include_untrusted || policy.tier(m) <= TrustTier::UserStatement)
-                .take(limit)
                 .map(|(m, rank)| {
                     let tier = policy.tier(&m);
                     // The effective tier drives verification display too: a
@@ -119,6 +178,12 @@ pub(crate) fn recall_via(
                         "confidence": m.confidence,
                         "rank": rank,
                         "tags": m.tags,
+                        "label": if tier > TrustTier::UserStatement {
+                            format!("unverified: written by {}, not checked by a person or a test", m.metadata.get("saved_by").and_then(|v| v.as_str()).unwrap_or("an agent"))
+                        } else {
+                            String::new()
+                        },
+                        "saved_by": m.metadata.get("saved_by"),
                     })
                 })
                 .collect();
@@ -137,6 +202,17 @@ fn active_policy() -> Box<dyn TrustPolicy> {
 }
 
 impl ToolRegistry {
+    /// A folder that is no registered project gets a private scope of its own, named after its path: what is saved there is found there and
+    /// nowhere else, and nothing of any project is seen there.
+    fn folder_scope() -> String {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let mut h: u64 = 0xcbf29ce484222325; // FNV-1a: stable across Rust versions, unlike DefaultHasher
+        for b in cwd.to_string_lossy().bytes() {
+            h = (h ^ u64::from(b)).wrapping_mul(0x100000001b3);
+        }
+        format!("folder-{h:016x}")
+    }
+
     fn person_authored(&self, id: &str) -> bool {
         self.db.get_memory_by_id(id).ok().flatten().is_some_and(|m| m.is_person_authored())
     }
@@ -151,6 +227,7 @@ impl ToolRegistry {
             identity: identity.map(|i| canonical_agent(&i)).filter(|i| !i.is_empty()),
             client: std::sync::Mutex::new(None),
             connection: format!("conn-{}", uuid::Uuid::now_v7().simple()),
+            assume_outside_workspace: false,
         }
     }
 
@@ -166,6 +243,12 @@ impl ToolRegistry {
     }
 
     /// Who this server speaks for: the configured agent, else the client's own name, else nobody known.
+    /// The session id used when a caller leaves it out: the agent's name plus this connection, so the same agent keeps the same id
+    /// from `task.next` to `task.submit`, and the name prefix tells the task queue which agent is asking.
+    fn own_session(&self) -> String {
+        format!("{}-{}", self.agent_name().unwrap_or_else(|| "agent".into()), self.connection)
+    }
+
     pub fn agent_name(&self) -> Option<String> {
         self.identity.clone().or_else(|| self.client.lock().unwrap().as_deref().map(canonical_agent)).filter(|n| !n.is_empty())
     }
@@ -215,7 +298,8 @@ impl ToolRegistry {
                         "query": { "type": "string", "description": "Search query" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" },
                         "limit": { "type": "integer", "description": "Max results to return (default 5)" },
-                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" }
+                        "include_untrusted": { "type": "boolean", "description": "Also return Tier 4-5 agent claims (default false)" },
+                        "detail": { "type": "string", "enum": ["full", "index"], "description": "index = one short row per note (id, summary, tier, status, size) to scan cheaply; then memory.get the ones you need. Default full" }
                     },
                     "required": ["query"]
                 }),
@@ -397,6 +481,7 @@ impl ToolRegistry {
                         "achievements": { "type": "array", "items": { "type": "string" }, "description": "List of milestones achieved" },
                         "failures_resolved": { "type": "array", "items": { "type": "string" }, "description": "List of errors diagnosed and resolved" },
                         "files_modified": { "type": "array", "items": { "type": "string" }, "description": "Codebase files affected" },
+                        "symbols": { "type": "array", "items": { "type": "string" }, "description": "Functions or types the note is about; their hashes are recorded (when a code index is available) so a later edit elsewhere in the file does not mark the note changed" },
                         "tags": { "type": "array", "items": { "type": "string" } },
                         "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
                         "metadata": { "type": "object", "description": "Arbitrary extra metadata" }
@@ -603,37 +688,8 @@ impl ToolRegistry {
             },
             // Knowledge Graph Tools
             ToolDefinition {
-                name: "lock.acquire".to_string(),
-                description: "Acquire or renew a cooperative multi-agent lease on a file, glob pattern, or symbol. Rarely needed: edits are locked automatically by the hooks".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "scope": { "type": "string", "description": "Target resource: file path (e.g. 'src/auth/session.ts'), glob ('src/models/*.rs'), or symbol ('auth::login')" },
-                        "goal": { "type": "string", "description": "Clear explanation of what is being modified and why" },
-                        "scope_type": { "type": "string", "enum": ["file", "glob", "symbol"], "description": "Scope granularity (default 'file')" },
-                        "ttl_seconds": { "type": "integer", "description": "Lease duration in seconds (default 300)" },
-                        "agent": { "type": "string", "description": "Agent name or harness (e.g. 'claude-code', 'antigravity')" },
-                        "session_id": { "type": "string", "description": "Unique session identifier (default 'default-session')" },
-                        "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["scope", "goal"]
-                }),
-            },
-            ToolDefinition {
-                name: "lock.release".to_string(),
-                description: "Release a held resource lease, or all leases held by a session".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "session_id": { "type": "string", "description": "Session ID that holds the lease" },
-                        "scope": { "type": "string", "description": "Specific scope to release (if omitted, all leases held by session are released)" }
-                    },
-                    "required": ["session_id"]
-                }),
-            },
-            ToolDefinition {
                 name: "lock.status".to_string(),
-                description: "List currently active multi-agent resource leases and their remaining TTLs".to_string(),
+                description: "List the files other agents hold right now. The locks are Tracewise's (locks are taken automatically when an agent edits); without Tracewise installed this says so".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -712,14 +768,13 @@ impl ToolRegistry {
             },
             ToolDefinition {
                 name: "task.next".to_string(),
-                description: "Claim the oldest open work item (FIFO), or resume the one this session already holds".to_string(),
+                description: "Claim the open work item assigned to you, else the oldest open one (FIFO), or resume the one this session already holds".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "session_id": { "type": "string", "description": "Claiming session ID" },
+                        "session_id": { "type": "string", "description": "Claiming session ID (optional: this connection's own id is used when omitted)" },
                         "project_id": { "type": "string", "description": "Optional project ID or slug" }
-                    },
-                    "required": ["session_id"]
+                    }
                 }),
             },
             ToolDefinition {
@@ -729,10 +784,10 @@ impl ToolRegistry {
                     "type": "object",
                     "properties": {
                         "id": { "type": "string", "description": "Task ID" },
-                        "session_id": { "type": "string", "description": "Owning session ID" },
+                        "session_id": { "type": "string", "description": "Owning session ID (optional: this connection's own id is used when omitted)" },
                         "result": { "type": "string", "description": "What was done / review notes" }
                     },
-                    "required": ["id", "session_id"]
+                    "required": ["id"]
                 }),
             },
             ToolDefinition {
@@ -931,9 +986,6 @@ impl ToolRegistry {
     fn dispatch(&self, name: &str, arguments: &Value) -> ToolCallResult {
         let stamped = self.stamp(name, arguments);
         let arguments = &stamped;
-        if let Some(r) = self.folded(name, arguments) {
-            return r;
-        }
         let mut args = arguments.clone();
         if let Some(p) = args.get("project_id").and_then(|v| v.as_str()).map(String::from) {
             if self.db.get_project_by_id(&p).ok().flatten().is_none() {
@@ -944,8 +996,15 @@ impl ToolRegistry {
         }
         // A write with no project goes to the project of the folder this server runs in (agents start it in
         // the workspace), so decisions and notes are not saved as "global" and show up in that project's views.
+        // Reads without a project go to the same place: a session in one project must not be handed another project's decisions and notes (found in a
+        // live run, where a Ledgerly session was told about a "stale no-tax pricing decision" that belonged to a different project).
         const PROJECT_WRITES: &[&str] = &[
             "decision.record", "memory.save", "memory.propose", "trace.save", "failure.save", "task.create", "baton.pass", "continuity.brief", "chat.search", "library.list", "library.get", "library.search", "library.put", "library.propose",
+            "memory.recall", "memory.search", "memory.list", "memory.about", "decision.get", "failure.list", "trace.list", "preference.get",
+            // locks and the task queue too: with no project they matched every project, so two unrelated projects with a `src/app.py` collided and a task
+            // from another project could be claimed
+            "lock.status", "task.next", "memory.stats", "preference.set", "preference.lock", "room.join", "room.pending",
+            "memory.proposals.list", "memory.proposals.summary",
         ];
         let missing = args.get("project_id").and_then(|v| v.as_str()).is_none_or(|s| s.trim().is_empty());
         if missing && PROJECT_WRITES.contains(&name) {
@@ -957,9 +1016,25 @@ impl ToolRegistry {
                 let mut real = self.db.list_projects().unwrap_or_default().into_iter().filter(|p| p.id != "demo");
                 real.next().filter(|_| real.next().is_none())
             };
-            if let Some(p) = by_folder.or_else(sole) {
+            // A client that starts the server outside the workspace is placed by where its hooks last saw it working.
+            let by_agent = || self.agent_name().and_then(|a| self.db.recent_project_of_agent(&a, 6).ok().flatten());
+            // ...but only then. A server started in a real folder that is no registered project (a scratch repo, another product) gets no project:
+            // falling back to "where this agent last worked" or "the only project" handed Ledgerly's brief and decisions to a Codex session in an
+            // unrelated folder (live run, 2026-11-16).
+            let outside_workspace = self.assume_outside_workspace || std::env::current_dir().map_or(true, |d| {
+                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                d.parent().is_none() || home.as_deref() == Some(d.as_path())
+            });
+            let found = by_folder.or_else(|| if outside_workspace { by_agent().or_else(sole) } else { None });
+            if let Some(p) = found {
                 args["project_id"] = Value::String(p.id);
+            } else if !outside_workspace {
+                args["project_id"] = Value::String(Self::folder_scope());
             }
+        }
+        // merged tools (memory.list views, memory.search scopes, ...) get the resolved project too
+        if let Some(r) = self.folded(name, &args) {
+            return r;
         }
         self.call_tool_resolved(name, &args)
     }
@@ -981,10 +1056,9 @@ impl ToolRegistry {
                     .get("include_untrusted")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let store: &dyn MemoryStore = &*self.db;
-                let retriever = FtsRetriever::new(store);
-                let verifier = DecayVerifier::default();
-                recall_via(
+                let retriever = HybridRetriever::new(self.db.clone());
+                let verifier = DecayVerifier;
+                let result = recall_via(
                     &retriever,
                     &verifier,
                     active_policy().as_ref(),
@@ -992,7 +1066,36 @@ impl ToolRegistry {
                     project_id,
                     limit,
                     include_untrusted,
-                )
+                );
+                let result = if arguments.get("detail").and_then(|v| v.as_str()) == Some("index") { to_index(result) } else { result };
+                // A note an agent was handed counts as used, or the 60-day fade would bury notes that are recalled every day.
+                if result.is_error != Some(true) {
+                    let ids: Vec<String> = result
+                        .content
+                        .first()
+                        .and_then(|c| serde_json::from_str::<Vec<Value>>(&c.text).ok())
+                        .unwrap_or_default()
+                        .iter()
+                        .filter_map(|m| m["id"].as_str().map(String::from))
+                        .collect();
+                    self.db.mark_recalled(&ids);
+                    // The ledger records reads too: what was handed to whom, at which tier, so a poisoned note can be traced to every answer it shaped.
+                    let tiers: Vec<Value> = result
+                        .content
+                        .first()
+                        .and_then(|c| serde_json::from_str::<Vec<Value>>(&c.text).ok())
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|m| json!({ "id": m["id"], "tier": m["trust_tier"] }))
+                        .collect();
+                    let _ = self.db.log_audit(
+                        "memory.recall.served",
+                        "memory",
+                        &self.connection,
+                        &json!({ "query_chars": query.chars().count(), "include_untrusted": include_untrusted, "served": tiers }),
+                    );
+                }
+                result
             }
             "memory.about" => {
                 let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
@@ -1003,11 +1106,11 @@ impl ToolRegistry {
                         "system": "AutoMemory shares verified facts, architectural decisions, and file locks across your coding agents with zero staleness.",
                         "glossary": {
                             "project_brain": "Verified facts, architectural decisions, and lessons shared with every agent session. Decisions outrank notes and are presented first.",
-                            "file_locks": "Automatic leases that prevent concurrent agents from colliding and overwriting the same code.",
+                            "file_locks": "Provided by Tracewise when it is installed: locks that stop concurrent agents from overwriting the same file.",
                             "handoff_notes": "A compact context packet (under 400 tokens) passed between sessions to resume immediately where the last session stopped.",
                             "suggestions_inbox": "Proposals waiting for human review. Approved suggestions become permanent project knowledge.",
                             "project_rules": "Active project constraints and conventions exported to AGENTS.md, CLAUDE.md, etc.",
-                            "safety_modes": "Relaxed (warnings only), Balanced (blocks risky commands and colliding edits), Strict (requires lock for every edit).",
+                            "safety_modes": "Relaxed (warnings only), Balanced (blocks risky commands and colliding edits), Strict (blocks risky commands).",
                             "sync_vault": "Encrypted git repository synchronizing memory across laptops and desktops."
                         },
                         "cli_commands": {
@@ -1417,10 +1520,12 @@ impl ToolRegistry {
                     .get("project_id")
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                // An agent's own confidence is not evidence: it stays below the Verified line (0.95) until a check or a person raises it.
                 let confidence = arguments
                     .get("confidence")
                     .and_then(|v| v.as_f64())
-                    .unwrap_or(0.9);
+                    .unwrap_or(0.9)
+                    .min(AGENT_CONFIDENCE_CAP);
                 let tags = arguments
                     .get("tags")
                     .and_then(|v| v.as_array())
@@ -1446,10 +1551,42 @@ impl ToolRegistry {
                 }
                 if let Some(custom_meta) = arguments.get("metadata").and_then(|v| v.as_object()) {
                     for (k, v) in custom_meta {
-                        metadata_map.insert(k.clone(), v.clone());
+                        // The trust tier is decided by the system (source, checks, a person), never by the caller.
+                        if k != "trust_tier" {
+                            metadata_map.insert(k.clone(), v.clone());
+                        }
                     }
                 }
 
+                // Symbol hashes come from the code index, never from the caller.
+                metadata_map.remove("symbol_hashes");
+                let symbols: Vec<&str> = arguments
+                    .get("symbols")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|s| s.as_str()).collect())
+                    .unwrap_or_default();
+                if !symbols.is_empty() {
+                    metadata_map.insert("symbols".to_string(), json!(symbols));
+                    let root = std::env::current_dir().unwrap_or_default();
+                    if let Some(intel) = automemory_core::codeintel::CbmCodeIntel::detect(&root) {
+                        let hashes: serde_json::Map<String, Value> = symbols
+                            .iter()
+                            .filter_map(|s| intel.symbol_hash(None, s).map(|h| (s.to_string(), json!(h))))
+                            .collect();
+                        if !hashes.is_empty() {
+                            metadata_map.insert("symbol_hashes".to_string(), Value::Object(hashes));
+                        }
+                    }
+                }
+
+                if let Some(who) = arguments.get("agent").and_then(|v| v.as_str()) {
+                    metadata_map.insert("saved_by".to_string(), json!(who));
+                }
+                // Write policy: a note the repository already shows is kept out of recall as a candidate, with the reason, and a person can promote it.
+                let derivable = automemory_core::write_policy::derivable(mem_type, &summary, &content);
+                if let Some(why) = derivable {
+                    metadata_map.insert("write_policy".to_string(), json!(why));
+                }
                 let mem = Memory {
                     id: Uuid::now_v7().to_string(),
                     scope,
@@ -1460,7 +1597,7 @@ impl ToolRegistry {
                     confidence,
                     importance: 0.8,
                     freshness: 1.0,
-                    status: MemoryStatus::Active,
+                    status: if derivable.is_some() { MemoryStatus::Candidate } else { MemoryStatus::Active },
                     source_kind: MemorySourceKind::Agent,
                     version: Some(1),
                     created_at: Utc::now(),
@@ -1472,6 +1609,10 @@ impl ToolRegistry {
                 };
 
                 match self.db.save_memory(&mem) {
+                    Ok(_) if derivable.is_some() => ToolCallResult::json(&json!({
+                        "saved": true, "id": mem.id, "status": "candidate",
+                        "note": format!("Kept out of recall: this {}. Save what the code cannot show: decisions and why, constraints, gotchas, failures with their fixes.", derivable.unwrap_or_default()),
+                    })),
                     Ok(_) => ToolCallResult::json(&json!({ "saved": true, "id": mem.id })),
                     Err(e) => ToolCallResult::error(format!("Failed to save memory: {}", e)),
                 }
@@ -1848,137 +1989,21 @@ impl ToolRegistry {
             // ==========================================
             // Multi-Agent Lock & Lease Coordination Tools
             // ==========================================
-            "lock.acquire" => {
-                let scope = match arguments.get("scope").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: scope"),
-                };
-                let goal = match arguments.get("goal").and_then(|v| v.as_str()) {
-                    Some(g) => g,
-                    None => return ToolCallResult::error("Missing required parameter: goal"),
-                };
-                let scope_type = arguments
-                    .get("scope_type")
-                    .and_then(|v| v.as_str())
-                    .map(LeaseScopeType::from)
-                    .unwrap_or(LeaseScopeType::File);
-                let ttl_seconds = arguments
-                    .get("ttl_seconds")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(300);
-                let agent = arguments
-                    .get("agent")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("agent");
-                let session_id = arguments
-                    .get("session_id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("default-session");
-                let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-
-                let strategy: &dyn LockStrategy = &AdvisoryLocks::new(&self.db);
-                match strategy.acquire(LeaseAcquireArgs {
-                    project_id,
-                    agent,
-                    session_id,
-                    scope,
-                    scope_type,
-                    goal,
-                    ttl_seconds,
-                }) {
-                    Ok(LeaseAcquireResult::Acquired { lease }) => {
-                        let result_payload = json!({
-                            "status": "granted",
-                            "lease_id": lease.id,
-                            "scope": lease.scope,
-                            "scope_type": lease.scope_type.to_string(),
-                            "ttl_seconds": lease.ttl_seconds,
-                            "expires_at": lease.expires_at.to_rfc3339(),
-                            "next_action": format!("Lease granted on '{}'. Proceed with edits, then call lock.release when finished.", lease.scope)
-                        });
-                        ToolCallResult::json(&result_payload)
-                    }
-                    Ok(LeaseAcquireResult::Renewed { lease }) => {
-                        let result_payload = json!({
-                            "status": "renewed",
-                            "lease_id": lease.id,
-                            "scope": lease.scope,
-                            "ttl_seconds": lease.ttl_seconds,
-                            "expires_at": lease.expires_at.to_rfc3339(),
-                            "next_action": format!("Lease renewed on '{}'. Continue your task.", lease.scope)
-                        });
-                        ToolCallResult::json(&result_payload)
-                    }
-                    Ok(LeaseAcquireResult::Conflict { conflict }) => {
-                        let result_payload = json!({
-                            "status": "conflict",
-                            "message": format!("Resource '{}' is currently leased by another agent.", conflict.scope),
-                            "conflict": {
-                                "holder_agent": conflict.holder_agent,
-                                "holder_session_id": conflict.holder_session_id,
-                                "goal": conflict.goal,
-                                "remaining_seconds": conflict.remaining_seconds,
-                                "expires_at": conflict.expires_at.to_rfc3339(),
-                            },
-                            "next_action": format!("Wait for lease to expire ({}s remaining), or switch to another task.", conflict.remaining_seconds)
-                        });
-                        ToolCallResult::json(&result_payload)
-                    }
-                    Err(e) => ToolCallResult::error(format!("Failed to acquire lease: {}", e)),
-                }
-            }
-
-            "lock.release" => {
-                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: session_id"),
-                };
-                let scope = arguments.get("scope").and_then(|v| v.as_str());
-
-                match self.db.release_leases(session_id, scope) {
-                    Ok(count) => {
-                        let result_payload = json!({
-                            "status": "released",
-                            "released_count": count,
-                            "scope": scope,
-                            "next_action": "Lease released. Other agents may now modify this resource."
-                        });
-                        ToolCallResult::json(&result_payload)
-                    }
-                    Err(e) => ToolCallResult::error(format!("Failed to release lease: {}", e)),
-                }
-            }
+            "lock.acquire" | "lock.release" => ToolCallResult::error(
+                "lock.acquire and lock.release were removed: locks come from Tracewise and are taken automatically when you edit a file. See lock.status or `tracewise lock list`.",
+            ),
 
             "lock.status" => {
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
-
-                match self.db.list_active_leases(project_id) {
-                    Ok(leases) => {
-                        let now = Utc::now();
-                        let items: Vec<_> = leases
-                            .into_iter()
-                            .map(|l| {
-                                let rem = l.remaining_seconds(now);
-                                json!({
-                                    "id": l.id,
-                                    "scope": l.scope,
-                                    "scope_type": l.scope_type.to_string(),
-                                    "agent": l.agent,
-                                    "goal": l.goal,
-                                    "remaining_seconds": rem,
-                                    "expires_at": l.expires_at.to_rfc3339(),
-                                })
-                            })
-                            .collect();
-
-                        let result_payload = json!({
-                            "active_leases": items,
-                            "count": items.len(),
-                            "next_action": "Use lock.acquire to lease a file/symbol before modifying it, or lock.release to yield."
-                        });
-                        ToolCallResult::json(&result_payload)
-                    }
-                    Err(e) => ToolCallResult::error(format!("Failed to list active leases: {}", e)),
+                let dir = project_id
+                    .and_then(|p| self.db.get_project_paths(p).ok())
+                    .and_then(|v| v.into_iter().map(|x| std::path::PathBuf::from(x.local_path)).find(|d| d.is_dir()))
+                    .or_else(|| std::env::current_dir().ok())
+                    .unwrap_or_default();
+                let settings = GlobalConfig::load().unwrap_or_default().companion;
+                match automemory_core::companion::json_in(&settings, &self.db, &dir, &["lock", "list", "--json"]) {
+                    Ok(v) => ToolCallResult::json(&json!({ "source": "tracewise", "locks": v, "next_action": "Pick a file nobody holds, or wait; locks are released when the holder's turn ends." })),
+                    Err(msg) => ToolCallResult::json(&json!({ "source": "none", "locks": [], "note": msg })),
                 }
             }
 
@@ -2044,11 +2069,28 @@ impl ToolRegistry {
                     evidence: &evidence,
                 }) {
                     Ok(rec) => {
-                        let payload = json!({
+                        // The decision is about these symbols: remember their hashes so a later change to one marks the note changed.
+                        if !symbols.is_empty() {
+                            let root = std::env::current_dir().unwrap_or_default();
+                            if let Some(intel) = automemory_core::codeintel::CbmCodeIntel::detect(&root) {
+                                let hashes: serde_json::Map<String, Value> = symbols
+                                    .iter()
+                                    .filter_map(|s| intel.symbol_hash(None, s).map(|h| (s.clone(), json!(h))))
+                                    .collect();
+                                let _ = self.db.set_decision_symbol_hashes(&rec.id, &hashes);
+                            }
+                        }
+                        // A decision that walks back into something the brief rules out is flagged for a person (never blocked).
+                        let warnings = self.db.flag_ruled_out_conflicts(&rec).unwrap_or_default();
+                        let mut payload = json!({
                             "status": "recorded",
                             "decision": rec,
                             "next_action": format!("Decision for '{}' recorded. Call decision.get(\"{}\") to retrieve active policy and dissent.", rec.topic, rec.topic)
                         });
+                        if !warnings.is_empty() {
+                            payload["warnings"] = json!(warnings);
+                            payload["next_action"] = json!("Read the warnings: the brief rules something out that this decision brings back. Continue only if the user asked for it, and say so in your reply.");
+                        }
                         ToolCallResult::json(&payload)
                     }
                     Err(e) => ToolCallResult::error(format!("Failed to record decision: {}", e)),
@@ -2179,10 +2221,8 @@ impl ToolRegistry {
             }
 
             "task.next" => {
-                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: session_id"),
-                };
+                let own = self.own_session();
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or(&own);
                 let project_id = arguments.get("project_id").and_then(|v| v.as_str());
 
                 match self.db.claim_next_task(project_id, session_id) {
@@ -2190,7 +2230,7 @@ impl ToolRegistry {
                         let next_action = if task.symbols.is_empty() {
                             "Implement the spec, then call task.submit with the result.".to_string()
                         } else {
-                            format!("Call lock.acquire for {:?}, implement the spec, then call task.submit.", task.symbols)
+                            format!("Implement the spec for {:?}, then call task.submit.", task.symbols)
                         };
                         ToolCallResult::json(&json!({ "task": task, "next_action": next_action }))
                     }
@@ -2208,10 +2248,8 @@ impl ToolRegistry {
                     Some(s) => s,
                     None => return ToolCallResult::error("Missing required parameter: id"),
                 };
-                let session_id = match arguments.get("session_id").and_then(|v| v.as_str()) {
-                    Some(s) => s,
-                    None => return ToolCallResult::error("Missing required parameter: session_id"),
-                };
+                let own = self.own_session();
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or(&own);
                 let result = arguments
                     .get("result")
                     .or_else(|| arguments.get("notes"))
@@ -2222,7 +2260,7 @@ impl ToolRegistry {
                     Ok(true) => ToolCallResult::json(&json!({
                         "status": "submitted",
                         "id": id,
-                        "next_action": "Call lock.release for symbols you leased, then baton.pass to hand context on."
+                        "next_action": "Call baton.pass to hand context on."
                     })),
                     Ok(false) => {
                         ToolCallResult::error("Submit refused: task is not claimed by this session")
@@ -2580,5 +2618,116 @@ impl ToolRegistry {
 
             unknown => ToolCallResult::error(format!("Unknown tool: {}", unknown)),
         }
+    }
+}
+
+#[cfg(test)]
+mod cap_tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn note(id: &str, tier: u8) -> (Memory, f64) {
+        let now = Utc::now();
+        let mut m = Memory {
+            id: id.to_string(),
+            scope: MemoryScope::Project,
+            project_id: None,
+            memory_type: MemoryType::Fact,
+            content: String::new(),
+            summary: id.to_string(),
+            confidence: 0.5,
+            importance: 0.5,
+            freshness: 1.0,
+            status: MemoryStatus::Active,
+            source_kind: MemorySourceKind::Agent,
+            version: Some(1),
+            created_at: now,
+            updated_at: now,
+            last_recalled_at: None,
+            tags: vec![],
+            entities: vec![],
+            metadata: serde_json::json!({}),
+        };
+        m.set_trust_tier(TrustTier::from_u8(tier));
+        (m, 1.0)
+    }
+
+    fn ids(v: Vec<(Memory, f64)>) -> Vec<String> {
+        v.into_iter().map(|(m, _)| m.id).collect()
+    }
+
+    #[test]
+    fn agent_claims_are_shown_in_their_slot_and_untrusted_origins_are_withheld_by_default() {
+        let ranked = vec![note("a", 4), note("b", 1), note("c", 5), note("d", 3), note("e", 4)];
+        assert_eq!(ids(cap_low_tiers(ranked, &BuiltinTrustPolicy, 5, false)), ["a", "b", "d"], "one agent claim fits; the second and the tier 5 do not");
+    }
+
+    #[test]
+    fn asked_for_untrusted_notes_take_only_their_slots() {
+        // limit 6: two low-tier slots, so the third and fourth low-tier notes are skipped and trusted ones further down move up
+        let ranked = vec![note("l1", 4), note("l2", 5), note("l3", 4), note("l4", 4), note("t1", 2), note("t2", 3), note("t3", 1)];
+        let got = ids(cap_low_tiers(ranked, &BuiltinTrustPolicy, 6, true));
+        assert_eq!(got, ["l1", "l2", "t1", "t2", "t3"]);
+        assert_eq!(low_tier_slots(2), 1, "a small limit still lets one through");
+    }
+
+    #[test]
+    fn index_rows_drop_the_body_and_report_its_size() {
+        let body = "x".repeat(400);
+        let full = ToolCallResult::json(&json!([{"id": "a", "summary": "s", "content": body, "tags": ["t"], "trust_tier": 1}]));
+        let index = to_index(full.clone());
+        let rows: Vec<Value> = serde_json::from_str(&index.content[0].text).unwrap();
+        assert_eq!(rows[0]["content_chars"], 400);
+        assert!(rows[0].get("content").is_none() && rows[0].get("tags").is_none());
+        assert!(index.content[0].text.len() * 3 < full.content[0].text.len(), "the index is far smaller");
+        assert_eq!(rows[0]["id"], "a");
+    }
+
+    #[test]
+    fn a_recall_leaves_a_read_record_with_tiers() {
+        let db = std::sync::Arc::new(Database::open_in_memory().unwrap());
+        let (m, _) = note("n1", 1);
+        db.save_memory_direct(&Memory { summary: "refund webhook".into(), content: "refund webhook retries".into(), scope: MemoryScope::Global, ..m }).unwrap();
+        let reg = ToolRegistry::new(db.clone());
+        let r = reg.call_tool("memory.recall", &json!({"query": "refund webhook"}));
+        assert!(r.is_error != Some(true));
+        let rows: i64 = db.conn().query_row("SELECT COUNT(*) FROM audit_log WHERE action = 'memory.recall.served' AND details LIKE '%\"tier\":1%'", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn a_layout_note_is_saved_as_a_candidate_with_the_reason() {
+        let db = std::sync::Arc::new(Database::open_in_memory().unwrap());
+        let reg = ToolRegistry::new(db.clone());
+        let r = reg.call_tool("memory.save", &json!({"content": "src/ holds the code, crates/ the libraries", "summary": "Project structure", "type": "fact"}));
+        assert!(r.content[0].text.contains("candidate") && r.content[0].text.contains("repository already shows"), "{}", r.content[0].text);
+        let kept = reg.call_tool("memory.save", &json!({"content": "never floats for money", "summary": "Money is integer cents", "type": "fact"}));
+        assert!(!kept.content[0].text.contains("candidate"));
+    }
+
+    #[test]
+    fn a_write_from_a_server_outside_the_workspace_goes_to_the_project_its_agent_was_working_in() {
+        let db = std::sync::Arc::new(Database::open_in_memory().unwrap());
+        let mut reg = ToolRegistry::with_identity(db.clone(), Some("agy".into()));
+        reg.assume_outside_workspace = true;
+        // two real projects, so "the only project" cannot decide; this test process runs in no registered folder
+        let a = reg.call_tool("project.register", &json!({"slug": "alpha", "display_name": "alpha", "path": "/tmp/am-alpha-none"}));
+        let b = reg.call_tool("project.register", &json!({"slug": "beta", "display_name": "beta", "path": "/tmp/am-beta-none"}));
+        let beta: Value = serde_json::from_str(&b.content[0].text).unwrap();
+        assert!(a.is_error != Some(true));
+        db.conn()
+            .execute(
+                &format!(
+                    "INSERT INTO tool_events (event_id, event_type, session_id, project_id, agent_adapter, status, sensitivity, timestamp, processed) VALUES ('e1', 'tool', 's', '{}', 'agy', 'success', 'normal', '{}', 0)",
+                    beta["id"].as_str().unwrap(),
+                    chrono::Utc::now().to_rfc3339()
+                ),
+                [],
+            )
+            .unwrap();
+        let r = reg.call_tool("decision.record", &json!({"topic": "t", "decision": "d", "reason": "because it is so"}));
+        assert!(r.is_error != Some(true), "{}", r.content[0].text);
+        let project: Option<String> = db.conn().query_row("SELECT project_id FROM decisions WHERE topic = 't'", [], |r| r.get(0)).unwrap();
+        assert_eq!(project.as_deref(), beta["id"].as_str(), "not left global");
     }
 }

@@ -22,8 +22,13 @@ echo "binary under test: $AUTOMEMORY_BIN"
 run "rust unit + integration tests"   cargo test --workspace
 run "agent hook contract"             python3 tests/contract/run.py
 run "guardrail table"                 python3 tests/guardrails/run.py
-run "two-agent collision"             python3 tests/scenarios/collision.py
-run "automatic locking v2"          python3 tests/scenarios/locking_v2.py
+run "Tracewise companion (nested hook)" python3 tests/scenarios/companion.py
+run "Tracewise companion command"     python3 tests/scenarios/companion_setup.py
+run "unregistered folder isolation"      python3 tests/scenarios/unregistered_folder.py
+run "long task across two agents"   python3 tests/scenarios/long_task.py
+run "reset all data"                python3 tests/scenarios/reset.py
+run "agent name from process chain" python3 tests/scenarios/agent_name.py
+run "nightly tidy"                  python3 tests/scenarios/tidy.py
 run "session lifecycle"               python3 tests/scenarios/session_lifecycle.py
 run "two machines (git vault)"        python3 tests/scenarios/two_machines.py
 run "embeddings modes"                python3 tests/scenarios/embeddings_modes.py

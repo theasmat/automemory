@@ -310,6 +310,19 @@ impl<'a> TrajectoryDistiller<'a> {
         let _ = self.db.save_trace(&synthesized_trace);
 
         // 5. Synthesize 1 High-Signal Crystallized Memory
+        // A session that touched no file and resolved no failure has nothing to remember: the trace above keeps its steps, but a note that only
+        // says "N events became M steps" is noise every agent would pay tokens to read (and it used to rank as a verified fact).
+        if files_modified.is_empty() && resolved_failures.is_empty() {
+            return Ok(DistillationReport {
+                session_id: session_id.to_string(),
+                project_id,
+                total_raw_events,
+                pruned_events,
+                synthesized_trace: Some(synthesized_trace),
+                synthesized_memory: None,
+                resolved_failures,
+            });
+        }
         let mem_type = if !resolved_failures.is_empty() {
             MemoryType::Lesson
         } else if !files_modified.is_empty() {
@@ -395,7 +408,8 @@ impl<'a> TrajectoryDistiller<'a> {
             memory_type: mem_type,
             content,
             summary,
-            confidence: reproducibility_score,
+            // A reflection of what an agent did is a claim, not a verified fact: keep it under the line that reads as Verified (0.95).
+            confidence: reproducibility_score.min(0.94),
             importance: 0.90,
             freshness: 1.0,
             status: MemoryStatus::Active,

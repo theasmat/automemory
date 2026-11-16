@@ -2,6 +2,46 @@
 
 What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](docs/roadmap.md).
 
+## Memory quality plan, step 1 (recall eval)
+
+### Added
+- `automemory companion [status|install|auto|on|off]` for the Tracewise companion: state, probe time, duplicate-hook warning, and a checksummed install from Tracewise's release (macOS, asks first). The installer asks once. `doctor` shows the companion's version, API and answer time; `connect` removes Tracewise's own hook registration for the agent, since AutoMemory's hook now calls it.
+
+### Removed
+- AutoMemory no longer locks files. Locks, shell-write tracking and collision notices come from the Tracewise companion; without it nothing is locked. Gone: the lease tables (schema 23 drops them), MCP `lock.acquire` and `lock.release` (47 tools now), the `[locks]` settings, `[defaults] auto_lease`, `[companion] own_locks`, the idle-holder watcher in `serve`, and the lock scenarios. `automemory locks`, `unlock`, `stop`, MCP `lock.status` and the dashboard's locks list/release now ask Tracewise.
+
+### Added
+- Optional Tracewise companion: the hook calls `tracewise hook --neutral` inside itself (strictest decision wins, fails open on missing, slow or other-API Tracewise), `[companion]` config, a `doctor` line. `own_locks = false` hands locking to Tracewise; the old locks stay until the next phase. Nested call costs about 3.5 ms.
+
+- `automemory eval recall [file]` scores recall@5, nDCG@10 and MRR per query kind on a labelled set; a 40-note, 48-query synthetic starter set is in `tests/eval/recall/` (baseline recall@5 0.938; paraphrase queries 0.750)
+- Research report on improving the memory system and a 15-item plan in the roadmap; decisions recorded for write policy, tier caps, decay and what is deliberately not built
+- Keyword recall retries with developer-vocabulary synonyms when a question finds nothing with all its words (`[retrieval] synonyms` adds project groups; `AUTOMEMORY_NO_SYNONYMS=1` turns it off): on the synthetic set paraphrase recall@5 0.750 to 0.917, overall 0.946 to 0.982, about 0.1 ms more per recall at 5,000 notes
+- Long tasks across agents: another agent's unchecked note is now recallable in a capped, labelled slot (`trust_policy = "strict"` keeps withholding it); a compaction makes the next prompt hand the brief and decisions over again; hand-off files are project-relative; `tests/scenarios/long_task.py` runs the whole story
+- Found in the first live two-agent run (Antigravity then Codex): a decision or note written through an MCP server that the client started outside the workspace was saved as global, so the next agent's resume never showed it; it now goes to the project where that agent's hooks last saw it working (within 6 hours)
+- The session distiller no longer writes "N events became M steps" notes for sessions that touched no file and resolved no failure, and its notes can no longer rank as verified facts (confidence stays under 0.95)
+- `automemory reset [--include-backups] [--yes]` deletes all AutoMemory data (every project's notes, decisions, brief, library, local sync vault). It needs a human password that exists and matches (it refuses when none is set, and an agent has no terminal or password), asks for a typed confirmation, and refuses while the daemon or an agent has the database open. Settings, the password, the device id, agent registrations and (unless asked) backups stay
+- `automemory decision record` only counts as a person's when run in a terminal or with the human password in the environment; from an agent's shell it is recorded as written by `shell` (the live run showed Claude's decisions labelled "Decided by: Human" and exported as a person's)
+- `--project auto` on `automemory decision record|get` means "this folder's project" (agents copy it from the hook commands); it used to create a project literally named `auto`, which left two active decisions on one topic
+- Files in the system temp folders no longer take locks or appear as "holding" in a hand-off
+- Long sessions are told the brief again after about 25 prompts or 3 hours (Antigravity: 120 steps), because only Claude says when it compacts; a compaction on Claude still triggers it at once
+- A decision that brings back something the brief rules out (by shared words; the project's own subject word alone does not count; a decision that says "no" to it agrees) is recorded with a warning to the agent and a `rule_conflict` item in the Inbox for a person; it is never blocked
+- The author of a command run from a shell is found, not typed: a person at a terminal (or with the human password in the environment) is `human`; otherwise the nearest known agent in the process chain (claude, codex, agy, cursor, gemini; one table line adds another), then the agent's environment variables, then `shell`. It applies to `decision record`, `note` and `memory save`: an agent running `automemory note` used to write a trusted human note that was exported into every agent's instructions; it is now an unverified note labelled with its name
+- `automemory tidy [--dry-run]` and a nightly run in `serve`: repeated notes, notes about files that are gone and unused notes are put in the Inbox for you to approve; nothing is archived by the pass itself; `doctor` shows when it last ran
+- Reads without a named project (`memory.recall`, `memory.search`, `memory.list`, `memory.about`, `decision.get`, `failure.list`, `trace.list`, `preference.get`) go to the project of the folder or the agent's last project, so a session never receives another project's decisions and notes (a Ledgerly session was told to resolve a "no-tax decision" that belonged to another project)
+- Locks, the task queue, rooms, preferences, stats and the Inbox listing now also default to the folder's project: with no project, `lock.acquire` collided with other projects' locks on the same relative path (`src/app.py`) and `lock.status` listed all of them
+- The resume pack's "Last session" line drops the next step frozen into the old checkpoint when the brief has current next steps
+- At the terminal, `decision list`, `memory list` and `memory search` default to this folder's project (`--all` for everything); `decision show` / `decision get` accept a decision id, and `library list` works as `library ls` (an Antigravity session guessed all three)
+- The ruled-out check no longer flags agreeing decisions: it judges the ruling by its first sentence, needs three shared words (or two that are a quarter of it) for a long ruling, and treats "invoice", "invoicing" and "invoiced" as one word (seen live: integer-cent pricing was flagged against "no floating-point money" because of the word "point")
+- When an agent ends a turn (Stop) its locks shrink to 60 seconds (`[locks] stop_grace_seconds`, 0 turns it off) instead of waiting out the 10-minute idle time, so another agent is not kept out after the first has finished; any new activity of that session restores the full time (an Antigravity session stopped and waited on a finished Codex session's locks)
+- Trust tiers cap result slots: agent claims and untrusted notes asked for with `include_untrusted` take at most a third of the slots
+- Staleness by age depends on the kind of note: decisions, preferences and person-written notes never read `stale` by age alone; facts 30 days, lessons and warnings 90 (it used to be 14 days for everything)
+- `memory.recall detail: "index"` returns short rows without bodies; every recall is recorded in the audit log with the tiers served
+- `memory.save` keeps notes that only restate the repository (layout, overviews, standard commands) out of recall as candidates, with the reason
+- More secret shapes redacted at write (Slack, Stripe, Google, npm, SendGrid, GitLab, Hugging Face, URL passwords, AWS secret keys)
+- `automemory export` / `import`: versioned JSON of notes and decisions (tier and evidence kept) and a Markdown folder; import never overwrites and needs the password
+- `automemory backup drill` proves the newest backup restores; the daemon saves a daily backup and runs a weekly drill; `doctor` shows the drill's age; restore checks its own copy before swapping
+- Clippy-clean again (`-D warnings`)
+
 ## Foundations
 
 - Worktree-aware project resolution, shared leases; committed
@@ -147,6 +187,33 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 - Agent rules, skill and Cursor rules now say to do only what was asked: no commits, pushes, hand-offs or saved lessons unless the person asks (X8; the live trial is still open)
 - Secrets are redacted at the database write boundary for memories, decisions, failures and traces, whichever path wrote them (MCP, hook, CLI, sync)
 - The resume pack says its notes are recorded data, not instructions
+
+## Verification sprint fixes, third pass
+
+- Decisions record symbol hashes (`decision.record` with `symbols`); PostCommit marks the decision's memory `changed` when a symbol's hash moved, with no file link needed
+- Schema v22 drops the unused `memory_links` table
+- Planning rooms: the critique round waits for every invited agent (an agent that had not joined yet no longer gets skipped); `room show` and `room list` label sessions with the agent's name
+
+## Verification sprint fixes, second pass
+
+- `connect` installs a git pre-commit block (warning in the commit output; blocks only when the hook denies, in Strict mode; fails open); `disconnect` removes it and keeps a user's own hook
+- PostCommit uses symbol hashes: `memory.save` takes `symbols` and records their hashes when the code index is present; such a memory is flagged `changed` only when a symbol changed
+- `memory.recall` uses hybrid recall when `[retrieval] mode = "hybrid"`
+- `doctor` sees this folder's Claude Code and Codex hooks, counts registrations the same way as the dry-run, and names a real command in the agent-identity hint
+
+## Verification sprint fixes
+
+- An agent can no longer set its own trust tier: `memory.save` ignores `metadata.trust_tier` and caps an agent's confidence below the Verified line (0.95)
+- Only decisions a person recorded are exported into AGENTS.md / CLAUDE.md
+- `memory.recall` returns `changed` and `stale` notes (ranked lower, with their status) and pinned notes, instead of dropping them; it also marks returned notes as recalled
+- Docs corrected where they disagreed with the code (symbol hash, pre-commit gate, sync key derivation, test count, synced record kinds); results in [docs/research/verification_sprint.md](docs/research/verification_sprint.md)
+
+## Codex and task fixes (found in the first live three-agent run)
+
+- Codex `apply_patch` edits now take a file lease: the patch text arrives as `tool_input.command`, which the hook did not read, so Codex edits were never locked
+- `hooks record` writes each payload in one write; concurrent hooks (Codex runs several at once) had interleaved and corrupted 5 of 25 saved Codex lines
+- `task.next` and `task.submit` no longer require `session_id` (an agent does not know its own and Claude's first call failed validation); the agent's name plus this connection is used, the same from claim to submit
+- A plan step that starts with an agent's name ("claude-code builds …", "codex adds …", "agy builds …") is assigned to that agent when the room is approved, so another agent no longer claims it first
 
 ## Recall
 

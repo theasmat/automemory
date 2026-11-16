@@ -19,7 +19,6 @@ pub mod documents;
 pub mod events;
 pub mod failures;
 pub mod guardrails;
-pub mod leases;
 pub mod memories;
 pub mod preferences;
 pub mod projects;
