@@ -125,12 +125,20 @@ pub fn decide(proven_human: bool, chain: &[Proc], env: impl Fn(&str) -> Option<S
     Actor { name: "shell".into(), via: Via::Unknown }
 }
 
+/// Password in the environment: a person, whatever the process chain says. A terminal on stdin: a person, unless an agent is in the chain (an
+/// agent's shell tool may run commands in a pseudo-terminal, and a person typing in an agent's own terminal pane then has to use the password).
+pub fn classify(password_proof: bool, tty: bool, chain: &[Proc], env: impl Fn(&str) -> Option<String>) -> Actor {
+    decide(password_proof || (tty && agent_in_chain(chain).is_none()), chain, env)
+}
+
 /// Who is running this command right now.
 pub fn current(stored_password_hash: Option<&str>) -> Actor {
-    let proven = crate::auth::is_proven_human(stored_password_hash);
-    // the process chain costs two `ps` calls: only worth it when nobody is proven to be here
-    let chain = if proven { Vec::new() } else { process_chain() };
-    decide(proven, &chain, |k| std::env::var(k).ok())
+    use std::io::IsTerminal;
+    let password = crate::auth::password_proves_human(stored_password_hash);
+    let tty = std::io::stdin().is_terminal();
+    // the process chain costs two `ps` calls: only worth it when the password has not already settled it
+    let chain = if password { Vec::new() } else { process_chain() };
+    classify(password, tty, &chain, |k| std::env::var(k).ok())
 }
 
 #[cfg(test)]
@@ -148,6 +156,19 @@ mod tests {
     fn a_person_is_a_person_even_inside_an_agents_terminal() {
         let chain = [p("zsh", "-zsh"), p("codex", "/usr/local/bin/codex")];
         assert_eq!(decide(true, &chain, no_env), Actor { name: "human".into(), via: Via::Person });
+    }
+
+    #[test]
+    fn a_terminal_alone_does_not_make_a_person_when_an_agent_is_in_the_chain() {
+        // live run 2026-11-16: Antigravity runs `automemory note` in a pseudo-terminal, and the note was filed as written by the person
+        let agy = [p("zsh", "zsh"), p("language_server", "/Applications/Antigravity.app/Contents/Resources/language_server")];
+        assert_eq!(classify(false, true, &agy, no_env), Actor { name: "agy".into(), via: Via::Process });
+        // a person at an ordinary terminal
+        assert_eq!(classify(false, true, &[p("zsh", "-zsh"), p("terminal", "terminal")], no_env).name, "human");
+        // the password still proves a person inside an agent's terminal
+        assert_eq!(classify(true, true, &agy, no_env).name, "human");
+        // no terminal, no password: never a person
+        assert_ne!(classify(false, false, &[p("zsh", "zsh")], no_env).name, "human");
     }
 
     #[test]

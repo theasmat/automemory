@@ -77,6 +77,8 @@ pub struct ToolRegistry {
     client: std::sync::Mutex<Option<String>>,
     /// Unique per running server: two servers are two connections, whatever session ids their callers claim.
     connection: String,
+    /// Tests: behave as a server started outside any workspace (in "/" or the home folder).
+    assume_outside_workspace: bool,
 }
 
 /// Progressive disclosure: the same rows without the note bodies, so an agent can scan many cheaply and `memory.get` the few it needs.
@@ -200,6 +202,17 @@ fn active_policy() -> Box<dyn TrustPolicy> {
 }
 
 impl ToolRegistry {
+    /// A folder that is no registered project gets a private scope of its own, named after its path: what is saved there is found there and
+    /// nowhere else, and nothing of any project is seen there.
+    fn folder_scope() -> String {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let mut h: u64 = 0xcbf29ce484222325; // FNV-1a: stable across Rust versions, unlike DefaultHasher
+        for b in cwd.to_string_lossy().bytes() {
+            h = (h ^ u64::from(b)).wrapping_mul(0x100000001b3);
+        }
+        format!("folder-{h:016x}")
+    }
+
     fn person_authored(&self, id: &str) -> bool {
         self.db.get_memory_by_id(id).ok().flatten().is_some_and(|m| m.is_person_authored())
     }
@@ -214,6 +227,7 @@ impl ToolRegistry {
             identity: identity.map(|i| canonical_agent(&i)).filter(|i| !i.is_empty()),
             client: std::sync::Mutex::new(None),
             connection: format!("conn-{}", uuid::Uuid::now_v7().simple()),
+            assume_outside_workspace: false,
         }
     }
 
@@ -1004,8 +1018,18 @@ impl ToolRegistry {
             };
             // A client that starts the server outside the workspace is placed by where its hooks last saw it working.
             let by_agent = || self.agent_name().and_then(|a| self.db.recent_project_of_agent(&a, 6).ok().flatten());
-            if let Some(p) = by_folder.or_else(by_agent).or_else(sole) {
+            // ...but only then. A server started in a real folder that is no registered project (a scratch repo, another product) gets no project:
+            // falling back to "where this agent last worked" or "the only project" handed Ledgerly's brief and decisions to a Codex session in an
+            // unrelated folder (live run, 2026-11-16).
+            let outside_workspace = self.assume_outside_workspace || std::env::current_dir().map_or(true, |d| {
+                let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+                d.parent().is_none() || home.as_deref() == Some(d.as_path())
+            });
+            let found = by_folder.or_else(|| if outside_workspace { by_agent().or_else(sole) } else { None });
+            if let Some(p) = found {
                 args["project_id"] = Value::String(p.id);
+            } else if !outside_workspace {
+                args["project_id"] = Value::String(Self::folder_scope());
             }
         }
         // merged tools (memory.list views, memory.search scopes, ...) get the resolved project too
@@ -2663,7 +2687,7 @@ mod cap_tests {
     fn a_recall_leaves_a_read_record_with_tiers() {
         let db = std::sync::Arc::new(Database::open_in_memory().unwrap());
         let (m, _) = note("n1", 1);
-        db.save_memory_direct(&Memory { summary: "refund webhook".into(), content: "refund webhook retries".into(), ..m }).unwrap();
+        db.save_memory_direct(&Memory { summary: "refund webhook".into(), content: "refund webhook retries".into(), scope: MemoryScope::Global, ..m }).unwrap();
         let reg = ToolRegistry::new(db.clone());
         let r = reg.call_tool("memory.recall", &json!({"query": "refund webhook"}));
         assert!(r.is_error != Some(true));
@@ -2684,7 +2708,8 @@ mod cap_tests {
     #[test]
     fn a_write_from_a_server_outside_the_workspace_goes_to_the_project_its_agent_was_working_in() {
         let db = std::sync::Arc::new(Database::open_in_memory().unwrap());
-        let reg = ToolRegistry::with_identity(db.clone(), Some("agy".into()));
+        let mut reg = ToolRegistry::with_identity(db.clone(), Some("agy".into()));
+        reg.assume_outside_workspace = true;
         // two real projects, so "the only project" cannot decide; this test process runs in no registered folder
         let a = reg.call_tool("project.register", &json!({"slug": "alpha", "display_name": "alpha", "path": "/tmp/am-alpha-none"}));
         let b = reg.call_tool("project.register", &json!({"slug": "beta", "display_name": "beta", "path": "/tmp/am-beta-none"}));

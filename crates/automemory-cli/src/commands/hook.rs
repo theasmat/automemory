@@ -644,7 +644,8 @@ fn resume_once(db: &Database, project_id: Option<&str>, session_id: &str, cwd: &
         None
     };
 
-    let resume = automemory_core::resume::build_resume(db, project_id, session_id, cwd);
+    // No project here (a folder that is not registered): there is nothing of this folder to resume, and with no project the pack would be built from every project's notes.
+    let resume = project_id.and_then(|_| automemory_core::resume::build_resume(db, project_id, session_id, cwd));
 
     match (notice, resume) {
         (Some(n), Some(r)) => Some(format!("{n}\n\n{r}")),

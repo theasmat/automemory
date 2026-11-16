@@ -40,6 +40,16 @@ def main():
         r = via_agent("/opt/tools/codex/bin/codex", "note", "Never run the seed script on staging", "-t", "warning")
         row = db().execute("select source_kind, confidence, json_extract(metadata, '$.saved_by') from memories where summary like 'Never run the seed%'").fetchone()
         rep.check(row and row[0] == "agent" and row[1] < 0.95 and row[2] == "codex", "a note from an agent's shell is an unverified note written by that agent", f"{row} {r.stderr}")
+        # Antigravity runs its shell commands in a pseudo-terminal: a terminal on stdin must not turn the agent into a person
+        import os
+        import pty
+        master, slave = pty.openpty()
+        cmd = "'%s' note 'Reports sorted by customer name' ; :" % sb.bin
+        subprocess.run(["/bin/sh", "-c", cmd, "/Applications/Antigravity.app/Contents/MacOS/Antigravity"], stdin=slave, capture_output=True, text=True, cwd=sb.project, env=sb.env, timeout=60)
+        os.close(slave)
+        os.close(master)
+        row = db().execute("select source_kind, json_extract(metadata, '$.saved_by') from memories where summary like 'Reports sorted by customer%'").fetchone()
+        rep.check(row and row[0] == "agent" and row[1] == "agy", "a note from Antigravity's pseudo-terminal is agy's, not a person's", str(row))
         (sb.project / "AGENTS.md").write_text("# Rules\n")
         sb.run("export-rules")
         rep.check("seed script" not in (sb.project / "AGENTS.md").read_text(), "and it is not exported into the instruction files")
