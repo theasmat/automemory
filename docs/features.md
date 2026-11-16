@@ -27,7 +27,7 @@ AutoMemory is a local-first daemon that gives every coding agent one shared, ver
 
 **Primary user:** one developer running 2–3 agents on one project across terminal and desktop apps. Later: small teams.
 
-**Use cases:** switch agent mid-feature (`memory.about` + `baton.pickup`); parallel agents without overwrites (lease conflict shows holder/goal/age); "what did we decide?" (`memory.ask` with verified/changed/stale status); refactor or revert flips linked memories; plan a risky change in a Planning Room; catastrophic command blocked; swap a hook or adapter without restart.
+**Use cases:** switch agent mid-feature (`memory.about` + `baton.pickup`); parallel agents without overwrites (with the Tracewise companion the second agent is refused and told who holds the file); "what did we decide?" (`memory.ask` with verified/changed/stale status); refactor or revert flips linked memories; plan a risky change in a Planning Room; catastrophic command blocked; swap a hook or adapter without restart.
 
 ## 2. v1 scope
 
@@ -98,7 +98,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Feature | Status | Notes |
 |---|---|---|
 | MCP server (47 tools), CLI | ✅ | Each agent's server signs what it writes with its own name (`mcp --agent`, set by `connect`); `doctor` flags a wrong or unnamed entry; a running server replaces itself after `update` (Unix) |
-| Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (leases, rooms, batons) |
+| Nuxt dashboard + REST + WebSocket | ✅ | v1 scope; includes Agents & Locks (locks read from Tracewise, rooms, batons) |
 | Guided onboarding (CLI tour + dashboard coachmarks) | ✅ | `automemory tour`, `next`, `learn`, welcome card, 6-stop tour, sample data mode |
 | Hook pipeline, hot reload, custom exec handlers | ✅ | |
 | `next_action` on every tool reply | ✅ | |
@@ -113,7 +113,7 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Feature | Status | Notes |
 |---|---|---|
 | Optional LLM helper (`automemory llm`, Tools page): conflicts, duplicates, candidate notes from sessions | ✅ | Off by default; local model needs no password, cloud needs consent + key in keychain + daily token cap; output is Inbox proposals only. Tidy up also flags notes naming deleted files |
-| Value report (`automemory stats`, Home card): collisions prevented, risky commands stopped, notes recalled, hand-offs | ✅ | Built only from existing audit, lease, memory and baton rows |
+| Value report (`automemory stats`, Home card): collisions prevented, risky commands stopped, notes recalled, hand-offs | ✅ | Built only from existing audit, memory and baton rows |
 | `automemory reset`: forget all data, behind the human password | ✅ | Refuses with no password set; keeps settings, password, device id, agent registrations and backups (`--include-backups` removes those); not available to agents |
 | Backups (`automemory backup`, restore with a safety copy, doctor check) and hook payload recording (`hooks record`) | ✅ | Restore is terminal-only (replaces the database) |
 | Team trust overlay: a teammate's pin is a request, not a pin | ✅ | Needs a shared vault key; see `sync/deltas.rs` |

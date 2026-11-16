@@ -1,6 +1,6 @@
 # AutoMemory
 
-Shared, verified memory, locks and hand-offs for coding agents. Pure Rust, single binary, local SQLite.
+Shared, verified memory, decisions and hand-offs for coding agents. Pure Rust, single binary, local SQLite. File locks and change history come from the optional [Tracewise](https://github.com/cmdworks/tracewise) companion (`automemory companion`).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/theasmat/automemory-bin/main/install.sh | bash

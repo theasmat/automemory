@@ -79,7 +79,7 @@ Decided Nov 2026, P1 and P2 built: [specs/tracewise-companion.md](specs/tracewis
 - ONNX embedding provider and vector sync between machines (each machine re-embeds today).
 - Per-person trust tiers for team sync and a person-setting UI.
 - Coverage-guided fuzzing in CI (seeded fuzzing exists).
-- Read `automemory locks --coverage` after a week of real use; below 80%, look at which writes dominate.
+- Read `automemory companion` and `tracewise log` after a week of real use with two agents: any edit with no named actor means a hook is missing.
 - From the Nov 2026 architecture research (not built; weak evidence marked in the report):
   - Sync v2 is built (see [specs/sync-v2.md](specs/sync-v2.md)); still open: a live two-computer trial with the real keychain, a per-person signing identity for team vaults, and a dashboard notice for a revoked computer. The hybrid logical clock from the research was not needed.
   - A smaller default MCP tool list (about 10 of 49) with the rest behind a category listing; changes the tool contract, so decide first.
