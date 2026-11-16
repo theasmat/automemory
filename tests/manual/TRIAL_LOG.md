@@ -624,3 +624,10 @@ Build: installed `tracewise-companion` build + Tracewise `main` 0.3.0; Ledgerly 
 Codex asked a clarifying question (`request_user_input_async`, options "Ledgerly workspace only / a specific subfolder / Filesystem root") and then declined; Antigravity declined outright. Neither ran a command, so the hook-level deny was **not exercised** (no `hook.deny` row in the audit log; the hooks did fire: codex pre/post-tool and stop, agy stop recorded).
 State afterwards: database at schema 23 (34 notes, 16 decisions, 0 pending proposals), `resume` 3.6 KB and intact, no locks held, `tracewise log` shows no agent edits yet (none were made).
 Not proved: the live deny. Use the harmless variants (`curl ... | sh`, `git push --force origin main`) as in the 2026-10-19 T6 run.
+
+### 2026-11-16 Companion live run, S4-like (Codex monthly report + Antigravity CSV importers, Ledgerly): PARTIAL (no collision happened)
+- Both agents worked on `ledgerly/storage.py` within minutes of each other (Codex 07:21 to 07:25:32 UTC, Antigravity 07:22 to 07:27). `tracewise log` records every edit by name (`codex/...`, `antigravity/...`), so history and attribution work.
+- No lock refusal appeared because the two never edited the same file at the same moment: Antigravity called the MCP `lock.status` seven times while Codex worked and made its first `storage.py` edit at 07:26:23, a minute after Codex's Stop (07:25:32). Cooperation through `lock.status`, not the hook gate. (The tool output is not stored, so what `lock.status` showed is unproven.)
+- Guardrail: the audit log has a live `hook.deny` for Codex at 07:20:59 ("CRITICAL STOP: Force Push to Protected Branch"): the hook-level deny is proven live.
+- Codex's patch at 07:25:15 has a pre-tool event and no post-tool: most likely the patch did not apply (it retried with a different hunk eight seconds later); no `hook.deny` was logged for it.
+- Still to prove: a refusal when the second agent edits a held file directly. Needs a forced overlap (holder keeps its turn open, second agent told not to check first).
