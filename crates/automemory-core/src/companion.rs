@@ -247,16 +247,40 @@ pub struct HeldLock {
     pub remaining_seconds: i64,
 }
 
-/// The project's folders: its registered paths, or the current folder when none is given or known.
-pub fn project_dirs(db: &Database, project_id: Option<&str>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = project_id
-        .and_then(|p| db.get_project_paths(p).ok())
-        .map(|v| v.into_iter().map(|x| PathBuf::from(x.local_path)).filter(|d| d.is_dir()).collect())
-        .unwrap_or_default();
-    if dirs.is_empty() {
-        dirs.extend(std::env::current_dir().ok());
+/// The folders to ask Tracewise about, each with its project's slug: one project's registered paths, or (no project given) every registered project's
+/// paths, so "All projects" means all of them and not whichever folder the dashboard was started in. Falls back to the current folder when none is known.
+pub fn project_dirs_named(db: &Database, project_id: Option<&str>) -> Vec<(Option<String>, PathBuf)> {
+    let mut out: Vec<(Option<String>, PathBuf)> = Vec::new();
+    let mut add = |slug: Option<String>, path: String| {
+        let p = PathBuf::from(path);
+        if p.is_dir() && !out.iter().any(|(_, q)| *q == p) {
+            out.push((slug, p));
+        }
+    };
+    match project_id {
+        Some(id) => {
+            let slug = db.get_project_by_id(id).ok().flatten().map(|p| p.slug);
+            for x in db.get_project_paths(id).unwrap_or_default() {
+                add(slug.clone(), x.local_path);
+            }
+        }
+        None => {
+            for proj in db.list_projects().unwrap_or_default().into_iter().filter(|p| p.id != "demo").take(10) {
+                for x in db.get_project_paths(&proj.id).unwrap_or_default() {
+                    add(Some(proj.slug.clone()), x.local_path);
+                }
+            }
+        }
     }
-    dirs
+    if out.is_empty() {
+        out.extend(std::env::current_dir().ok().map(|d| (None, d)));
+    }
+    out
+}
+
+/// The project's folders (see [`project_dirs_named`]).
+pub fn project_dirs(db: &Database, project_id: Option<&str>) -> Vec<PathBuf> {
+    project_dirs_named(db, project_id).into_iter().map(|(_, d)| d).collect()
 }
 
 /// Files agents hold right now in a project, from `tracewise lock list --json` (one call per project folder). `Err` is the sentence to show
@@ -298,6 +322,8 @@ pub struct FileChange {
     pub confidence: String,
     /// Set when the change was made while another actor held the file.
     pub lock_conflict: Option<String>,
+    /// The project's slug, when the change came from a registered project.
+    pub project: Option<String>,
 }
 
 /// What to ask for: a session (its id or the first 8 or more characters of it), or up to five files; the newest `limit` changes either way.
@@ -334,6 +360,7 @@ pub fn parse_changes(v: &serde_json::Value) -> Vec<FileChange> {
                 source: text(r, "source").unwrap_or_default(),
                 confidence: text(r, "confidence").unwrap_or_default(),
                 lock_conflict: r.get("lock_conflict").filter(|c| !c.is_null()).map(|c| c.as_str().map(String::from).unwrap_or_else(|| c.to_string())),
+                project: None,
             })
         })
         .collect()
@@ -343,19 +370,31 @@ pub fn parse_changes(v: &serde_json::Value) -> Vec<FileChange> {
 pub fn file_changes(settings: &CompanionSettings, db: &Database, project_id: Option<&str>, filter: &ChangeFilter) -> Result<Vec<FileChange>, String> {
     let limit = filter.limit.clamp(1, 500);
     let mut out: Vec<FileChange> = Vec::new();
-    for dir in project_dirs(db, project_id) {
+    for (slug, dir) in project_dirs_named(db, project_id) {
+        let mut found: Vec<FileChange> = Vec::new();
         if filter.paths.is_empty() {
             // a session lives in a long log: read further back than the page will show
             let n = if filter.session.is_some() { 500 } else { limit };
             let n = n.to_string();
-            let v = json_in(settings, db, &dir, &["log", "--json", "--limit", &n])?;
-            out.extend(parse_changes(&v));
+            match json_in(settings, db, &dir, &["log", "--json", "--limit", &n]) {
+                Ok(v) => found.extend(parse_changes(&v)),
+                // a registered folder that Tracewise does not watch is not an error for the others
+                Err(e) if project_id.is_none() && e.contains("did not answer") => {}
+                Err(e) => return Err(e),
+            }
         } else {
             for p in filter.paths.iter().take(5) {
-                let v = json_in(settings, db, &dir, &["log", p, "--json", "--limit", "3"])?;
-                out.extend(parse_changes(&v));
+                match json_in(settings, db, &dir, &["log", p, "--json", "--limit", "3"]) {
+                    Ok(v) => found.extend(parse_changes(&v)),
+                    Err(e) if project_id.is_none() && e.contains("did not answer") => {}
+                    Err(e) => return Err(e),
+                }
             }
         }
+        for c in &mut found {
+            c.project = slug.clone();
+        }
+        out.extend(found);
     }
     if let Some(s) = filter.session.as_deref().filter(|s| s.len() >= 8) {
         out.retain(|c| c.session == s || c.session.starts_with(s) || s.starts_with(&c.session) && !c.session.is_empty());

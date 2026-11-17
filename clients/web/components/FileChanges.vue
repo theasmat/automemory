@@ -15,6 +15,7 @@
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
+              <span v-if="c.project && !projectId" class="text-xs font-medium text-accent" :title="`Project: ${c.project}`">{{ c.project }}</span>
               <span class="text-xs font-semibold text-text">{{ c.agent }}</span>
               <Badge :variant="opVariant(c.op)">{{ opLabel(c.op) }}</Badge>
               <Badge v-if="c.lock_conflict" variant="warn" :title="c.lock_conflict">Edited while held</Badge>
@@ -48,6 +49,7 @@ interface FileChange {
   op: string;
   why?: string | null;
   lock_conflict?: string | null;
+  project?: string | null;
 }
 
 const props = defineProps<{
@@ -62,6 +64,8 @@ const props = defineProps<{
   emptyText?: string;
   showCommandHint?: boolean;
 }>();
+
+const emit = defineEmits<{ (e: 'loaded', info: { source: 'tracewise' | 'none'; count: number }): void }>();
 
 const changes = ref<FileChange[]>([]);
 const source = ref<'tracewise' | 'none'>('tracewise');
@@ -85,6 +89,7 @@ async function load() {
     source.value = r.data.source;
     changes.value = r.data.changes || [];
     note.value = r.data.note || '';
+    emit('loaded', { source: source.value, count: changes.value.length });
   }
 }
 

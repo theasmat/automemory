@@ -121,6 +121,14 @@
         </ul>
       </Card>
 
+      <!-- File changes from Tracewise: shown only when Tracewise answers -->
+      <Card v-show="changesSource === 'tracewise'" title="Latest file changes" class="lg:col-span-2">
+        <template #actions>
+          <NuxtLink to="/agents" class="text-sm text-accent hover:underline">See all</NuxtLink>
+        </template>
+        <FileChanges :project-id="store.activeProject" :limit="5" poll empty-text="No file changes recorded yet." @loaded="(e) => (changesSource = e.source)" />
+      </Card>
+
       <Card title="Recent activity">
         <template #actions>
           <button type="button" class="text-sm text-accent hover:underline" @click="previewDrawerOpen = true">What agents are told</button>
@@ -166,6 +174,7 @@ function agentName(a: any): string {
 }
 
 const store = useAutoMemoryStore();
+const changesSource = ref<'tracewise' | 'none'>('none');
 const previewDrawerOpen = ref(false);
 
 const value = ref<Record<string, number>>({});

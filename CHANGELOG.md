@@ -5,7 +5,7 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 ## Memory quality plan, step 1 (recall eval)
 
 ### Added
-- Dashboard, file changes from Tracewise (read-only): a "Recent file changes" card on Agents & Locks, "Files this session changed" in the session replay (joined on the session id), and "Files this note is about" in the note dialog. New `GET /api/changes` with a five-second cache. Plan and rules: `docs/specs/dashboard-changes.md`.
+- Dashboard, file changes from Tracewise (read-only): a "Latest file changes" card on Home, a "Recent file changes" card on Agents & Locks (with "All projects" meaning every registered project, each row labelled), "Files this session changed" in the session replay (joined on the session id), and "Files this note is about" in the note dialog. New `GET /api/changes` with a five-second cache. Plan and rules: `docs/specs/dashboard-changes.md`.
 
 ### Fixed
 - `automemory stats` and the Home card count "edit collisions prevented" again: it had stayed at zero since the locks moved to Tracewise. The hook now marks refusals made by Tracewise in the audit row.

@@ -177,6 +177,9 @@ def main():
             main_text = page.inner_text("main")
             rep.check("Recent file changes" in main_text and "src/storage.py" in main_text and "Monthly report query" in main_text and "codex" in main_text, "Agents & Locks lists the recent file changes with agent, file and reason", main_text[:300])
             rep.check("Edited while held" in main_text, "and marks an edit made while another agent held the file")
+            page.goto(base + "/", wait_until="networkidle")
+            page.wait_for_timeout(600)
+            rep.check("Latest file changes" in page.inner_text("main") and "src/storage.py" in page.inner_text("main"), "Home shows the latest file changes when Tracewise answers")
             page.goto(base + "/activity?tab=sessions", wait_until="networkidle")
             page.wait_for_timeout(500)
             first = page.locator("button", has_text="events").first

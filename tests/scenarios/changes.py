@@ -28,16 +28,22 @@ def fake(dir_: Path, deny: bool = False) -> Path:
     allow = json.dumps({"api": 1, "event": "pre-edit", "decision": "deny" if deny else "allow", "reason": "src/storage.py is held by codex" if deny else None, "context": []})
     p.write_text(f"""#!/bin/sh
 cat >/dev/null
-[ "$1" = -C ] && shift 2
+B=x
+[ "$1" = -C ] && {{ B=$(basename "$2"); shift 2; }}
 case "$1" in
   companion) echo '{{"api":1,"version":"9.9"}}' ;;
-  log) if [ "$2" = "src/storage.py" ]; then echo '{json.dumps([c for c in LOG if c["path"] == "src/storage.py"])}'; else echo '{json.dumps(LOG)}'; fi ;;
+  log) if [ "$2" = "src/storage.py" ]; then echo '{json.dumps([c for c in LOG if c["path"] == "src/storage.py"])}'; else echo '{json.dumps(LOG)}'; fi | sed 's/"id": "c/"id": "'"$B"'-c/g' ;;
   hook) echo '{allow}' ;;
   *) echo '[]' ;;
 esac
 """)
     p.chmod(p.stat().st_mode | stat.S_IEXEC)
     return p
+
+
+def ids(d):
+    """The change ids without the folder prefix the fake adds."""
+    return [c["id"].rsplit("-", 1)[-1] for c in d["changes"]]
 
 
 def get(port, path):
@@ -64,17 +70,28 @@ def main():
             except OSError:
                 time.sleep(0.2)
         d = get(port, "/api/changes?limit=10")
-        rep.check(d.get("source") == "tracewise" and [c["id"] for c in d["changes"]] == ["c3", "c2", "c1"], "the newest changes come first, from Tracewise", json.dumps(d)[:200])
-        c2 = next(c for c in d["changes"] if c["id"] == "c2")
+        rep.check(d.get("source") == "tracewise" and ids(d) == ["c3", "c2", "c1"], "the newest changes come first, from Tracewise", json.dumps(d)[:200])
+        c2 = next(c for c in d["changes"] if c["id"].endswith("-c2"))
         rep.check(c2["agent"] == "codex" and c2["why"] == "Monthly report query" and c2["lock_conflict"], "agent, reason and a lock conflict are carried", json.dumps(c2)[:200])
         d = get(port, "/api/changes?session=43e22030-1eb4&limit=10")
-        rep.check([c["id"] for c in d["changes"]] == ["c3", "c1"], "a session id (or its first characters) filters to that session's files", json.dumps(d)[:200])
+        rep.check(ids(d) == ["c3", "c1"], "a session id (or its first characters) filters to that session's files", json.dumps(d)[:200])
         d = get(port, "/api/changes?session=43e2&limit=10")
         rep.check(len(d["changes"]) == 3, "a prefix shorter than 8 characters is ignored, not guessed")
         d = get(port, "/api/changes?paths=src/storage.py&limit=10")
-        rep.check([c["id"] for c in d["changes"]] == ["c2", "c1"], "a file filter returns that file's history", json.dumps(d)[:200])
+        rep.check(ids(d) == ["c2", "c1"], "a file filter returns that file's history", json.dumps(d)[:200])
         d = get(port, "/api/changes?limit=1")
         rep.check(len(d["changes"]) == 1, "the limit is honoured")
+
+        # "All projects" means every registered project, not the folder the dashboard was started in
+        other = sb.root / "beta-app"
+        other.mkdir()
+        sb.mcp("project.register", slug="alpha", display_name="alpha", path=str(sb.project))
+        sb.mcp("project.register", slug="beta", display_name="beta", path=str(other))
+        time.sleep(0.2)
+        d = get(port, "/api/changes?limit=20")
+        projects = sorted({c.get("project") for c in d["changes"]})
+        folders = sorted({c["id"].split("-c")[0] for c in d["changes"]})
+        rep.check(projects == ["alpha", "beta"] and len(folders) == 2, "with no project chosen, the changes of every registered project are listed, each labelled", json.dumps(d)[:240])
     finally:
         server.terminate()
         server.wait(timeout=5)
