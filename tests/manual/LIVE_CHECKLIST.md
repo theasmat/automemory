@@ -70,6 +70,17 @@ Since Nov 2026 AutoMemory has no locks of its own: file locks and "who changed t
 3. `automemory resume` still shows the old goal, next step and decisions; `automemory decision list` and `memory list` are unchanged.
 4. An `[locks]` section or `auto_lease` left in `config.toml` is ignored without an error.
 
+## G. Git backup on a real provider (needs an account on each; the scripted tests use a folder remote)
+
+For each of GitHub, GitLab and Bitbucket, and once with a self-hosted server if you have one:
+1. Create an empty private repository (the Sync page card or `automemory backup git setup` says how for that provider).
+2. `automemory backup git setup <address>` over **ssh** and again over **https** (sign in with `gh auth login`, `glab auth login` or a saved token). Expected: reachable, "Verified: the copy on the remote restores", a 24-word phrase.
+3. Make a repository **public** and try it: the setup warns and stops until you confirm. Put a token in the address: it is refused unless confirmed and never printed.
+4. Point it at a repository that does not exist and at one you cannot write to: the sentence says what to fix.
+5. Work with an agent for a minute: `automemory backup git status` shows a recent "last ok" with no manual step; the Sync page and `doctor` agree.
+6. On a second computer (or a second HOME): `automemory backup git restore <address>`, type the phrase: the decisions are there. A wrong phrase must change nothing.
+7. Disconnect the network, let an agent work, reconnect: the status goes failing, then ok again by itself. Rename the repository on the host: failing, with the reason; rename it back.
+
 ## Clean slate
 
 `automemory disconnect all --everywhere --dry-run` lists every AutoMemory registration (workspace and global, all agents); `automemory disconnect all --everywhere` removes them. Run the dry run again: it must say 0. Your own hooks, rules and git hooks stay.

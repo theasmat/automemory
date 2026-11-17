@@ -279,6 +279,20 @@ pub fn execute() -> Result<()> {
             (_, false) => println!("⚠ {} unreadable: {}", bad.len(), bad.iter().map(|(f, ..)| f.display().to_string()).collect::<Vec<_>>().join(", ")),
             (Some((_, _, when)), true) => println!("✓ {} readable, newest {} day(s) old", all.len(), (chrono::Utc::now() - *when).num_days()),
         }
+        print!("Checking git backup... ");
+        if let Ok(db) = automemory_core::db::Database::open(&config.db_path) {
+            let st = automemory_core::sync::backup_git::status(&db);
+            let ago = |t: &Option<String>| t.as_deref().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| { let m = (chrono::Utc::now() - t.with_timezone(&chrono::Utc)).num_minutes().max(0); if m < 90 { format!("{m} min ago") } else if m < 2880 { format!("{} h ago", m / 60) } else { format!("{} days ago", m / 1440) } });
+            match st.state {
+                "off" => println!("– off (`automemory backup git setup` keeps an encrypted copy on GitHub, GitLab, Bitbucket or your own git server)"),
+                "ok" => println!("✓ {} backed up {}, restore verified {}", st.provider_name.unwrap_or("git"), ago(&st.last_ok).unwrap_or_else(|| "recently".into()), ago(&st.last_verified).unwrap_or_else(|| "never (`automemory backup git verify`)".into())),
+                "never" => println!("⚠ set up, but no successful sync yet (`automemory backup git now`)"),
+                "stale" => { println!("⚠ no successful backup for over a week (last: {})", ago(&st.last_ok).unwrap_or_default()); all_passed = false; }
+                _ => { println!("⚠ failing: {}", st.last_error.as_deref().unwrap_or("the last sync did not finish")); all_passed = false; }
+            }
+        } else {
+            println!("– database unavailable");
+        }
         print!("Checking companion (Tracewise)... ");
         {
             let settings = automemory_core::config::GlobalConfig::load().map(|g| g.companion).unwrap_or_default();

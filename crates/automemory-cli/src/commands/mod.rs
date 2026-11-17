@@ -10,6 +10,7 @@ pub mod doctor;
 pub mod embeddings;
 pub mod llm;
 pub mod backup;
+pub mod backup_git;
 pub mod brief;
 pub mod library;
 pub mod room;

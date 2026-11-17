@@ -112,12 +112,14 @@ fn take_lock(vault_root: &Path) -> Option<LockGuard> {
 }
 
 /// Runs git in the vault with a fixed identity (a fresh machine has none) and a time limit.
-fn git(dir: &Path, args: &[&str], limit: Duration) -> Result<(bool, String)> {
+pub(super) fn git(dir: &Path, args: &[&str], limit: Duration) -> Result<(bool, String)> {
     let mut child = Command::new("git")
         .args(["-c", "user.name=AutoMemory", "-c", "user.email=automemory@localhost", "-c", "commit.gpgsign=false"])
         .args(args)
         .current_dir(dir)
         .env("GIT_TERMINAL_PROMPT", "0")
+        // an ssh remote that wants a passphrase or an unknown-host answer must fail, not wait for a person who is not there
+        .env("GIT_SSH_COMMAND", std::env::var("GIT_SSH_COMMAND").unwrap_or_else(|_| "ssh -o BatchMode=yes -o ConnectTimeout=15".to_string()))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -310,6 +312,9 @@ pub fn run(
     report.conflicts = applied.conflicts;
     if remote_url.is_some() && do_push {
         push(vault_root, &mut report);
+    }
+    if remote_url.is_some() {
+        super::backup_git::record_run(db, &report);
     }
     Ok(report)
 }

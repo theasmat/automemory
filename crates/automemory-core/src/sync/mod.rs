@@ -1,4 +1,5 @@
 pub mod auto;
+pub mod backup_git;
 pub mod daemon;
 pub mod deltas;
 pub mod devices;

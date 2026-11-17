@@ -1631,6 +1631,9 @@ async fn main() -> Result<()> {
             BackupCommands::List => commands::backup::list()?,
             BackupCommands::Drill => commands::backup::drill()?,
             BackupCommands::Restore { file, yes } => commands::backup::restore(&file, yes)?,
+            BackupCommands::Git { action, url, yes, allow_public, phrase, json } => {
+                tokio::task::block_in_place(|| commands::backup_git::run(commands::backup_git::Args { action, url, yes, allow_public, phrase, json }))?
+            }
         },
         Commands::Stats { days, json } => commands::stats::run(days, json)?,
         // reqwest's blocking client builds and drops its own runtime, which panics inside this async main unless it runs off the async threads
@@ -1908,6 +1911,32 @@ enum BackupCommands {
         /// Do not ask
         #[arg(long, short = 'y')]
         yes: bool,
+    },
+    /// Keep an encrypted copy on any git server (GitHub, GitLab, Bitbucket, your own): setup, status, now, verify, restore
+    ///
+    /// Examples:
+    ///   automemory backup git setup
+    ///   automemory backup git setup git@gitlab.com:me/memory-vault.git
+    ///   automemory backup git status
+    ///   automemory backup git verify
+    ///   automemory backup git restore https://github.com/me/memory-vault.git --phrase "..."
+    Git {
+        /// setup, status (default), now, verify or restore
+        action: Option<String>,
+        /// The repository address (setup, restore)
+        url: Option<String>,
+        /// Do not ask (setup)
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Use the repository even if anyone can read it (setup)
+        #[arg(long)]
+        allow_public: bool,
+        /// The recovery phrase (restore); asked for, hidden, when left out
+        #[arg(long)]
+        phrase: Option<String>,
+        /// Machine-readable status
+        #[arg(long)]
+        json: bool,
     },
 }
 

@@ -25,6 +25,7 @@ run "guardrail table"                 python3 tests/guardrails/run.py
 run "Tracewise companion (nested hook)" python3 tests/scenarios/companion.py
 run "Tracewise companion command"     python3 tests/scenarios/companion_setup.py
 run "file changes in the dashboard API" python3 tests/scenarios/changes.py
+run "git backup (setup, restore, status)" python3 tests/scenarios/git_backup.py
 run "unregistered folder isolation"      python3 tests/scenarios/unregistered_folder.py
 run "long task across two agents"   python3 tests/scenarios/long_task.py
 run "reset all data"                python3 tests/scenarios/reset.py

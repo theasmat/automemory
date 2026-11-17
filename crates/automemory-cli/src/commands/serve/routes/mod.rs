@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod changes;
 pub mod continuity;
 pub mod library;
@@ -164,6 +165,10 @@ pub fn build_api_router() -> Router<AppState> {
             post(memories::api_proposals_decide_all),
         )
         .route("/api/stream", get(stats::api_stream))
+        .route("/api/backup/git", get(backup::api_status).delete(backup::api_off))
+        .route("/api/backup/git/setup", post(backup::api_setup))
+        .route("/api/backup/git/now", post(backup::api_now))
+        .route("/api/backup/git/verify", post(backup::api_verify))
         .route("/api/sync/status", get(sync::api_sync_status))
         .route("/api/sync/trigger", post(sync::api_sync_trigger))
 }

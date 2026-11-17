@@ -107,7 +107,8 @@ Status: ✅ built · 🔧 in progress · ⬜ planned. "Verified" = measured or t
 | Feature | Status | Notes |
 |---|---|---|
 | Git-ignored plan vault, AES-256-GCM, BIP-39 pairing | ✅ | |
-| Cloudflare managed mode | ⬜ later | `workers/` |
+| Git backup on any git server: setup wizard, status, restore check, restore on a new computer | ✅ | [specs/git-backup.md](specs/git-backup.md); the vault is the backup, any git host works |
+| Cloudflare managed mode | ⬜ later | `workers/`; a second transport for the same encrypted ops, after the git backup is proven |
 
 ### Proof
 | Feature | Status | Notes |

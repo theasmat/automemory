@@ -5,6 +5,9 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 ## Memory quality plan, step 1 (recall eval)
 
 ### Added
+- Git backup on any git server (GitHub, GitLab, Bitbucket, your own): `automemory backup git setup | status | now | verify | restore`, a "Git backup" card on the Sync page (setup wizard with the password, the recovery phrase shown once, status, back up now, check the restore, turn off), a Home warning when it fails or is a week old, and a `doctor` line. Setup checks the address (command-running forms refused, tokens hidden), warns when the repository is public or not empty, and proves the first copy restores; restore proves the phrase opens the backup before it changes anything. Every sync pass now records when it worked or why not. Spec: `docs/specs/git-backup.md`.
+
+### Added
 - Dashboard, file changes from Tracewise (read-only): a "Latest file changes" card on Home, a "Recent file changes" card on Agents & Locks (with "All projects" meaning every registered project, each row labelled), "Files this session changed" in the session replay (joined on the session id), and "Files this note is about" in the note dialog. New `GET /api/changes` with a five-second cache. Plan and rules: `docs/specs/dashboard-changes.md`.
 
 ### Fixed

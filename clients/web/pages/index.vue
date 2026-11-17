@@ -73,6 +73,12 @@
       <NuxtLink to="/agents"><Button size="sm" variant="secondary">See locks</Button></NuxtLink>
     </div>
 
+    <!-- Git backup problem, only when relevant -->
+    <div v-if="backupProblem" class="flex items-center justify-between gap-3 rounded-card bg-warn-bg px-5 py-4" role="alert">
+      <p class="text-sm text-text">{{ backupProblem }}</p>
+      <NuxtLink to="/sync"><Button size="sm" variant="secondary">Open Sync</Button></NuxtLink>
+    </div>
+
     <div v-if="roomsWaiting > 0" class="flex items-center justify-between gap-3 rounded-card bg-warn-bg px-5 py-4">
       <p class="text-sm text-text">{{ roomsWaiting }} planning room{{ roomsWaiting === 1 ? '' : 's' }} agreed on a plan and wait for your verdict.</p>
       <NuxtLink to="/rooms"><Button size="sm" variant="secondary">Review</Button></NuxtLink>
@@ -175,6 +181,15 @@ function agentName(a: any): string {
 
 const store = useAutoMemoryStore();
 const changesSource = ref<'tracewise' | 'none'>('none');
+// A failing or out-of-date git backup is worth a line on the first screen; "off" is not (it is a choice).
+const backupProblem = ref('');
+async function loadBackup() {
+  const r = await request<{ status: { state: string; last_error?: string | null } }>('/api/backup/git');
+  const st = r.ok ? r.data?.status : null;
+  backupProblem.value = st?.state === 'failing' ? `The git backup is failing: ${st.last_error || 'the last sync did not finish'}`
+    : st?.state === 'stale' ? 'The git backup has not worked for over a week.' : '';
+}
+onMounted(loadBackup);
 const previewDrawerOpen = ref(false);
 
 const value = ref<Record<string, number>>({});
