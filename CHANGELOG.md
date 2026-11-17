@@ -4,6 +4,9 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 
 ## Memory quality plan, step 1 (recall eval)
 
+### Changed
+- Dashboard, responsive pass: a five-slot bottom bar on phones (Safety, Sync & devices, Theme and Help moved under More; Sync was unreachable before), a compact top bar, an icon rail on tablets and the full sidebar from 1280 px, bottom-sheet dialogs, 44 px touch targets, `dvh` and safe-area aware layout, a fade hint on scrolling tabs. The browser smoke test now checks overflow at 375, 768 and 1280 px. Plan and findings: `docs/specs/dashboard-responsive.md`.
+
 ### Added
 - `automemory companion [status|install|auto|on|off]` for the Tracewise companion: state, probe time, duplicate-hook warning, and a checksummed install from Tracewise's release (macOS, asks first). The installer asks once. `doctor` shows the companion's version, API and answer time; `connect` removes Tracewise's own hook registration for the agent, since AutoMemory's hook now calls it.
 

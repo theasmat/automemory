@@ -10,7 +10,7 @@
     >
       <div
         v-if="isOpen"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-overlay backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-overlay backdrop-blur-sm"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"
@@ -20,7 +20,7 @@
 
         <div
           ref="modalRef"
-          class="relative w-full bg-surface border border-border rounded-card shadow-2xl p-6 z-10 transition-all max-h-[90vh] overflow-y-auto"
+          class="relative w-full bg-surface border border-border rounded-t-2xl sm:rounded-card shadow-2xl p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-6 z-10 transition-all max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto"
           :class="maxWidthClass || 'max-w-lg'"
           tabindex="-1"
         >

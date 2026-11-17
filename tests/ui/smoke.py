@@ -167,6 +167,39 @@ def main():
             page.get_by_role("button", name="Turn on").click()
             page.wait_for_timeout(500)
             rep.check(page.locator("input[type=password]").count() == 1, "a Protected action opens the password prompt")
+            # Responsive: no page scrolls sideways at phone, tablet or desktop width; the shell adapts (docs/specs/dashboard-responsive.md)
+            for width, height in ((375, 812), (768, 1024), (1280, 800)):
+                wide = []
+                for path in PAGES:
+                    page = browser.new_page(viewport={"width": width, "height": height})
+                    page.goto(base + path, wait_until="networkidle")
+                    if page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+                        wide.append(path)
+                    page.close()
+                rep.check(not wide, f"no page scrolls sideways at {width}px", ", ".join(wide))
+            page = browser.new_page(viewport={"width": 375, "height": 812})
+            page.goto(base + "/brain", wait_until="networkidle")
+            nav = page.locator("nav[aria-label='Mobile navigation']")
+            rep.check(nav.locator("a, button").count() == 5, "the phone bottom bar has five slots", str(nav.locator("a, button").count()))
+            rep.check(page.locator("#project-select").is_visible() and page.get_by_role("button", name="Search or command (⌘K)").is_visible(), "the phone top bar keeps the project picker and search")
+            tops = [b for b in page.locator("header button, header select").all() if b.is_visible()]
+            boxes = [b.bounding_box() for b in tops]
+            overlap = any(a is not None and c is not None and i < j and a["x"] < c["x"] + c["width"] - 1 and c["x"] < a["x"] + a["width"] - 1 for i, a in enumerate(boxes) for j, c in enumerate(boxes))
+            rep.check(not overlap, "and nothing in the phone top bar overlaps")
+            small = [b for b in nav.locator("a, button").all() if b.bounding_box()["height"] < 44]
+            rep.check(not small, "phone bottom bar targets are at least 44px tall")
+            nav.get_by_role("button", name="More").click()
+            page.wait_for_timeout(400)
+            rep.check(page.get_by_role("link", name="Sync & devices").is_visible() and page.get_by_role("link", name="Safety").is_visible(), "More lists Safety and Sync & devices on a phone")
+            page.close()
+            page = browser.new_page(viewport={"width": 768, "height": 1024})
+            page.goto(base + "/brain", wait_until="networkidle")
+            rep.check(page.locator("aside[data-tour='nav-rail']").bounding_box()["width"] < 100, "on a tablet the sidebar is an icon rail")
+            page.close()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(base + "/brain", wait_until="networkidle")
+            rep.check(page.locator("aside[data-tour='nav-rail']").bounding_box()["width"] > 200, "on a desktop the sidebar shows its labels")
+            page.close()
             browser.close()
     finally:
         server.terminate()
