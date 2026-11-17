@@ -4,6 +4,9 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 
 ## Memory quality plan, step 1 (recall eval)
 
+### Added
+- Dashboard: clicking a note or decision card opens a dialog with its full text, every field (type, scope, status, confidence, importance, freshness, times, version, id with copy), all tags and mentions, technical details, and actions (pin, archive or restore, Edit). Edit and the pencil on the card open the same dialog as a form (title and full text). Escape now closes any dialog wherever the focus is.
+
 ### Changed
 - Dashboard, responsive pass: a five-slot bottom bar on phones (Safety, Sync & devices, Theme and Help moved under More; Sync was unreachable before), a compact top bar, an icon rail on tablets and the full sidebar from 1280 px, bottom-sheet dialogs, 44 px touch targets, `dvh` and safe-area aware layout, a fade hint on scrolling tabs. The browser smoke test now checks overflow at 375, 768 and 1280 px. Plan and findings: `docs/specs/dashboard-responsive.md`.
 

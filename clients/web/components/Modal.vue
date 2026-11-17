@@ -48,8 +48,13 @@
   </Teleport>
 </template>
 
+<script lang="ts">
+// Open dialogs, topmost last: Escape closes only the topmost one, wherever the keyboard focus is.
+const openStack: symbol[] = [];
+</script>
+
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -68,14 +73,36 @@ function onClose() {
   emit('close');
 }
 
+const me = Symbol('modal');
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && openStack[openStack.length - 1] === me) {
+    e.preventDefault();
+    onClose();
+  }
+}
+
+function leave() {
+  const i = openStack.indexOf(me);
+  if (i >= 0) openStack.splice(i, 1);
+  document.removeEventListener('keydown', onKey);
+}
+
 watch(
   () => props.isOpen,
   (val) => {
     if (val) {
+      openStack.push(me);
+      document.addEventListener('keydown', onKey);
       nextTick(() => {
         modalRef.value?.focus();
       });
+    } else {
+      leave();
     }
-  }
+  },
+  { immediate: true }
 );
+
+onBeforeUnmount(leave);
 </script>
