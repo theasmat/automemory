@@ -2,7 +2,7 @@
 """CodeIntel smoke test against the real codebase-memory-mcp engine and this repository.
 
 Skips (exit 0 with a notice) when the engine is not installed. Indexes the repo, then asks
-`memory.about` for a symbol whose callers are known: acquire_lease is called from tests.
+`memory.about` for a symbol whose callers are known: `parse_remote` (sync/backup_git.rs) is called by the git backup's setup, status and restore.
 """
 import json
 import os
@@ -34,7 +34,7 @@ def main():
              "params": {"protocolVersion": "2024-11-05", "capabilities": {},
                         "clientInfo": {"name": "t", "version": "1"}}},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-             "params": {"name": "memory.about", "arguments": {"target": "acquire_lease"}}},
+             "params": {"name": "memory.about", "arguments": {"target": "parse_remote"}}},
         ]
         # The engine keeps one index per account (under the real HOME), so this process keeps the
         # real HOME and only the AutoMemory database is isolated.
@@ -47,7 +47,7 @@ def main():
             d = json.loads(line)
             if d.get("id") == 2:
                 callers = json.loads(d["result"]["content"][0]["text"]).get("callers", [])
-        rep.check(any("acquire" in c or "lease" in c for c in callers),
+        rep.check(any(k in c for c in callers for k in ("setup", "status", "restore", "provider")),
                   "memory.about returns real callers from the engine", f"callers={callers}")
         doctor = subprocess.run([sb.bin, "doctor"], capture_output=True, text=True, cwd=sb.project,
                                 env={**sb.env, "AUTOMEMORY_CBM_BIN": engine})  # sandbox HOME: doctor writes a backup
