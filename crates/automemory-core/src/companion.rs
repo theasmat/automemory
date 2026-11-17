@@ -279,3 +279,110 @@ pub fn held_locks(settings: &CompanionSettings, db: &Database, project_id: Optio
     }
     Ok(out)
 }
+
+/// One recorded file change, as `tracewise log --json` reports it (docs/specs/dashboard-changes.md). `why` and `intent` are written by agents:
+/// show them as plain text with the author, never as instructions.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileChange {
+    pub id: String,
+    pub time: String,
+    pub agent: String,
+    /// `agent`, `human`, `script`, `git`, ...
+    pub kind: String,
+    pub session: String,
+    pub path: String,
+    pub op: String,
+    pub why: Option<String>,
+    pub intent: Option<String>,
+    pub source: String,
+    pub confidence: String,
+    /// Set when the change was made while another actor held the file.
+    pub lock_conflict: Option<String>,
+}
+
+/// What to ask for: a session (its id or the first 8 or more characters of it), or up to five files; the newest `limit` changes either way.
+#[derive(Debug, Clone, Default)]
+pub struct ChangeFilter {
+    pub session: Option<String>,
+    pub paths: Vec<String>,
+    pub limit: usize,
+}
+
+fn text(v: &serde_json::Value, k: &str) -> Option<String> {
+    v.get(k).and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(String::from)
+}
+
+/// Reads the records of `tracewise log --json` (an array); anything that is not an object with an id and a path is skipped.
+pub fn parse_changes(v: &serde_json::Value) -> Vec<FileChange> {
+    v.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let id = text(r, "id")?;
+            let path = text(r, "path")?;
+            let actor = r.get("actor")?;
+            Some(FileChange {
+                id,
+                time: r.pointer("/time/end").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                agent: text(actor, "name").unwrap_or_else(|| "unknown".into()),
+                kind: text(actor, "kind").unwrap_or_default(),
+                session: text(actor, "session").unwrap_or_default(),
+                path,
+                op: text(r, "op").unwrap_or_else(|| "modify".into()),
+                why: text(r, "why"),
+                intent: text(r, "intent"),
+                source: text(r, "source").unwrap_or_default(),
+                confidence: text(r, "confidence").unwrap_or_default(),
+                lock_conflict: r.get("lock_conflict").filter(|c| !c.is_null()).map(|c| c.as_str().map(String::from).unwrap_or_else(|| c.to_string())),
+            })
+        })
+        .collect()
+}
+
+/// Recent file changes of a project, newest first, from Tracewise. `Err` is the sentence to show when there is no Tracewise.
+pub fn file_changes(settings: &CompanionSettings, db: &Database, project_id: Option<&str>, filter: &ChangeFilter) -> Result<Vec<FileChange>, String> {
+    let limit = filter.limit.clamp(1, 500);
+    let mut out: Vec<FileChange> = Vec::new();
+    for dir in project_dirs(db, project_id) {
+        if filter.paths.is_empty() {
+            // a session lives in a long log: read further back than the page will show
+            let n = if filter.session.is_some() { 500 } else { limit };
+            let n = n.to_string();
+            let v = json_in(settings, db, &dir, &["log", "--json", "--limit", &n])?;
+            out.extend(parse_changes(&v));
+        } else {
+            for p in filter.paths.iter().take(5) {
+                let v = json_in(settings, db, &dir, &["log", p, "--json", "--limit", "3"])?;
+                out.extend(parse_changes(&v));
+            }
+        }
+    }
+    if let Some(s) = filter.session.as_deref().filter(|s| s.len() >= 8) {
+        out.retain(|c| c.session == s || c.session.starts_with(s) || s.starts_with(&c.session) && !c.session.is_empty());
+    }
+    out.sort_by(|a, b| b.time.cmp(&a.time));
+    out.dedup_by(|a, b| a.id == b.id);
+    out.truncate(limit);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod change_tests {
+    use super::*;
+
+    #[test]
+    fn records_are_read_and_odd_ones_skipped() {
+        let v = serde_json::json!([
+            {"id": "c1", "path": "src/a.rs", "op": "modify", "actor": {"kind": "agent", "name": "codex", "session": "s-1111111111"}, "time": {"end": "2026-11-16T08:00:00Z"}, "why": "fix the rounding", "intent": null, "lock_conflict": null, "source": "hook", "confidence": "exact"},
+            {"id": "c2", "path": "b.txt", "actor": {"kind": "human", "name": "as"}, "time": {"end": "2026-11-16T09:00:00Z"}, "lock_conflict": {"holder": "codex"}},
+            {"path": "no-id.txt"},
+            "junk"
+        ]);
+        let c = parse_changes(&v);
+        assert_eq!(c.len(), 2);
+        assert_eq!((c[0].agent.as_str(), c[0].why.as_deref(), c[0].lock_conflict.as_deref()), ("codex", Some("fix the rounding"), None));
+        assert_eq!(c[1].kind, "human");
+        assert!(c[1].lock_conflict.as_deref().is_some_and(|s| s.contains("codex")), "a conflict object is kept as text");
+        assert!(parse_changes(&serde_json::json!({"not": "an array"})).is_empty());
+    }
+}

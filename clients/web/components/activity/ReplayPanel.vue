@@ -171,6 +171,21 @@
 
         <!-- Event Inspector Body -->
         <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          <!-- Files this session changed, from Tracewise (the same session id) -->
+          <Card v-if="store.activeSessionId && store.activeSessionId.length >= 8" title="Files this session changed">
+            <template #actions>
+              <Badge variant="neutral">Tracewise</Badge>
+            </template>
+            <FileChanges
+              :key="store.activeSessionId"
+              :project-id="store.activeSession?.project_id || store.activeProject"
+              :session="store.activeSessionId"
+              :limit="30"
+              show-command-hint
+              empty-text="Tracewise recorded no file changes for this session."
+            />
+          </Card>
+
           <!-- Distillation Report Card (if generated) -->
           <Card v-if="store.distillationReport">
             <template #header>

@@ -312,16 +312,19 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         let handlers: Vec<&dyn HookHandler> = vec![&guardrail];
         let results = run_pipeline(&hooks_cfg.handler, &pipe_ctx, &env, &handlers);
         let mut merged = merge_decision(&results);
+        let own_decision = merged.decision;
         if let Some(a) = &nested {
             merged = merge_companion(merged, a);
         }
+        // who made the call: a file lock held by another agent (Tracewise) is a collision prevented; the guardrail's calls are risky commands
+        let by_tracewise = merged.decision != own_decision;
         // Blocks and questions leave a trace (dashboard "recently blocked"); allowed calls are in the event log.
         if matches!(merged.decision.as_str(), "deny" | "ask") {
             let _ = db.log_audit(
                 &format!("hook.{}", merged.decision.as_str()),
                 "tool",
                 tool_name,
-                &json!({ "agent": agent, "session": session_id, "paths": paths, "reason": merged.reason }),
+                &json!({ "agent": agent, "session": session_id, "paths": paths, "reason": merged.reason, "source": if by_tracewise { "tracewise" } else { "automemory" } }),
             );
         }
         if native_hook_style(agent) {

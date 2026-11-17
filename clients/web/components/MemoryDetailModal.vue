@@ -30,6 +30,12 @@
         </div>
       </div>
 
+      <section v-if="linkedFiles.length" aria-label="Files this note is about" class="border-t border-border pt-4">
+        <h4 class="text-sm font-semibold text-text mb-2">Files this note is about</h4>
+        <p class="text-xs text-text-muted mb-2 break-all">{{ linkedFiles.join(', ') }}</p>
+        <FileChanges :project-id="memory.project_id" :paths="linkedFiles" :limit="6" empty-text="Tracewise has recorded no changes to these files." />
+      </section>
+
       <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm border-t border-border pt-4">
         <div v-for="row in facts" :key="row.label" class="flex items-baseline justify-between gap-3 min-w-0">
           <dt class="text-text-muted flex-shrink-0">{{ row.label }}</dt>
@@ -169,9 +175,16 @@ const facts = computed(() => {
   return rows;
 });
 
+/** Files the note names (what a session edited, or what the note was written about); at most five are looked up. */
+const linkedFiles = computed<string[]>(() => {
+  const m = props.memory.metadata || {};
+  const raw = m.files_modified ?? m.files ?? [];
+  return Array.isArray(raw) ? raw.filter((f: unknown) => typeof f === 'string' && f).slice(0, 5) : [];
+});
+
 /** Everything in metadata the rows above do not already say. */
 const extraMetadata = computed(() => {
-  const skip = new Set(['demo', 'agent', 'shared_by', 'saved_by']);
+  const skip = new Set(['demo', 'agent', 'shared_by', 'saved_by', 'files_modified', 'files']);
   const rest = Object.fromEntries(Object.entries(props.memory.metadata || {}).filter(([k]) => !skip.has(k)));
   return Object.keys(rest).length ? JSON.stringify(rest, null, 2) : '';
 });

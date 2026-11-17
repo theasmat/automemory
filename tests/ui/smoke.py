@@ -22,6 +22,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scenarios"))
 from dashboard import free_port  # noqa: E402
+from changes import fake as fake_tracewise  # noqa: E402
 
 PAGES = ["/", "/brain", "/agents", "/inbox", "/tools", "/models", "/models?tab=helper", "/safety", "/sync", "/settings",
          "/activity", "/activity?tab=sessions", "/activity?tab=traces", "/activity?tab=problems", "/activity?tab=skills",
@@ -32,6 +33,8 @@ def main():
     rep = Report("dashboard pages in a browser")
     sb = Sandbox("smoke")
     sb.env.update({"AUTOMEMORY_SECRETS_BACKEND": "file", "AUTOMEMORY_KEY": "smoke-master"})
+    (sb.root / "tools").mkdir()
+    sb.env["AUTOMEMORY_TRACEWISE_BIN"] = str(fake_tracewise(sb.root / "tools"))  # canned file changes for the change lists
     sb.run("demo")
     sb.run("connect", "claude")  # an agent to invite in the New room dialog
     # A decided planning room waiting for the human verdict.
@@ -167,6 +170,23 @@ def main():
             page.get_by_role("button", name="Turn on").click()
             page.wait_for_timeout(500)
             rep.check(page.locator("input[type=password]").count() == 1, "a Protected action opens the password prompt")
+            # File changes from Tracewise: the list on Agents & Locks and the files of a session
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(base + "/agents", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            main_text = page.inner_text("main")
+            rep.check("Recent file changes" in main_text and "src/storage.py" in main_text and "Monthly report query" in main_text and "codex" in main_text, "Agents & Locks lists the recent file changes with agent, file and reason", main_text[:300])
+            rep.check("Edited while held" in main_text, "and marks an edit made while another agent held the file")
+            page.goto(base + "/activity?tab=sessions", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            first = page.locator("button", has_text="events").first
+            if first.count():
+                first.click()
+                page.wait_for_timeout(600)
+                rep.check("Files this session changed" in page.inner_text("main"), "a replayed session shows the files Tracewise recorded for it")
+            else:
+                print("  SKIP  no recorded session in the smoke data")
+            page.close()
             # Responsive: no page scrolls sideways at phone, tablet or desktop width; the shell adapts (docs/specs/dashboard-responsive.md)
             for width, height in ((375, 812), (768, 1024), (1280, 800)):
                 wide = []

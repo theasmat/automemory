@@ -1,3 +1,4 @@
+pub mod changes;
 pub mod continuity;
 pub mod library;
 pub mod control;
@@ -100,6 +101,7 @@ pub fn build_api_router() -> Router<AppState> {
         .route("/api/recall/clean", post(recall::api_clean))
         .route("/api/stats", get(stats::api_stats))
         .route("/api/coordination", get(stats::api_coordination))
+        .route("/api/changes", get(changes::api_changes))
         .route(
             "/api/mode",
             get(guardrails::api_get_mode).post(guardrails::api_set_mode),

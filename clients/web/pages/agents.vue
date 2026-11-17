@@ -112,6 +112,14 @@
       </details>
     </Card>
 
+    <!-- Recent file changes (from Tracewise) -->
+    <Card title="Recent file changes">
+      <template #actions>
+        <Badge variant="neutral">Tracewise</Badge>
+      </template>
+      <FileChanges :project-id="store.activeProject" :limit="12" poll show-command-hint empty-text="No file changes recorded yet. They appear here as agents edit files." />
+    </Card>
+
     <!-- Set up an agent -->
     <Card title="Set up an agent">
       <p class="text-sm text-text-muted mb-4">Register AutoMemory with a coding agent in this project{{ setup?.project ? ` (${setup.project})` : '' }}. Asks for your password.</p>

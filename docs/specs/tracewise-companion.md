@@ -73,6 +73,8 @@ Checks: 5 new integration tests (`tests/neutral_hook.rs`), 362 workspace tests, 
 5. **Setup:** `automemory setup --tracewise auto|yes|no` (the installer asks once), `doctor` shows companion state, API version and the nested call's last latency, `connect` warns about a duplicate Tracewise hook.
 6. **Docs:** README, features, architecture, decisions, `LONG_SESSION_PLAN.md` (S4 now tests Tracewise locks).
 
+Follow-up (Nov 2026): the dashboard also shows Tracewise's file changes, read-only: [dashboard-changes.md](dashboard-changes.md).
+
 ## 6. Phases and exit gates
 
 | Phase | Work | Exit gate |

@@ -5,6 +5,12 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 ## Memory quality plan, step 1 (recall eval)
 
 ### Added
+- Dashboard, file changes from Tracewise (read-only): a "Recent file changes" card on Agents & Locks, "Files this session changed" in the session replay (joined on the session id), and "Files this note is about" in the note dialog. New `GET /api/changes` with a five-second cache. Plan and rules: `docs/specs/dashboard-changes.md`.
+
+### Fixed
+- `automemory stats` and the Home card count "edit collisions prevented" again: it had stayed at zero since the locks moved to Tracewise. The hook now marks refusals made by Tracewise in the audit row.
+
+### Added
 - Dashboard: clicking a note or decision card opens a dialog with its full text, every field (type, scope, status, confidence, importance, freshness, times, version, id with copy), all tags and mentions, technical details, and actions (pin, archive or restore, Edit). Edit and the pencil on the card open the same dialog as a form (title and full text). Escape now closes any dialog wherever the focus is.
 
 ### Changed

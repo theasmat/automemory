@@ -12,9 +12,9 @@ fn count(db: &Database, sql: &str, since: &str) -> i64 {
 /// Counts for the last `days` days (plus a few totals that are not time-bound).
 pub fn value_report(db: &Database, days: i64) -> Value {
     let since = (Utc::now() - Duration::days(days)).to_rfc3339();
-    // A lock denial or question says "Collision prevented"; anything else that blocked was a guardrail rule.
+    // A refusal or question from Tracewise (a file held by another agent) is a collision prevented; the older built-in locks said "Collision prevented"; anything else that blocked was a guardrail rule.
     let blocked = |action: &str, like: &str| {
-        let sql = format!("SELECT COUNT(*) FROM audit_log WHERE action = '{action}' AND timestamp > ?1 AND details {like} '%Collision prevented%'");
+        let sql = format!("SELECT COUNT(*) FROM audit_log WHERE action = '{action}' AND timestamp > ?1 AND (details {like} '%Collision prevented%' OR details {like} '%\"source\":\"tracewise\"%')");
         count(db, &sql, &since)
     };
     let (deny_all, ask_all) = (
@@ -75,5 +75,15 @@ mod tests {
         let text = summary(&v);
         assert!(text.contains("2  edit collisions prevented") && text.contains("1  risky commands"), "{text}");
         assert_eq!(value_report(&db, 7)["collisions_prevented"], 2, "idempotent");
+    }
+
+    #[test]
+    fn a_refusal_made_by_tracewise_counts_as_a_collision_and_a_guardrail_block_does_not() {
+        let db = Database::open_in_memory().unwrap();
+        db.log_audit("hook.deny", "tool", "Edit", &json!({ "reason": "a.rs is held by codex", "source": "tracewise" })).unwrap();
+        db.log_audit("hook.deny", "tool", "command", &json!({ "reason": "CRITICAL STOP: force push", "source": "automemory" })).unwrap();
+        let v = value_report(&db, 7);
+        assert_eq!(v["collisions_prevented"], 1);
+        assert_eq!(v["risky_commands_stopped"], 1);
     }
 }
