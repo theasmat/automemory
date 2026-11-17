@@ -90,6 +90,24 @@ impl BlindCrypto {
         crate::auth::pbkdf2_hmac_sha256(secret.as_bytes(), salt, 100_000)
     }
 
+    /// The master key this computer already has (explicit environment key, config, keychain or key file), or `None`. Never creates one: status and
+    /// checks must not leave a secret behind.
+    pub fn existing_master_key() -> Option<[u8; 32]> {
+        if let Ok(env_key) = std::env::var("AUTOMEMORY_KEY") {
+            if !env_key.trim().is_empty() {
+                return Some(Self::derive_key(env_key.trim(), b"automemory-salt-v1"));
+            }
+        }
+        if let Ok(global_cfg) = crate::config::GlobalConfig::load() {
+            if let Some(k) = global_cfg.cloud.encryption_key.as_ref().or(global_cfg.vault.encryption_key.as_ref()) {
+                if !k.trim().is_empty() {
+                    return Some(Self::derive_key(k.trim(), b"automemory-salt-v1"));
+                }
+            }
+        }
+        crate::keychain::get_master_key()
+    }
+
     /// Retrieve or automatically generate a 256-bit zero-knowledge master key.
     pub fn get_or_create_master_key(custom_key: Option<&str>) -> Result<[u8; 32]> {
         // 1. Explicit CLI argument override

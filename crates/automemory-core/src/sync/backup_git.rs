@@ -249,7 +249,8 @@ pub fn status(db: &Database) -> BackupStatus {
         last_error: err_msg,
         last_error_at: err_at,
         last_verified: db.sync_kv_get(KEY_VERIFIED),
-        key_present: super::auto::resolve_key(true).is_some() && crate::keychain::get_master_key().is_some(),
+        // only looked up once a backup is set up, and never created here: a status must not leave a secret in the keychain
+        key_present: remote.is_some() && super::auto::existing_key().is_some(),
     }
 }
 

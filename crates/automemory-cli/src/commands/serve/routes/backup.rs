@@ -69,7 +69,7 @@ pub async fn api_verify(State(state): State<AppState>) -> Response {
     let out = tokio::task::spawn_blocking(move || {
         let (_, remote) = automemory_core::sync::auto::vault_settings();
         let url = remote.ok_or_else(|| "no git backup is set up".to_string())?;
-        let key = automemory_core::sync::auto::resolve_key(true).ok_or_else(|| "this computer has no vault key".to_string())?;
+        let key = automemory_core::sync::auto::existing_key().ok_or_else(|| "this computer has no vault key".to_string())?;
         bg::verify_remote(&db, &url, &key).map_err(|e| e.to_string())
     })
     .await;

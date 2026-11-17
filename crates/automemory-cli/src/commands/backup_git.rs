@@ -82,7 +82,7 @@ pub fn verify() -> Result<()> {
     let db = db()?;
     let (_, remote) = automemory_core::sync::auto::vault_settings();
     let Some(url) = remote else { bail!("no git backup is set up (`automemory backup git setup`)") };
-    let Some(key) = automemory_core::sync::auto::resolve_key(true) else { bail!("this computer has no vault key; restore with the recovery phrase first") };
+    let Some(key) = automemory_core::sync::auto::existing_key() else { bail!("this computer has no vault key; restore with the recovery phrase first") };
     println!("Cloning the backup into a scratch folder and opening it with your key…");
     let v = bg::verify_remote(&db, &url, &key)?;
     println!("✓ The copy on the remote restores: {} note(s) and {} decision(s).", v.remote_notes, v.remote_decisions);
@@ -213,7 +213,7 @@ pub fn restore(a: &Args) -> Result<()> {
         }
     }
     super::sync::bootstrap(&info.url, phrase, false)?;
-    if let Some(key) = automemory_core::sync::auto::resolve_key(true) {
+    if let Some(key) = automemory_core::sync::auto::existing_key() {
         if let Ok(v) = bg::verify_remote(&db, &info.url, &key) {
             println!("✓ This computer now holds {} note(s) and {} decision(s); the remote holds {} and {}.", v.local_notes, v.local_decisions, v.remote_notes, v.remote_decisions);
         }

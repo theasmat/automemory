@@ -69,6 +69,11 @@ pub fn resolve_key(remote_configured: bool) -> Option<[u8; 32]> {
         .flatten()
 }
 
+/// The key this computer already has; never creates one (for status and checks).
+pub fn existing_key() -> Option<[u8; 32]> {
+    crate::crypto::BlindCrypto::existing_master_key()
+}
+
 /// Whether a hook should start a background sync now (a remote exists and none was started recently).
 pub fn should_spawn(db: &Database) -> bool {
     if vault_settings().1.is_none() {

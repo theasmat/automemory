@@ -44,6 +44,13 @@ def main():
 
         r = a.run("backup", "git", "status")
         rep.check("off" in r.stdout, "before setup the status says it is off", r.stdout[:120])
+        # looking must not leave a secret behind: status, doctor and verify never create the vault key (found when `doctor` put a key in a real keychain)
+        a.run("doctor")
+        a.run("backup", "git", "status", "--json")
+        r = a.run("backup", "git", "verify")
+        rep.check(r.returncode != 0, "verify without a backup says so")
+        keyfile = a.home / ".automemory" / "master.key"
+        rep.check(not keyfile.exists(), "status, doctor and verify create no vault key", str(keyfile))
 
         # refusals
         r = a.run("backup", "git", "setup", "ext::sh -c touch /tmp/pwned", "--yes")
