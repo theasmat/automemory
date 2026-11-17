@@ -1213,6 +1213,10 @@ enum SyncCommands {
         /// Only push
         #[arg(long)]
         push: bool,
+
+        /// Wait this many milliseconds first (a hook schedules a catch-up pass just after its throttle window)
+        #[arg(long, hide = true)]
+        delay_ms: Option<u64>,
     },
 
     /// Set the private git repository that carries your memory between machines
@@ -1441,7 +1445,15 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Sync { command } => match command {
-            SyncCommands::Auto { pull, push } => commands::sync::auto(pull, push)?,
+            SyncCommands::Auto { pull, push, delay_ms } => {
+                if let Some(ms) = delay_ms {
+                    std::thread::sleep(std::time::Duration::from_millis(ms.min(120_000)));
+                    if let Ok(db) = automemory_core::db::Database::open(&automemory_core::config::Config::default_config().db_path) {
+                        automemory_core::sync::auto::mark_started(&db);
+                    }
+                }
+                commands::sync::auto(pull, push)?
+            }
             SyncCommands::Remote { url, clear } => {
                 let target = if clear { "--clear" } else { &url };
                 commands::sync::remote(target)?;

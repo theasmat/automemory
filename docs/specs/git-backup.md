@@ -33,6 +33,10 @@ After setup there is nothing to do: hooks start a background sync after agent ac
 
 Every sync pass with a remote records its outcome. `state` is `off`, `never` (set up, no success yet), `ok`, `failing` (the last attempt failed; the reason is kept), or `stale` (no success for seven days). `last_verified` is when a restore check last passed. The remote address is shown with any token hidden.
 
+## Automatic flush
+
+Nobody has to press "back up now". A save or a prompt starts a background pass, and so does the end of an agent turn (the Stop hook), which is where the last notes of a session are written. A pass runs at most once per 20 s; a request inside that window is not dropped but schedules one delayed catch-up pass. Typical lag between a save and the remote: about 20 s. Measured by `tests/perf/backup_soak.py` (100 notes in 10 minutes: all 100 on the remote with no manual backup, at most 4 notes behind at any checkpoint, restore on a second computer 100/100) and checked on every run by `tests/scenarios/backup_flush.py`.
+
 ## What the backup carries, and what it cannot
 
 The vault carries notes, decisions, hand-offs, traces, failures and skills, each tagged with the **project key** of its project so another computer can attach it to the right project. A key is the repository's remote address or root commit; a folder that is not a git repository, and a second registration of the same repository, get `local:<project id>`, which the other computer turns back into a project.

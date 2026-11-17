@@ -5,6 +5,7 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 ## Memory quality plan, step 1 (recall eval)
 
 ### Fixed
+- Git backup did not start when an agent turn ended, so the notes of the last turn waited for the next prompt (or never left the computer if the session was the last of the day). The turn end now starts a backup, and a request that arrives inside the 20 s window schedules one catch-up pass instead of being dropped. Found by a soak test (100 notes in 10 minutes: all on the remote, at most 4 behind, restore 100/100).
 - Git backup to a new remote was empty: a database that had already synced to one remote believed everything was sent, so a recreated repository, another provider, or a database restored on a new computer received nothing, and the new remote also refused later changes because this computer's announcement was not in it. A change of remote now clears the sent-state and re-announces the computer, and setup warns when the remote does not hold everything yet. Found by testing against a real GitHub repository.
 
 ### Fixed

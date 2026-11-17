@@ -76,21 +76,43 @@ pub fn existing_key() -> Option<[u8; 32]> {
     crate::crypto::BlindCrypto::existing_master_key()
 }
 
-/// Whether a hook should start a background sync now (a remote exists and none was started recently).
+const TRAILING_DUE_KEY: &str = "sync_trailing_due";
+
+/// What a hook should do about the backup now: `None` (nothing to do), `Some(0)` (start a pass now), `Some(ms)` (start one that first waits `ms`).
+/// Passes are at most one per window, but a request that arrives inside a window is not dropped: one more pass is scheduled just after the window, so
+/// whatever was written in between (the notes of the last turn, say) is carried too, even if no hook ever fires again.
+pub fn schedule_at(db: &Database, now_ms: i64, remote_configured: bool) -> Option<i64> {
+    if !remote_configured {
+        return None;
+    }
+    let last: i64 = db.sync_kv_get("last_auto_sync_spawn").and_then(|v| v.parse().ok()).unwrap_or(0);
+    if now_ms - last >= SPAWN_INTERVAL_MS {
+        db.sync_kv_set("last_auto_sync_spawn", &now_ms.to_string());
+        return Some(0);
+    }
+    let due: i64 = db.sync_kv_get(TRAILING_DUE_KEY).and_then(|v| v.parse().ok()).unwrap_or(0);
+    if due > now_ms {
+        return None; // the catch-up pass is already scheduled
+    }
+    let wait = last + SPAWN_INTERVAL_MS - now_ms + 1500;
+    db.sync_kv_set(TRAILING_DUE_KEY, &(now_ms + wait).to_string());
+    Some(wait)
+}
+
+/// `schedule_at` for now, with the configured remote.
+pub fn schedule_spawn(db: &Database) -> Option<i64> {
+    schedule_at(db, Utc::now().timestamp_millis(), vault_settings().1.is_some())
+}
+
+/// A scheduled pass that has waited starts a new window.
+pub fn mark_started(db: &Database) {
+    db.sync_kv_set("last_auto_sync_spawn", &Utc::now().timestamp_millis().to_string());
+    db.sync_kv_delete(TRAILING_DUE_KEY);
+}
+
+/// Whether a hook should start a background sync now (kept for callers that only want the yes or no).
 pub fn should_spawn(db: &Database) -> bool {
-    if vault_settings().1.is_none() {
-        return false;
-    }
-    let now = Utc::now().timestamp_millis();
-    let last: i64 = db
-        .sync_kv_get("last_auto_sync_spawn")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    if now - last < SPAWN_INTERVAL_MS {
-        return false;
-    }
-    db.sync_kv_set("last_auto_sync_spawn", &now.to_string());
-    true
+    schedule_spawn(db) == Some(0)
 }
 
 struct LockGuard(PathBuf);
@@ -408,6 +430,21 @@ mod tests {
         let (_, listing) = git(&vb, &["ls-files"], Duration::from_secs(5)).unwrap();
         assert!(listing.contains(".enc") && !listing.contains(".jsonl"), "{listing}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_request_inside_the_window_schedules_one_catch_up_pass_instead_of_being_dropped() {
+        let db = Database::open_in_memory().unwrap();
+        let t = 1_000_000_000_000i64;
+        assert_eq!(schedule_at(&db, t, false), None, "no remote, nothing to do");
+        assert_eq!(schedule_at(&db, t, true), Some(0), "the first request starts a pass now");
+        let wait = schedule_at(&db, t + 5_000, true).expect("a request inside the window is not dropped");
+        assert!((15_000..=17_000).contains(&wait), "it waits for the window to end: {wait}");
+        assert_eq!(schedule_at(&db, t + 6_000, true), None, "and only one catch-up is scheduled");
+        // the catch-up starts a new window
+        mark_started(&db);
+        assert_eq!(schedule_at(&db, Utc::now().timestamp_millis() + 1_000, true).map(|w| w > 0), Some(true));
+        assert_eq!(schedule_at(&db, Utc::now().timestamp_millis() + 30_000, true), Some(0), "a quiet minute later a request starts a pass right away");
     }
 
     #[test]

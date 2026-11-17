@@ -378,6 +378,10 @@ pub fn execute_with_input(agent: &str, event: &str, project_arg: &str, input: &s
         db.sync_kv_delete(&format!("resume_shown:{session_id}"));
     }
 
+    // The end of every turn flushes the backup too: the notes of the last turn must not wait for the next prompt (or for a session that may never end).
+    if canonical == Some(CanonicalEvent::Stop) {
+        spawn_background_sync(&db);
+    }
     if matches!(canonical, Some(CanonicalEvent::Stop | CanonicalEvent::SessionEnd | CanonicalEvent::PreCompact)) {
         spawn_chat_refresh(&db, effective_project_id, &root_dir(), canonical == Some(CanonicalEvent::Stop));
         // Edits made in .automemory/library or to linked files during the session are taken in at the end of the turn.
@@ -572,8 +576,14 @@ fn spawn_chat_refresh(db: &Database, project_id: Option<&str>, cwd: &Path, throt
 }
 
 fn spawn_background_sync(db: &Database) {
-    if automemory_core::sync::auto::should_spawn(db) {
-        spawn_self(db, &["sync", "auto", "--pull", "--push"], None, None);
+    match automemory_core::sync::auto::schedule_spawn(db) {
+        Some(0) => spawn_self(db, &["sync", "auto", "--pull", "--push"], None, None),
+        // inside the throttle window: one delayed pass carries whatever is written before it starts
+        Some(ms) => {
+            let d = ms.to_string();
+            spawn_self(db, &["sync", "auto", "--pull", "--push", "--delay-ms", &d], None, None);
+        }
+        None => {}
     }
 }
 
