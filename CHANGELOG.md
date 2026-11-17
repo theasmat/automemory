@@ -5,6 +5,9 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 ## Memory quality plan, step 1 (recall eval)
 
 ### Fixed
+- Git backup to a new remote was empty: a database that had already synced to one remote believed everything was sent, so a recreated repository, another provider, or a database restored on a new computer received nothing, and the new remote also refused later changes because this computer's announcement was not in it. A change of remote now clears the sent-state and re-announces the computer, and setup warns when the remote does not hold everything yet. Found by testing against a real GitHub repository.
+
+### Fixed
 - Git backup completeness, found by restoring a real backup and comparing it with the database: a project whose folder is not a git repository (and a second registration of the same repository) now gets a sync key, so its notes, decisions, hand-offs and traces are backed up; before, they were silently left out. Data that still cannot be carried (rows filed under an unknown project id, notes from unregistered folders) is listed with the reason and the fix in the status, `doctor`, the Sync card and Home, and the status reads "partial" instead of "working". New `automemory project adopt <id> <project>` re-files such rows. An ssh remote that uses a `~/.ssh/config` alias is recognised as its provider.
 
 ### Added

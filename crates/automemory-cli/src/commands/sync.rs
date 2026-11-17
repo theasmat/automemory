@@ -155,6 +155,12 @@ pub fn remote(url: &str) -> Result<()> {
     }
 
     let mut cfg = automemory_core::config::GlobalConfig::load().unwrap_or_default();
+    // A different remote starts empty: what this computer believes it already sent was sent somewhere else.
+    if cfg.vault.remote_url.as_deref().map(str::trim) != Some(trimmed) {
+        if let Ok(db) = Database::open(&Config::default_config().db_path) {
+            automemory_core::sync::deltas::forget_sent(&db);
+        }
+    }
     cfg.vault.remote_url = Some(trimmed.to_string());
     cfg.save()?;
     let (root, _) = automemory_core::sync::auto::vault_settings();

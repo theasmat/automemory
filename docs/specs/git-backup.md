@@ -49,6 +49,12 @@ The status then reads `partial`, and the dashboard card, Home, `doctor` and `aut
 
 An ssh remote that uses a name from `~/.ssh/config` (`git@github-work:...`) is recognised through `ssh -G`, so the provider shows correctly.
 
+## Changing the remote
+
+A computer remembers which records it already sent, and that memory belongs to one remote. When the configured remote changes (`backup git setup` or `sync remote` with a new address, a recreated repository, another provider), the memory is cleared and the computer announces itself again, so the new repository receives everything, not only what changes later. The remote the memory belongs to is also recorded in the database, so a change made by editing the config is caught on the next pass. Found by pointing a copy of a real database, which had already synced elsewhere, at a new repository: the first backup was empty, and setup said so only as "0 notes".
+
+Setup now states it when the remote does not hold everything yet ("N notes are not on it yet").
+
 ## Restore
 
 `restore` first proves the phrase opens the backup (a clone and a replay with the key derived from the phrase) and only then stores the key and syncs. A wrong phrase changes nothing on the computer.

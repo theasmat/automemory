@@ -191,6 +191,7 @@ pub fn setup(a: &Args) -> Result<()> {
     super::sync::auto(true, true)?;
     let db = db()?;
     match bg::verify_remote(&db, &info.url, &key) {
+        Ok(v) if v.not_yet_backed_up > 0 => println!("⚠ The remote restores, but holds {} note(s) and {} decision(s) while this computer has {} and {}: {} note(s) are not on it yet. `automemory backup git now` sends them.", v.remote_notes, v.remote_decisions, v.local_notes, v.local_decisions, v.not_yet_backed_up),
         Ok(v) => println!("✓ Verified: the copy on the remote restores ({} note(s), {} decision(s)).", v.remote_notes, v.remote_decisions),
         Err(e) => println!("⚠ The first backup could not be verified yet: {e}\n  `automemory backup git now` retries; `automemory backup git status` shows what is wrong."),
     }

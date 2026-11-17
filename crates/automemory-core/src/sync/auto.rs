@@ -17,6 +17,8 @@ const LOCK_FILE: &str = ".sync.lock";
 const LOCK_STALE: Duration = Duration::from_secs(120);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(25);
 const SPAWN_INTERVAL_MS: i64 = 20_000;
+/// The remote the sent-state in the database belongs to.
+const REMOTE_IDENTITY_KEY: &str = "sync_remote_identity";
 
 #[derive(Debug, Default, Clone)]
 pub struct AutoReport {
@@ -297,6 +299,18 @@ pub fn run(
         report.skipped_locked = true;
         return Ok(report);
     };
+    if let Some(url) = remote_url {
+        // What this computer believes it already sent belongs to ONE remote. A different remote (a recreated repository, another provider) starts empty,
+        // so everything must be sent again; the first time a remote is seen it is only remembered.
+        match db.sync_kv_get(REMOTE_IDENTITY_KEY) {
+            Some(prev) if prev != url => {
+                deltas::forget_sent(db);
+                db.sync_kv_set(REMOTE_IDENTITY_KEY, url);
+            }
+            None => db.sync_kv_set(REMOTE_IDENTITY_KEY, url),
+            _ => {}
+        }
+    }
     if remote_url.is_some() {
         ensure_repo(vault_root, remote_url)?;
         if do_pull {
@@ -393,6 +407,35 @@ mod tests {
         // The remote holds ciphertext only.
         let (_, listing) = git(&vb, &["ls-files"], Duration::from_secs(5)).unwrap();
         assert!(listing.contains(".enc") && !listing.contains(".jsonl"), "{listing}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_new_remote_gets_everything_again_not_just_what_is_new() {
+        let root = std::env::temp_dir().join(format!("am-auto-newremote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut remotes = Vec::new();
+        for n in ["one.git", "two.git"] {
+            let r = root.join(n);
+            std::fs::create_dir_all(&r).unwrap();
+            sh(&r, &["init", "-q", "--bare", "-b", "main"]);
+            remotes.push(r.to_string_lossy().to_string());
+        }
+        let key = [5u8; 32];
+        let a = Database::open_in_memory().unwrap();
+        project(&a, "id-a");
+        a.save_memory_direct(&decision_memory("id-a", "m-1", "first remote note")).unwrap();
+        let va = root.join("vault-a");
+        assert!(run(&a, &va, Some(&remotes[0]), true, true, Some(&key)).unwrap().pushed);
+
+        // The same computer is pointed at a second, empty repository (a provider change, or the repository was recreated).
+        let vb = root.join("vault-a2");
+        assert!(run(&a, &vb, Some(&remotes[1]), true, true, Some(&key)).unwrap().pushed);
+        let fresh = Database::open_in_memory().unwrap();
+        let vc = root.join("vault-c");
+        let r = run(&fresh, &vc, Some(&remotes[1]), true, true, Some(&key)).unwrap();
+        assert!(r.pulled && r.applied >= 1, "the second remote must hold the existing note, not just new ones: {}", r.summary());
+        assert!(fresh.get_memory_by_id("m-1").unwrap().is_some());
         let _ = std::fs::remove_dir_all(&root);
     }
 

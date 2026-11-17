@@ -6,6 +6,7 @@ Two computers = two sandboxes with their own HOME; the remote is a bare folder, 
 The keys live in a file backend, so the real keychain is never touched."""
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -144,6 +145,31 @@ def main():
                 server.wait(timeout=5)
         finally:
             c.cleanup()
+
+        # moving the backup to another repository (a recreated repo, another provider): the new one gets everything, not only what is new
+        m = machine("backup-m")
+        n = machine("backup-n")
+        try:
+            r1, r2 = m.root / "first.git", m.root / "second.git"
+            for rr in (r1, r2):
+                rr.mkdir()
+                git(rr, "init", "-q", "--bare", "-b", "main")
+            m.mcp("project.register", slug="shop", display_name="shop", path=str(m.project))
+            m.mcp("decision.record", topic="queue", decision="No background queue", reason="keep it simple", project_id="shop", agent="claude")
+            r = m.run("backup", "git", "setup", str(r1), "--yes")
+            rep.check(r.returncode == 0 and "Verified" in r.stdout, "the first repository is set up and verified", (r.stdout + r.stderr)[-200:])
+            # the database remembers what it sent, but the local vault folder is gone (a database restored from a local backup on a new computer,
+            # or a deleted vault folder): the second repository must still receive everything
+            shutil.rmtree(m.home / ".automemory" / "vault")
+            r = m.run("backup", "git", "setup", str(r2), "--yes")
+            out = r.stdout + r.stderr
+            rep.check(r.returncode == 0 and "Verified: the copy on the remote restores (" in out and "0 decision(s)" not in out and "1 decision(s)" in out, "pointing it at a second repository sends everything again, and says so", out[-300:])
+            phrase2 = re.search(r"\n\s+((?:[a-z]+ ){23}[a-z]+)\n", out).group(1)
+            r = n.run("backup", "git", "restore", str(r2), "--phrase", phrase2)
+            rep.check(r.returncode == 0 and "No background queue" in n.run("decision", "list").stdout, "and a computer restoring from the second repository has the decision", (r.stdout + r.stderr)[-200:])
+        finally:
+            m.cleanup()
+            n.cleanup()
 
         # gaps: a project without git, an orphan id and an unregistered folder's scope (the real-world run that found them)
         d = machine("backup-d")

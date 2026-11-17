@@ -163,10 +163,12 @@ pub fn shared_by(db: &Database, memory_id: &str) -> Option<String> {
     get_kv(db, &format!("author:{memory_id}")).ok().flatten()
 }
 
-/// Forget what this device believes it already sent, so the next push sends everything again (used when the vault
-/// was replaced by a purge). Sending a record the others already have is harmless: equal fingerprints converge.
+/// Forget what this device believes it already sent, so the next push sends everything again, and announces itself again (used when the vault
+/// was replaced by a purge, and when the remote changes). Sending a record the others already have is harmless: equal fingerprints converge.
 pub fn forget_sent(db: &Database) {
     let _ = set_kv(db, APPLIED_KEY, "{}");
+    // A vault that starts empty has not seen this computer's announcement either, and it refuses ops signed by a device it has not seen announce itself.
+    db.sync_kv_delete("announced_pubkey");
 }
 
 /// Replaces every delta file with one signed snapshot of the current state plus the device announcements, so the vault
