@@ -87,6 +87,17 @@
         <div class="flex justify-between gap-4"><dt class="text-text-muted">Key on this computer</dt><dd class="text-text">{{ status.key_present ? 'yes' : 'no' }}</dd></div>
       </dl>
 
+      <div v-if="status.gaps?.length" class="rounded-xl bg-warn-bg px-4 py-3 text-sm space-y-2" role="alert">
+        <p class="text-warn font-medium">Not everything on this computer is backed up:</p>
+        <ul class="space-y-2">
+          <li v-for="g in status.gaps" :key="g.project" class="min-w-0">
+            <span class="font-mono text-xs text-text break-all">{{ g.project }}</span>
+            <span class="text-text">: {{ gapWhat(g) }}</span>
+            <p class="text-xs text-text-muted mt-0.5 break-words">{{ g.fix }}</p>
+          </li>
+        </ul>
+      </div>
+
       <div v-if="status.last_error && (status.state === 'failing' || status.state === 'never')" class="rounded-xl bg-warn-bg text-warn px-4 py-3 text-sm" role="alert">
         The last attempt{{ status.last_error_at ? ' (' + ago(status.last_error_at) + ')' : '' }} did not work: {{ status.last_error }}
       </div>
@@ -119,7 +130,7 @@ import { request, protectedCall, safeCall } from '~/utils/api';
 import { formatRelativeTime } from '~/utils/memoryText';
 
 interface Status {
-  state: 'off' | 'never' | 'ok' | 'stale' | 'failing';
+  state: 'off' | 'never' | 'ok' | 'partial' | 'stale' | 'failing';
   remote?: string | null;
   provider_name?: string | null;
   last_ok?: string | null;
@@ -127,7 +138,9 @@ interface Status {
   last_error_at?: string | null;
   last_verified?: string | null;
   key_present: boolean;
+  gaps: Gap[];
 }
+interface Gap { project: string; reason: string; notes: number; decisions: number; other: number; fix: string }
 interface Provider { id: string; name: string; hint: string }
 
 const status = ref<Status | null>(null);
@@ -152,12 +165,21 @@ const hint = computed(() => providers.value.find((p) => p.name === provider.valu
 const badge = computed(() => {
   switch (status.value?.state) {
     case 'ok': return { variant: 'ok', text: 'Working' };
+    case 'partial': return { variant: 'warn', text: 'Partly backed up' };
     case 'failing': return { variant: 'bad', text: 'Failing' };
     case 'stale': return { variant: 'warn', text: 'Out of date' };
     case 'never': return { variant: 'warn', text: 'Waiting for first backup' };
     default: return { variant: 'neutral', text: 'Off' };
   }
 });
+
+function gapWhat(g: Gap) {
+  const bits: string[] = [];
+  if (g.notes) bits.push(`${g.notes} note${g.notes === 1 ? '' : 's'}`);
+  if (g.decisions) bits.push(`${g.decisions} decision${g.decisions === 1 ? '' : 's'}`);
+  if (g.other) bits.push(`${g.other} hand-off${g.other === 1 ? '' : 's'}, trace${g.other === 1 ? '' : 's'} or skill${g.other === 1 ? '' : 's'}`);
+  return bits.join(', ');
+}
 
 function ago(t?: string | null) {
   return t ? formatRelativeTime(t) : '';

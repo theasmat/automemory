@@ -117,14 +117,17 @@ impl Database {
         Ok(project.id)
     }
 
-    /// Gives every registered project whose folder exists a key. Cheap when all have one.
+    /// Gives every registered project a key. A git repository's key comes from the repository (so another computer's checkout is the same project);
+    /// a folder that is not a git repository gets `local:<project id>`, which makes its data syncable and lets the other computer create the project
+    /// from the key. A project whose folder is registered but missing here is left alone (it may be a repository on another path). Cheap when all have one.
     pub fn link_project_keys(&self) -> usize {
         let mut linked = 0;
         for p in self.list_projects().unwrap_or_default() {
-            if self.project_key_of(&p.id).is_some() {
+            if p.id == "demo" || self.project_key_of(&p.id).is_some() {
                 continue;
             }
-            for pp in self.get_project_paths(&p.id).unwrap_or_default() {
+            let paths = self.get_project_paths(&p.id).unwrap_or_default();
+            for pp in &paths {
                 if let Some(key) = project_key_for_dir(Path::new(&pp.local_path)) {
                     if self.set_project_key(&p.id, &key).unwrap_or(false) {
                         linked += 1;
@@ -132,8 +135,41 @@ impl Database {
                     break;
                 }
             }
+            // Still no key: not a git repository, or the repository's key already belongs to another registered project (the same folder registered
+            // twice, for instance by `connect` and by hand). Either way the project gets a key of its own, so its data syncs.
+            let folder_here = paths.is_empty() || paths.iter().any(|pp| Path::new(&pp.local_path).is_dir());
+            if self.project_key_of(&p.id).is_none() && folder_here && self.set_project_key(&p.id, &format!("local:{}", p.id)).unwrap_or(false) {
+                linked += 1;
+            }
         }
         linked
+    }
+
+    /// Moves everything filed under `from` (a project id that is not, or no longer, the right one: an orphan id, an unregistered folder's scope) to the
+    /// project `to`. Returns how many rows moved per table. `to` must be a registered project.
+    pub fn adopt_project_data(&self, from: &str, to: &str) -> Result<Vec<(&'static str, usize)>> {
+        if from == to {
+            anyhow::bail!("those are the same project");
+        }
+        if self.get_project_by_id(to)?.is_none() {
+            anyhow::bail!("'{to}' is not a registered project");
+        }
+        let mut moved = Vec::new();
+        let conn = self.conn();
+        for table in ["memories", "decisions", "batons", "success_traces", "failure_records", "procedural_skills", "tool_events", "review_proposals", "tasks"] {
+            let has_col: bool = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map(|mut st| st.query_map([], |r| r.get::<_, String>(1)).map(|rows| rows.flatten().any(|c| c == "project_id")).unwrap_or(false))
+                .unwrap_or(false);
+            if !has_col {
+                continue;
+            }
+            let n = conn.execute(&format!("UPDATE {table} SET project_id = ?1 WHERE project_id = ?2"), params![to, from])?;
+            if n > 0 {
+                moved.push((table, n));
+            }
+        }
+        Ok(moved)
     }
 
     /// Resolves a `project_id` or slug to `(project_key, slug)`, if it has a key.
@@ -164,6 +200,33 @@ mod tests {
         }
         assert_eq!(normalize_remote(""), None);
         assert_eq!(normalize_remote("nonsense"), None);
+    }
+
+    #[test]
+    fn a_project_without_git_gets_a_local_key_and_adopting_moves_orphaned_rows() {
+        let db = Database::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("am-nogit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let now = chrono::Utc::now();
+        let mk = |id: &str, slug: &str| Project { id: id.into(), slug: slug.into(), display_name: slug.into(), created_at: now, updated_at: now, capture_policy: Default::default(), context_budget: Default::default(), document_config: Default::default(), sync_config: Default::default() };
+        db.save_project(&mk("p-plain", "plain")).unwrap();
+        db.add_project_path("p-plain", &dir.to_string_lossy(), true).unwrap();
+        db.save_project(&mk("p-gone", "gone")).unwrap();
+        db.add_project_path("p-gone", "/definitely/not/here", true).unwrap();
+        assert_eq!(db.link_project_keys(), 1);
+        assert_eq!(db.project_key_of("p-plain").as_deref(), Some("local:p-plain"));
+        assert_eq!(db.project_key_of("p-gone"), None, "a registered folder that is missing here is left alone: it may be a repository elsewhere");
+        assert_eq!(db.link_project_keys(), 0, "idempotent");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // adopt: rows filed under an unregistered id move to a registered project
+        db.conn().execute("INSERT INTO decisions (id, project_id, topic, decision, reason, agent, created_at, updated_at) VALUES ('d1', 'auto', 't', 'x', 'r', 'a', 'now', 'now')", []).unwrap();
+        let moved = db.adopt_project_data("auto", "p-plain").unwrap();
+        assert_eq!(moved, vec![("decisions", 1)]);
+        let now_in: String = db.conn().query_row("SELECT project_id FROM decisions WHERE id = 'd1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(now_in, "p-plain");
+        assert!(db.adopt_project_data("auto", "nope").is_err(), "the target must be a registered project");
+        assert!(db.adopt_project_data("p-plain", "p-plain").is_err());
     }
 
     #[test]

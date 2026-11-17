@@ -222,6 +222,17 @@ def main():
             page.goto(base + "/", wait_until="networkidle")
             rep.check("backup is failing" not in page.inner_text("main"), "Home has no backup warning while it works")
             page.close()
+            # data the backup cannot carry is shown, with the fix, on the card and on Home
+            sb.mcp("memory.save", summary="Orphaned smoke note", content="filed under an id that is no project", type="gotcha", scope="project", project_id="auto")
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(base + "/sync", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            txt = page.inner_text("main")
+            rep.check("Partly backed up" in txt and "Not everything on this computer is backed up" in txt and "project adopt auto" in txt, "the Sync card says what is not backed up and how to fix it", txt[:400])
+            page.goto(base + "/", wait_until="networkidle")
+            page.wait_for_timeout(500)
+            rep.check("not backed up" in page.inner_text("main").lower(), "and Home says part of the memory is not backed up")
+            page.close()
             # Responsive: no page scrolls sideways at phone, tablet or desktop width; the shell adapts (docs/specs/dashboard-responsive.md)
             for width, height in ((375, 812), (768, 1024), (1280, 800)):
                 wide = []

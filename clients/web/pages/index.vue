@@ -184,10 +184,11 @@ const changesSource = ref<'tracewise' | 'none'>('none');
 // A failing or out-of-date git backup is worth a line on the first screen; "off" is not (it is a choice).
 const backupProblem = ref('');
 async function loadBackup() {
-  const r = await request<{ status: { state: string; last_error?: string | null } }>('/api/backup/git');
+  const r = await request<{ status: { state: string; last_error?: string | null; gaps?: { notes: number; decisions: number }[] } }>('/api/backup/git');
   const st = r.ok ? r.data?.status : null;
   backupProblem.value = st?.state === 'failing' ? `The git backup is failing: ${st.last_error || 'the last sync did not finish'}`
-    : st?.state === 'stale' ? 'The git backup has not worked for over a week.' : '';
+    : st?.state === 'stale' ? 'The git backup has not worked for over a week.'
+    : st?.state === 'partial' ? `Part of your memory is not backed up (${(st.gaps || []).reduce((n, g) => n + g.notes, 0)} notes, ${(st.gaps || []).reduce((n, g) => n + g.decisions, 0)} decisions). Sync shows which and how to fix it.` : '';
 }
 onMounted(loadBackup);
 const previewDrawerOpen = ref(false);

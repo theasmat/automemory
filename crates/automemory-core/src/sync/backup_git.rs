@@ -82,9 +82,15 @@ pub fn parse_remote(raw: &str) -> Result<RemoteInfo, String> {
     if !local && host.is_empty() {
         return Err("the address has no host name".into());
     }
-    let provider = if local {
-        Provider::Local
-    } else if host == "github.com" || host.ends_with(".github.com") {
+    if host.starts_with('-') {
+        return Err("the host name looks like an option, not a host".into());
+    }
+    let provider = if local { Provider::Local } else { provider_for_host(&host) };
+    Ok(RemoteInfo { url, provider, host, ssh })
+}
+
+fn provider_for_host(host: &str) -> Provider {
+    if host == "github.com" || host.ends_with(".github.com") {
         Provider::GitHub
     } else if host == "gitlab.com" || host.starts_with("gitlab.") {
         Provider::GitLab
@@ -92,8 +98,41 @@ pub fn parse_remote(raw: &str) -> Result<RemoteInfo, String> {
         Provider::Bitbucket
     } else {
         Provider::Other
-    };
-    Ok(RemoteInfo { url, provider, host, ssh })
+    }
+}
+
+/// An ssh remote often uses a name from `~/.ssh/config` (`git@github-work:me/vault.git`). Asks ssh what that name really is (`ssh -G`, which only
+/// prints the configuration, it connects to nothing) so the provider is recognised.
+pub fn resolve_alias(info: &mut RemoteInfo) {
+    resolve_alias_with(info, &[]);
+}
+
+fn resolve_alias_with(info: &mut RemoteInfo, extra: &[&str]) {
+    if !info.ssh || info.provider != Provider::Other || info.host.is_empty() {
+        return;
+    }
+    let Ok(mut child) = std::process::Command::new("ssh").args(extra).args(["-G", "--", &info.host]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn() else { return };
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < Duration::from_secs(3) => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return;
+            }
+        }
+    }
+    let mut out = String::new();
+    if let Some(mut so) = child.stdout.take() {
+        use std::io::Read;
+        let _ = so.read_to_string(&mut out);
+    }
+    if let Some(real) = out.lines().find_map(|l| l.strip_prefix("hostname ")).map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty() && *h != info.host) {
+        info.provider = provider_for_host(&real);
+        info.host = real;
+    }
 }
 
 /// The address with any password or token inside it replaced, for showing on screen.
@@ -198,9 +237,75 @@ pub fn record_verified(db: &Database) {
     db.sync_kv_set(KEY_VERIFIED, &Utc::now().to_rfc3339());
 }
 
+/// Data on this computer that the backup does not carry, and why. What cannot be matched to a project on another computer is not sent.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Gap {
+    /// The project's name, or the id it is filed under.
+    pub project: String,
+    /// `no_key` (registered project whose folder is not here), `unknown_project` (filed under an id that is no project), `unregistered_folder`.
+    pub reason: &'static str,
+    pub notes: i64,
+    pub decisions: i64,
+    /// Hand-offs, traces, failures and skills.
+    pub other: i64,
+    pub fix: String,
+}
+
+/// Looks for knowledge that would be lost with this computer: rows filed under a project that has no sync key, or under an id that is no registered project.
+pub fn coverage_gaps(db: &Database) -> Vec<Gap> {
+    let ids: Vec<String> = {
+        let conn = db.conn();
+        let mut st = match conn.prepare(
+            "SELECT project_id FROM memories WHERE project_id IS NOT NULL UNION SELECT project_id FROM decisions WHERE project_id IS NOT NULL
+             UNION SELECT project_id FROM batons WHERE project_id IS NOT NULL UNION SELECT project_id FROM success_traces WHERE project_id IS NOT NULL
+             UNION SELECT project_id FROM failure_records WHERE project_id IS NOT NULL UNION SELECT project_id FROM procedural_skills WHERE project_id IS NOT NULL",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |r| r.get::<_, String>(0)).map(|rows| rows.flatten().collect()).unwrap_or_default()
+    };
+    let count = |sql: &str, pid: &str| -> i64 { db.conn().query_row(sql, [pid], |r| r.get(0)).unwrap_or(0) };
+    let mut gaps = Vec::new();
+    for pid in ids {
+        if pid == "demo" {
+            continue;
+        }
+        let project = db.get_project_by_id(&pid).ok().flatten();
+        let (name, reason, fix) = match &project {
+            Some(p) if db.project_key_of(&pid).is_some() => {
+                let _ = p;
+                continue;
+            }
+            Some(p) => {
+                let paths = db.get_project_paths(&pid).unwrap_or_default();
+                // a folder that is here gets its key during the next backup pass: not a gap, just not done yet
+                if paths.is_empty() || paths.iter().any(|x| Path::new(&x.local_path).is_dir()) {
+                    continue;
+                }
+                let folder = paths.first().map(|x| x.local_path.clone()).unwrap_or_else(|| "(none registered)".into());
+                (p.slug.clone(), "no_key", format!("its folder {folder} is not on this computer, so it cannot be matched to a repository. If the folder moved, register it again (`automemory project register --path <new folder>`); if the project is finished, remove it (`automemory project remove {}`)", p.slug))
+            }
+            None if pid.starts_with("folder-") => (pid.clone(), "unregistered_folder", format!("written in a folder that is not a registered project; register the folder (`automemory project register <path>`), then `automemory project adopt {pid} <project>`")),
+            None => (pid.clone(), "unknown_project", format!("filed under '{pid}', which is not a registered project; move it with `automemory project adopt {pid} <project>`")),
+        };
+        let notes = count("SELECT COUNT(*) FROM memories WHERE project_id = ?1 AND COALESCE(json_extract(metadata, '$.demo'), 0) != 1", &pid);
+        let decisions = count("SELECT COUNT(*) FROM decisions WHERE project_id = ?1", &pid);
+        let other = count("SELECT COUNT(*) FROM batons WHERE project_id = ?1", &pid)
+            + count("SELECT COUNT(*) FROM success_traces WHERE project_id = ?1", &pid)
+            + count("SELECT COUNT(*) FROM failure_records WHERE project_id = ?1", &pid)
+            + count("SELECT COUNT(*) FROM procedural_skills WHERE project_id = ?1", &pid);
+        if notes + decisions + other > 0 {
+            gaps.push(Gap { project: name, reason, notes, decisions, other, fix });
+        }
+    }
+    gaps.sort_by_key(|g| std::cmp::Reverse(g.notes + g.decisions + g.other));
+    gaps
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BackupStatus {
-    /// `off` (no remote), `never` (set up, no successful sync yet), `ok`, `stale` (no success for a week), `failing` (the last attempt failed).
+    /// `off` (no remote), `never` (set up, no successful sync yet), `ok`, `partial` (working, but some data cannot be backed up: see `gaps`), `stale` (no success for a week), `failing` (the last attempt failed).
     pub state: &'static str,
     pub remote: Option<String>,
     pub provider: Option<Provider>,
@@ -210,6 +315,8 @@ pub struct BackupStatus {
     pub last_error_at: Option<String>,
     pub last_verified: Option<String>,
     pub key_present: bool,
+    /// Knowledge on this computer that the backup does not carry.
+    pub gaps: Vec<Gap>,
 }
 
 fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
@@ -226,7 +333,11 @@ pub fn status(db: &Database) -> BackupStatus {
             None => (None, Some(v)),
         })
         .unwrap_or((None, None));
-    let info = remote.as_deref().and_then(|r| parse_remote(r).ok());
+    let info = remote.as_deref().and_then(|r| parse_remote(r).ok()).map(|mut i| {
+        resolve_alias(&mut i);
+        i
+    });
+    let gaps = if remote.is_some() { coverage_gaps(db) } else { Vec::new() };
     let state = if remote.is_none() {
         "off"
     } else if last_ok.is_none() && err_msg.is_none() {
@@ -237,6 +348,8 @@ pub fn status(db: &Database) -> BackupStatus {
         "stale"
     } else if last_ok.is_none() {
         "failing"
+    } else if !gaps.is_empty() {
+        "partial"
     } else {
         "ok"
     };
@@ -251,6 +364,7 @@ pub fn status(db: &Database) -> BackupStatus {
         last_verified: db.sync_kv_get(KEY_VERIFIED),
         // only looked up once a backup is set up, and never created here: a status must not leave a secret in the keychain
         key_present: remote.is_some() && super::auto::existing_key().is_some(),
+        gaps,
     }
 }
 
@@ -330,6 +444,49 @@ mod tests {
         assert_eq!(redact_url("git@github.com:me/v.git"), "git@github.com:me/v.git");
         assert!(has_embedded_secret("https://me:tok3n@github.com/me/v.git"));
         assert!(!has_embedded_secret("https://github.com/me/v.git"));
+    }
+
+    #[test]
+    fn an_ssh_alias_is_resolved_to_its_provider_and_option_like_hosts_are_refused() {
+        let dir = std::env::temp_dir().join(format!("am-ssh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("config");
+        std::fs::write(&cfg, "Host work-gh\n  HostName github.com\n  User git\nHost mine\n  HostName git.example.org\n").unwrap();
+        let mut info = parse_remote("git@work-gh:me/vault.git").unwrap();
+        assert_eq!(info.provider, Provider::Other, "an alias alone says nothing");
+        resolve_alias_with(&mut info, &["-F", &cfg.to_string_lossy()]);
+        assert_eq!((info.provider, info.host.as_str()), (Provider::GitHub, "github.com"));
+        let mut other = parse_remote("git@mine:me/vault.git").unwrap();
+        resolve_alias_with(&mut other, &["-F", &cfg.to_string_lossy()]);
+        assert_eq!((other.provider, other.host.as_str()), (Provider::Other, "git.example.org"));
+        assert!(parse_remote("git@-oProxyCommand=x:me/vault.git").is_err());
+        assert!(parse_remote("ssh://-oProxyCommand=x/me/v.git").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn data_the_backup_cannot_carry_is_found_and_explained() {
+        use crate::models::*;
+        let db = Database::open_in_memory().unwrap();
+        let now = Utc::now();
+        let mk = |id: &str, slug: &str| Project { id: id.into(), slug: slug.into(), display_name: slug.into(), created_at: now, updated_at: now, capture_policy: Default::default(), context_budget: Default::default(), document_config: Default::default(), sync_config: Default::default() };
+        db.save_project(&mk("p-keyed", "keyed")).unwrap();
+        db.set_project_key("p-keyed", "git:h/o/keyed").unwrap();
+        db.save_project(&mk("p-nokey", "nokey")).unwrap();
+        db.add_project_path("p-nokey", "/definitely/not/here", true).unwrap();
+        // a project whose folder is here but has no key yet is only waiting for the next pass
+        let here = std::env::temp_dir();
+        db.save_project(&mk("p-pending", "pending")).unwrap();
+        db.add_project_path("p-pending", &here.to_string_lossy(), true).unwrap();
+        for (id, pid) in [("a", "p-keyed"), ("b", "p-nokey"), ("f", "p-pending"), ("c", "auto"), ("d", "folder-0123456789abcdef"), ("e", "demo")] {
+            db.save_memory_direct(&note(pid, id, "x")).unwrap();
+        }
+        let g = coverage_gaps(&db);
+        let reasons: Vec<(&str, &str)> = g.iter().map(|x| (x.project.as_str(), x.reason)).collect();
+        assert_eq!(g.len(), 3, "{reasons:?}");
+        assert!(reasons.contains(&("nokey", "no_key")) && reasons.contains(&("auto", "unknown_project")) && reasons.contains(&("folder-0123456789abcdef", "unregistered_folder")), "{reasons:?}");
+        assert!(g.iter().find(|x| x.project == "auto").unwrap().fix.contains("project adopt auto"));
+        assert!(!reasons.iter().any(|(p, _)| *p == "keyed" || *p == "demo" || *p == "pending"), "a keyed project, a project waiting for its key, and sample data are not gaps");
     }
 
     #[test]

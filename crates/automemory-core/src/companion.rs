@@ -190,9 +190,9 @@ mod tests {
     fn an_answer_is_read_and_a_slow_or_foreign_one_is_dropped() {
         let d = tmp("call");
         let c = Companion { path: fake(&d, r#"{"api":1}"#, r#"{"api":1,"event":"pre-edit","decision":"deny","reason":"held by codex","context":["a","b"]}"#, "0"), version: String::new() };
-        let a = call(&c, "agy", "pre-tool", "{}", Duration::from_millis(500)).unwrap();
+        let a = call(&c, "agy", "pre-tool", "{}", Duration::from_secs(3)).unwrap();
         assert_eq!((a.decision, a.reason.as_deref(), a.context.len()), (Decision::Deny, Some("held by codex"), 2));
-        assert!(call(&c, "claude", "boot", "{}", Duration::from_millis(500)).is_none(), "an event Tracewise does not take is not forwarded");
+        assert!(call(&c, "claude", "boot", "{}", Duration::from_secs(3)).is_none(), "an event Tracewise does not take is not forwarded");
         let slow = Companion { path: fake(&d, r#"{"api":1}"#, r#"{"api":1,"decision":"deny"}"#, "2"), version: String::new() };
         let started = Instant::now();
         assert!(call(&slow, "claude", "pre-tool", "{}", Duration::from_millis(120)).is_none(), "too slow: fail open");

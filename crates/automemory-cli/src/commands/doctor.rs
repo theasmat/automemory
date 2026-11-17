@@ -286,6 +286,9 @@ pub fn execute() -> Result<()> {
             match st.state {
                 "off" => println!("– off (`automemory backup git setup` keeps an encrypted copy on GitHub, GitLab, Bitbucket or your own git server)"),
                 "ok" => println!("✓ {} backed up {}, restore verified {}", st.provider_name.unwrap_or("git"), ago(&st.last_ok).unwrap_or_else(|| "recently".into()), ago(&st.last_verified).unwrap_or_else(|| "never (`automemory backup git verify`)".into())),
+                "partial" => {
+                    println!("⚠ {} backed up {}, but {} note(s) and {} decision(s) are not covered (`automemory backup git status` says which and why)", st.provider_name.unwrap_or("git"), ago(&st.last_ok).unwrap_or_else(|| "recently".into()), st.gaps.iter().map(|g| g.notes).sum::<i64>(), st.gaps.iter().map(|g| g.decisions).sum::<i64>());
+                }
                 "never" => println!("⚠ set up, but no successful sync yet (`automemory backup git now`)"),
                 "stale" => { println!("⚠ no successful backup for over a week (last: {})", ago(&st.last_ok).unwrap_or_default()); all_passed = false; }
                 _ => { println!("⚠ failing: {}", st.last_error.as_deref().unwrap_or("the last sync did not finish")); all_passed = false; }

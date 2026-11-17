@@ -4,6 +4,9 @@ What has shipped, by area. Dates are in `git log`. Open work: [docs/roadmap.md](
 
 ## Memory quality plan, step 1 (recall eval)
 
+### Fixed
+- Git backup completeness, found by restoring a real backup and comparing it with the database: a project whose folder is not a git repository (and a second registration of the same repository) now gets a sync key, so its notes, decisions, hand-offs and traces are backed up; before, they were silently left out. Data that still cannot be carried (rows filed under an unknown project id, notes from unregistered folders) is listed with the reason and the fix in the status, `doctor`, the Sync card and Home, and the status reads "partial" instead of "working". New `automemory project adopt <id> <project>` re-files such rows. An ssh remote that uses a `~/.ssh/config` alias is recognised as its provider.
+
 ### Added
 - Git backup on any git server (GitHub, GitLab, Bitbucket, your own): `automemory backup git setup | status | now | verify | restore`, a "Git backup" card on the Sync page (setup wizard with the password, the recovery phrase shown once, status, back up now, check the restore, turn off), a Home warning when it fails or is a week old, and a `doctor` line. Setup checks the address (command-running forms refused, tokens hidden), warns when the repository is public or not empty, and proves the first copy restores; restore proves the phrase opens the backup before it changes anything. Every sync pass now records when it worked or why not. Spec: `docs/specs/git-backup.md`.
 

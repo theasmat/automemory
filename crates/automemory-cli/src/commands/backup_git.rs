@@ -59,6 +59,7 @@ pub fn status(json: bool) -> Result<()> {
             return Ok(());
         }
         "ok" => println!("Git backup: working"),
+        "partial" => println!("Git backup: working, but not everything can be backed up (see below)"),
         "never" => println!("Git backup: set up, waiting for the first successful sync (`automemory backup git now`)"),
         "stale" => println!("Git backup: ⚠ no successful sync for over a week"),
         _ => println!("Git backup: ⚠ failing"),
@@ -70,7 +71,28 @@ pub fn status(json: bool) -> Result<()> {
     }
     println!("  restore verified: {}", st.last_verified.as_deref().unwrap_or("never (`automemory backup git verify`)"));
     println!("  key on this computer: {}", if st.key_present { "yes" } else { "no (restoring elsewhere needs the recovery phrase)" });
+    print_gaps(&st.gaps);
     Ok(())
+}
+
+fn print_gaps(gaps: &[bg::Gap]) {
+    if gaps.is_empty() {
+        return;
+    }
+    println!("\n  NOT backed up on this computer:");
+    for g in gaps {
+        let mut what = Vec::new();
+        if g.notes > 0 {
+            what.push(format!("{} note(s)", g.notes));
+        }
+        if g.decisions > 0 {
+            what.push(format!("{} decision(s)", g.decisions));
+        }
+        if g.other > 0 {
+            what.push(format!("{} hand-off(s), trace(s) or skill(s)", g.other));
+        }
+        println!("    • {}: {}\n        {}", g.project, what.join(", "), g.fix);
+    }
 }
 
 pub fn now() -> Result<()> {
@@ -109,10 +131,11 @@ pub fn setup(a: &Args) -> Result<()> {
             read_line("Repository address (https://… or git@host:owner/repo.git): ")
         }
     };
-    let info = match bg::parse_remote(&url) {
+    let mut info = match bg::parse_remote(&url) {
         Ok(i) => i,
         Err(e) => bail!("{e}"),
     };
+    bg::resolve_alias(&mut info);
     println!("→ {} ({})", bg::redact_url(&info.url), info.provider.name());
     if bg::has_embedded_secret(&info.url) {
         println!("⚠ The address contains a password or token. It would be stored in plain text in ~/.automemory/config.toml and in the vault's git config.\n  Better: an ssh address, or sign in once with your git credential helper (`gh auth login`, `glab auth login`).");
@@ -170,6 +193,13 @@ pub fn setup(a: &Args) -> Result<()> {
     match bg::verify_remote(&db, &info.url, &key) {
         Ok(v) => println!("✓ Verified: the copy on the remote restores ({} note(s), {} decision(s)).", v.remote_notes, v.remote_decisions),
         Err(e) => println!("⚠ The first backup could not be verified yet: {e}\n  `automemory backup git now` retries; `automemory backup git status` shows what is wrong."),
+    }
+    {
+        let gaps = bg::coverage_gaps(&db);
+        if !gaps.is_empty() {
+            println!("\n⚠ Not everything is covered:");
+            print_gaps(&gaps);
+        }
     }
     println!("\nFrom now on it runs by itself: after your agents work, in the background. `automemory doctor` and the dashboard show when it last worked.");
     println!("On another computer: `automemory backup git restore {} --phrase \"<recovery phrase>\"`", bg::redact_url(&info.url));

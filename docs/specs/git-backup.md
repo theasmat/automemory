@@ -33,6 +33,22 @@ After setup there is nothing to do: hooks start a background sync after agent ac
 
 Every sync pass with a remote records its outcome. `state` is `off`, `never` (set up, no success yet), `ok`, `failing` (the last attempt failed; the reason is kept), or `stale` (no success for seven days). `last_verified` is when a restore check last passed. The remote address is shown with any token hidden.
 
+## What the backup carries, and what it cannot
+
+The vault carries notes, decisions, hand-offs, traces, failures and skills, each tagged with the **project key** of its project so another computer can attach it to the right project. A key is the repository's remote address or root commit; a folder that is not a git repository, and a second registration of the same repository, get `local:<project id>`, which the other computer turns back into a project.
+
+Some data has no project to attach to, and the backup says so instead of claiming "working":
+
+| Gap | Why | Fix |
+|---|---|---|
+| `unknown_project` | rows filed under an id that is no registered project (an old `--project auto`) | `automemory project adopt <id> <project>` |
+| `unregistered_folder` | notes written by an agent in a folder that is no project (`folder-<hash>`) | register the folder, then `project adopt` |
+| `no_key` | a registered project whose folder is not on this computer, so it cannot be matched to a repository | register the folder again (`project register --path`) or remove the project (`project remove`) |
+
+The status then reads `partial`, and the dashboard card, Home, `doctor` and `automemory backup git status` list each gap with its counts and fix. Sample data is never counted. Not carried by design: the event log (a local record of tool calls; `automemory backup` keeps a full local copy of the database, on the same disk).
+
+An ssh remote that uses a name from `~/.ssh/config` (`git@github-work:...`) is recognised through `ssh -G`, so the provider shows correctly.
+
 ## Restore
 
 `restore` first proves the phrase opens the backup (a clone and a replay with the key derived from the phrase) and only then stores the key and syncs. A wrong phrase changes nothing on the computer.

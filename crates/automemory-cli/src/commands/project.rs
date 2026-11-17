@@ -173,3 +173,37 @@ pub fn remove(name_or_path: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// `project adopt <from> <to>`: re-files rows from a wrong project id (an orphan, an unregistered folder's scope) under a registered project.
+pub fn adopt(from: &str, to: &str, dry_run: bool) -> Result<()> {
+    let db = automemory_core::db::Database::open(&automemory_core::config::Config::default_config().db_path)?;
+    let target = db
+        .get_project_by_slug(to)?
+        .or_else(|| db.get_project_by_id(to).ok().flatten())
+        .ok_or_else(|| anyhow::anyhow!("'{to}' is not a registered project (see `automemory project list`)"))?;
+    if db.get_project_by_id(from)?.is_some() || db.get_project_by_slug(from)?.is_some() {
+        anyhow::bail!("'{from}' is a registered project; adopt is for data filed under an id that is not one (the git backup status lists those)");
+    }
+    if dry_run {
+        let mut total = 0;
+        for table in ["memories", "decisions", "batons", "success_traces", "failure_records", "procedural_skills", "tool_events", "review_proposals", "tasks"] {
+            let n: i64 = db.conn().query_row(&format!("SELECT COUNT(*) FROM {table} WHERE project_id = ?1"), [from], |r| r.get(0)).unwrap_or(0);
+            if n > 0 {
+                println!("  {table}: {n}");
+                total += n;
+            }
+        }
+        println!("{total} row(s) would move to '{}'. Run again without --dry-run to do it.", target.slug);
+        return Ok(());
+    }
+    let moved = db.adopt_project_data(from, &target.id)?;
+    if moved.is_empty() {
+        println!("Nothing is filed under '{from}'.");
+    } else {
+        for (t, n) in &moved {
+            println!("  {t}: {n}");
+        }
+        println!("✓ Moved to '{}'. The next sync includes it in the git backup.", target.slug);
+    }
+    Ok(())
+}

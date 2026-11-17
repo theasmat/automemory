@@ -1183,17 +1183,19 @@ mod tests {
     }
 
     #[test]
-    fn records_of_projects_without_a_key_stay_on_the_machine() {
+    fn a_project_without_git_syncs_under_a_key_of_its_own_and_rows_of_no_project_stay_on_the_machine() {
         let dir = test_vault("unkeyed");
         let a = test_db();
         register_project(&a, "local-only", "scratch", None); // not a git repository
         a.save_memory_direct(&memory_in(Some("local-only"), "m-private", "scratch note")).unwrap();
         a.save_memory_direct(&memory_in(Some("dangling-project"), "m-dangling", "x")).unwrap();
-        assert!(collect_deltas(&a, "dev-a").unwrap().is_empty());
+        assert!(collect_deltas(&a, "dev-a").unwrap().is_empty(), "no key yet: nothing is collected");
         sync_cycle(&a, &dir).unwrap();
-        // Only the device's own announcement (its public key) is ever written; no record leaves the machine.
+        // The cycle gave the git-less project a key of its own, so its note travels; a row filed under no registered project never does.
+        assert_eq!(a.project_key_of("local-only").as_deref(), Some("local:local-only"));
         let sent: Vec<DeltaOp> = list_delta_files(&dir).iter().flat_map(|p| read_delta_file(p)).collect();
-        assert!(sent.iter().all(|o| o.kind == "device"), "{sent:?}");
+        let ids: Vec<&str> = sent.iter().filter(|o| o.kind == "memory").map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, vec!["m-private"], "{sent:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 

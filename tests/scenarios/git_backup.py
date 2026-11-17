@@ -144,6 +144,54 @@ def main():
                 server.wait(timeout=5)
         finally:
             c.cleanup()
+
+        # gaps: a project without git, an orphan id and an unregistered folder's scope (the real-world run that found them)
+        d = machine("backup-d")
+        e = machine("backup-e")
+        try:
+            remote3 = d.root / "vault3.git"
+            remote3.mkdir()
+            git(remote3, "init", "-q", "--bare", "-b", "main")
+            plain = d.root / "plain-folder"
+            plain.mkdir()
+            d.mcp("project.register", slug="gitless", display_name="gitless", path=str(plain))
+            d.mcp("project.register", slug="withgit", display_name="withgit", path=str(d.project))
+            # the same repository registered a second time (what `connect` plus a manual register does): it must not become a gap either
+            d.mcp("project.register", slug="withgit-dup", display_name="withgit-dup", path=str(d.project))
+            d.mcp("memory.save", summary="Dup project note", content="kept in the second registration", type="gotcha", scope="project", project_id="withgit-dup")
+            d.mcp("decision.record", topic="storage", decision="Keep carts in SQLite", reason="local-first", project_id="gitless", agent="claude")
+            d.mcp("decision.record", topic="payments", decision="Stripe webhooks", reason="no polling", project_id="withgit", agent="claude")
+            d.mcp("memory.save", summary="Orphaned note", content="filed under an id that is no project", type="gotcha", scope="project", project_id="auto")
+            d.mcp("memory.save", summary="Scratch folder note", content="from an unregistered folder", type="gotcha", scope="project", project_id="folder-0123456789abcdef")
+            r = d.run("backup", "git", "setup", str(remote3), "--yes")
+            out = r.stdout + r.stderr
+            rep.check(r.returncode == 0, "setup works with a git-less project and orphans present", out[-300:])
+            st = json.loads(d.run("backup", "git", "status", "--json").stdout)
+            reasons = sorted((g["project"], g["reason"]) for g in st["gaps"])
+            rep.check(st["state"] == "partial" and reasons == [("auto", "unknown_project"), ("folder-0123456789abcdef", "unregistered_folder")], "status says partial and names exactly the data that cannot be backed up, with the reasons", json.dumps(st["gaps"])[:300])
+            rep.check("NOT backed up" in d.run("backup", "git", "status").stdout and "project adopt auto" in d.run("backup", "git", "status").stdout, "the terminal status lists them with the fix")
+            rep.check("gitless" not in json.dumps(st["gaps"]) and "withgit-dup" not in json.dumps(st["gaps"]), "the git-less project and a second registration of the same repository are not gaps: each has a key of its own")
+            # restore elsewhere: the git-less project's decision made it
+            phrase = re.search(r"\n\s+((?:[a-z]+ ){23}[a-z]+)\n", out).group(1)
+            r = e.run("backup", "git", "restore", str(remote3), "--phrase", phrase)
+            dec = e.run("decision", "list").stdout
+            rep.check(r.returncode == 0 and "Keep carts in SQLite" in dec and "Stripe webhooks" in dec, "a second computer gets the decisions of both the git project and the git-less project", dec[:300])
+            rep.check("Orphaned note" not in e.run("memory", "list", "--all").stdout, "and not the orphan (it was never sent)")
+            # adopt: move the orphan into a real project; the next pass carries it
+            r = d.run("project", "adopt", "auto", "withgit", "--dry-run")
+            rep.check("would move" in r.stdout and "memories: 1" in r.stdout, "adopt --dry-run counts what would move", r.stdout[:200])
+            r = d.run("project", "adopt", "auto", "withgit")
+            rep.check(r.returncode == 0 and "Moved" in r.stdout, "adopt moves it", r.stdout[:200])
+            r = d.run("project", "adopt", "withgit", "gitless")
+            rep.check(r.returncode != 0, "adopt refuses to move one registered project into another", (r.stdout + r.stderr)[:200])
+            d.run("backup", "git", "now")
+            st = json.loads(d.run("backup", "git", "status", "--json").stdout)
+            rep.check([g["project"] for g in st["gaps"]] == ["folder-0123456789abcdef"], "after adopting, only the unregistered folder's note remains a gap", json.dumps(st["gaps"])[:200])
+            e.run("backup", "git", "now")
+            rep.check("Orphaned note" in e.run("memory", "list", "--all").stdout or "Orphaned note" in e.run("memory", "list", "--project", "withgit").stdout, "and the adopted note reaches the other computer on the next pass")
+        finally:
+            d.cleanup()
+            e.cleanup()
     finally:
         a.cleanup()
         b.cleanup()

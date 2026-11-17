@@ -1062,6 +1062,21 @@ enum ProjectCommands {
         restore_to_workspace: bool,
     },
 
+    /// Move data filed under a wrong project id (an orphan id, an unregistered folder's scope) into a registered project, so it syncs and is backed up
+    ///
+    /// Examples:
+    ///   automemory project adopt auto ledgerly
+    ///   automemory project adopt folder-6f7253deb85df2a4 refund-test --dry-run
+    Adopt {
+        /// The project id the data is filed under now (see the git backup status)
+        from: String,
+        /// The registered project (name or id) that should own it
+        to: String,
+        /// Only count what would move
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Remove a project from the global registry
     Remove {
         /// Project name or local directory path
@@ -1355,6 +1370,7 @@ async fn main() -> Result<()> {
         }
         Commands::Project { command } => match command {
             ProjectCommands::List => commands::project::list()?,
+            ProjectCommands::Adopt { from, to, dry_run } => commands::project::adopt(&from, &to, dry_run)?,
             ProjectCommands::Register {
                 name,
                 path,
